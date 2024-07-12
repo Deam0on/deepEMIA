@@ -94,7 +94,7 @@ def train_on_dataset(dataset_name, output_dir):
     dataset_info = read_dataset_info('/home/deamoon_uw_nn/uw-com-vision/dataset_info.json')
     
     # Register datasets
-    register_datasets({dataset_name: dataset_info[dataset_name]})
+    register_datasets(dataset_info, {dataset_name: dataset_info[dataset_name]})
 
     # Debug prints for verification
     print(DatasetCatalog.get(f"{dataset_name}_train"))
