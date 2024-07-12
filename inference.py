@@ -510,7 +510,7 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
             if dataset_name != 'hw_patterns':
                 csvwriter.writerow(['length', 'width', 'circularED', 'aspectRatio', 'circularity', 'chords', 'ferret', 'round', 'sphere', 'psum', 'name'])
 
-            elif dataset_name = 'microsections':
+            elif dataset_name == 'microsections':
                 csvwriter.writerow(['length', 'width', 'circularED', 'aspectRatio', 'circularity', 'chords', 'ferret', 'round', 'sphere', 'E_major', 'E_minor', 'Eccentricity', 'name')
             else:
                 csvwriter.writerow(['E_major', 'E_minor', 'Eccentricity', 'D10_avg_velocity', 'avg_velocity', 'D90_avg_velocity', 'avg_direction_x', 'avg_direction_y', 'magnitude', 'angle', 'angle_degrees', 'name'])
@@ -526,7 +526,7 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                 # Use canny edge detection
                 edges = cv2.Canny(gray, 50, 150, apertureSize=3)
 
-                if dataset_name = 'polyhipes':
+                if dataset_name == 'polyhipes':
                     reader = easyocr.Reader(['en'])
                     result = reader.readtext(gray, detail=0, paragraph=False, contrast_ths=0.85, adjust_contrast=0.85, add_margin=0.25, width_ths=0.25, decoder='beamsearch')
                     if result:
@@ -647,7 +647,7 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
 
                             csvwriter.writerow([Length, Width, CircularED, Aspect_Ratio, Circularity, Chords, Feret_diam, Roundness, Sphericity, psum, test_img])
 
-                        elif dataset_name = 'microsections':
+                        elif dataset_name == 'microsections':
                             CircularED = np.sqrt(4 * area / np.pi)
                             Chords = cv2.arcLength(c, True)
                             Roundness = 1 / Aspect_Ratio if Aspect_Ratio != 0 else 0
