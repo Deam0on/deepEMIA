@@ -511,7 +511,7 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                 csvwriter.writerow(['length', 'width', 'circularED', 'aspectRatio', 'circularity', 'chords', 'ferret', 'round', 'sphere', 'psum', 'name'])
 
             elif dataset_name == 'microsections':
-                csvwriter.writerow(['length', 'width', 'circularED', 'aspectRatio', 'circularity', 'chords', 'ferret', 'round', 'sphere', 'E_major', 'E_minor', 'Eccentricity', 'name')
+                csvwriter.writerow(['length', 'width', 'circularED', 'aspectRatio', 'circularity', 'chords', 'ferret', 'round', 'sphere', 'E_major', 'E_minor', 'Eccentricity', 'name'])
             else:
                 csvwriter.writerow(['E_major', 'E_minor', 'Eccentricity', 'D10_avg_velocity', 'avg_velocity', 'D90_avg_velocity', 'avg_direction_x', 'avg_direction_y', 'magnitude', 'angle', 'angle_degrees', 'name'])
 
