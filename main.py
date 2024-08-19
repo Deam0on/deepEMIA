@@ -9,7 +9,7 @@ from train_model import train_on_dataset
 from evaluate_model import evaluate_model
 from inference import run_inference
 
-ETA_FILE = '/home/deamoon_uw_nn/uw-com-vision/eta_data.json'
+ETA_FILE = '/home/hladekf/uw-com-vision/eta_data.json'
 
 def download_data_from_bucket():
     """
@@ -19,11 +19,11 @@ def download_data_from_bucket():
     - float: Time taken to download data in seconds.
     """
     download_start_time = datetime.now()
-    dirpath = Path('/home/deamoon_uw_nn') / 'DATASET'
+    dirpath = Path('/home/hladekf') / 'DATASET'
     if dirpath.exists() and dirpath.is_dir():
         shutil.rmtree(dirpath)
 
-    os.system("gsutil -m cp -r gs://uw-com-vision/DATASET /home/deamoon_uw_nn")
+    os.system("gsutil -m cp -r gs://uw-com-vision/DATASET /home/hladekf")
     download_end_time = datetime.now()
 
     return (download_end_time - download_start_time).total_seconds()
@@ -40,9 +40,9 @@ def upload_data_to_bucket():
     timestamp = (datetime.now() + time_offset).strftime("%Y%m%d_%H%M%S")
     archive_path = f"gs://uw-com-vision/Archive/{timestamp}/"
 
-    os.system(f"gsutil -m cp -r /home/deamoon_uw_nn/*.png {archive_path}")
-    os.system(f"gsutil -m cp -r /home/deamoon_uw_nn/*.csv {archive_path}")
-    os.system(f"gsutil -m cp -r /home/deamoon_uw_nn/output/ {archive_path}")
+    os.system(f"gsutil -m cp -r /home/hladekf/*.png {archive_path}")
+    os.system(f"gsutil -m cp -r /home/hladekf/*.csv {archive_path}")
+    os.system(f"gsutil -m cp -r /home/hladekf/output/ {archive_path}")
     upload_end_time = datetime.now()
 
     return (upload_end_time - upload_start_time).total_seconds()
@@ -129,10 +129,10 @@ def main():
 
     args = parser.parse_args()
 
-    os.system("gsutil -m cp -r gs://uw-com-vision/dataset_info.json /home/deamoon_uw_nn/uw-com-vision")
+    os.system("gsutil -m cp -r gs://uw-com-vision/dataset_info.json /home/hladekf/uw-com-vision")
 
-    img_dir = os.path.join("/home/deamoon_uw_nn/DATASET", args.dataset_name)
-    output_dir = "/home/deamoon_uw_nn/split_dir"
+    img_dir = os.path.join("/home/hladekf/DATASET", args.dataset_name)
+    output_dir = "/home/hladekf/split_dir"
 
     total_start_time = datetime.now()
     download_time_taken = 0
