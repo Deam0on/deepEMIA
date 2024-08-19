@@ -100,7 +100,7 @@ class CustomTrainer(DefaultTrainer):
     def build_train_loader(cls, cfg):
         return build_detection_train_loader(cfg, mapper=custom_mapper)
 
-def get_image_folder_path(base_path='/home/deamoon_uw_nn/DATASET/INFERENCE/'):
+def get_image_folder_path(base_path='/home/hladekf/DATASET/INFERENCE/'):
     """
     Determines the path to the folder containing images for inference.
 
@@ -461,10 +461,10 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
     Returns:
     - None
     """
-    dataset_info = read_dataset_info('/home/deamoon_uw_nn/uw-com-vision/dataset_info.json')
+    dataset_info = read_dataset_info('/home/hladekf/uw-com-vision/dataset_info.json')
     register_datasets(dataset_info, dataset_name)
     
-    trained_model_paths = get_trained_model_paths("/home/deamoon_uw_nn/split_dir")
+    trained_model_paths = get_trained_model_paths("/home/hladekf/split_dir")
     selected_model_dataset = dataset_name  # User-selected model
     predictor = choose_and_use_model(trained_model_paths, selected_model_dataset, threshold)
     
