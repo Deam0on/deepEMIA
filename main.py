@@ -23,7 +23,7 @@ def download_data_from_bucket():
     if dirpath.exists() and dirpath.is_dir():
         shutil.rmtree(dirpath)
 
-    os.system("gsutil -m cp -r gs://uw-com-vision/DATASET /home/hladekf")
+    os.system("gsutil -m cp -r gs://nn-uct/DATASET /home/hladekf")
     download_end_time = datetime.now()
 
     return (download_end_time - download_start_time).total_seconds()
@@ -38,7 +38,7 @@ def upload_data_to_bucket():
     upload_start_time = datetime.now()
     time_offset = timedelta(hours=2)
     timestamp = (datetime.now() + time_offset).strftime("%Y%m%d_%H%M%S")
-    archive_path = f"gs://uw-com-vision/Archive/{timestamp}/"
+    archive_path = f"gs://nn-uct/Archive/{timestamp}/"
 
     os.system(f"gsutil -m cp -r /home/hladekf/*.png {archive_path}")
     os.system(f"gsutil -m cp -r /home/hladekf/*.csv {archive_path}")
@@ -129,7 +129,7 @@ def main():
 
     args = parser.parse_args()
 
-    os.system("gsutil -m cp -r gs://uw-com-vision/dataset_info.json /home/hladekf/uw-com-vision")
+    os.system("gsutil -m cp -r gs://nn-uct/dataset_info.json /home/hladekf/uw-com-vision")
 
     img_dir = os.path.join("/home/hladekf/DATASET", args.dataset_name)
     output_dir = "/home/hladekf/split_dir"
