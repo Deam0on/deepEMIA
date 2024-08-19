@@ -18,7 +18,7 @@ ADMIN_PASSWORD = "hladekf"
 MAIN_SCRIPT_PATH = '/home/hladekf/uw-com-vision/main.py'
 
 # GCS bucket details
-GCS_BUCKET_NAME = 'uw-com-vision'
+GCS_BUCKET_NAME = 'nn-uct'
 GCS_DATASET_FOLDER = 'DATASET'
 GCS_INFERENCE_FOLDER = 'DATASET/INFERENCE'
 GCS_ARCHIVE_FOLDER = 'Archive'
