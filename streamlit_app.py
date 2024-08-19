@@ -12,10 +12,10 @@ import zipfile
 from tempfile import TemporaryDirectory
 
 # Add these lines at the beginning of the script
-ADMIN_PASSWORD = "deamoon_uw_nn"
+ADMIN_PASSWORD = "hladekf"
 
 # Absolute path to main.py
-MAIN_SCRIPT_PATH = '/home/deamoon_uw_nn/uw-com-vision/main.py'
+MAIN_SCRIPT_PATH = '/home/hladekf/uw-com-vision/main.py'
 
 # GCS bucket details
 GCS_BUCKET_NAME = 'uw-com-vision'
@@ -295,7 +295,7 @@ def read_eta_data():
     Returns:
     - dict: ETA data.
     """
-    ETA_FILE = '/home/deamoon_uw_nn/uw-com-vision/eta_data.json'
+    ETA_FILE = '/home/hladekf/uw-com-vision/eta_data.json'
     if os.path.exists(ETA_FILE):
         with open(ETA_FILE, 'r') as file:
             return json.load(file)
@@ -327,7 +327,7 @@ if check_password():
     if new_dataset:
         new_dataset_name = st.text_input("Enter new dataset name")
         if new_dataset_name:
-            path1 = f"/home/deamoon_uw_nn/DATASET/{new_dataset_name}/"
+            path1 = f"/home/hladekf/DATASET/{new_dataset_name}/"
             path2 = path1
             new_classes = st.text_input("Enter classes (comma separated)")
             if st.button("Add Dataset"):
