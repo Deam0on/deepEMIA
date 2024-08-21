@@ -30,7 +30,8 @@ def download_data_from_bucket():
 
 def upload_data_to_bucket():
     """
-    Upload data from local directories to a Google Cloud Storage bucket.
+    Upload data from local directories to a Google Cloud Storage bucket, 
+    only if files are present to upload.
     
     Returns:
     - float: Time taken to upload data in seconds.
@@ -40,11 +41,19 @@ def upload_data_to_bucket():
     timestamp = (datetime.now() + time_offset).strftime("%Y%m%d_%H%M%S")
     archive_path = f"gs://nn-uct/Archive/{timestamp}/"
 
-    os.system(f"gsutil -m cp -r /home/hladekf/*.png {archive_path}")
-    os.system(f"gsutil -m cp -r /home/hladekf/*.csv {archive_path}")
-    os.system(f"gsutil -m cp -r /home/hladekf/output/ {archive_path}")
-    upload_end_time = datetime.now()
+    # Check and upload .png files
+    if any(fname.endswith('.png') for fname in os.listdir('/home/hladekf/')):
+        os.system(f"gsutil -m cp -r /home/hladekf/*.png {archive_path}")
 
+    # Check and upload .csv files
+    if any(fname.endswith('.csv') for fname in os.listdir('/home/hladekf/')):
+        os.system(f"gsutil -m cp -r /home/hladekf/*.csv {archive_path}")
+
+    # Check and upload files in the output directory
+    if os.path.exists('/home/hladekf/output/') and os.listdir('/home/hladekf/output/'):
+        os.system(f"gsutil -m cp -r /home/hladekf/output/ {archive_path}")
+
+    upload_end_time = datetime.now()
     return (upload_end_time - upload_start_time).total_seconds()
 
 def read_eta_data():
