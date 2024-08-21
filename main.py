@@ -9,6 +9,9 @@ from train_model import train_on_dataset
 from evaluate_model import evaluate_model
 from inference import run_inference
 
+from setuptools._vendor.packaging.version import Version as LooseVersion
+
+
 ETA_FILE = '/home/hladekf/uw-com-vision/eta_data.json'
 
 def download_data_from_bucket():
