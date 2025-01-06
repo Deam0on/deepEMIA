@@ -30,13 +30,13 @@ def evaluate_model(dataset_name, output_dir, visualize=False):
     - None
     """
     # Load dataset information
-    dataset_info = read_dataset_info('/home/hladekf/uw-com-vision/dataset_info.json')
+    dataset_info = read_dataset_info('/home/deamoon_uw_nn/uw-com-vision/dataset_info.json')
 
     # Register the datasets
     register_datasets(dataset_info, dataset_name)
     
     # Get paths to trained models
-    trained_model_paths = get_trained_model_paths("/home/hladekf/split_dir")
+    trained_model_paths = get_trained_model_paths("/home/deamoon_uw_nn/split_dir")
 
     # Set detection threshold
     threshold = 0.45
@@ -51,7 +51,7 @@ def evaluate_model(dataset_name, output_dir, visualize=False):
     evaluator = COCOEvaluator(f"{dataset_name}_test", cfg, False, output_dir=output_dir)
     
     # Ensure no cached data is used
-    coco_format_cache = os.path.join("/home/hladekf/split_dir", f"{dataset_name}_test_coco_format.json")
+    coco_format_cache = os.path.join("/home/deamoon_uw_nn/split_dir", f"{dataset_name}_test_coco_format.json")
     if os.path.exists(coco_format_cache):
         os.remove(coco_format_cache)
 
