@@ -507,13 +507,7 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
         with open(csv_filename, 'w', newline='') as csvfile:
             csvwriter = csv.writer(csvfile)
 
-            if dataset_name != 'hw_patterns':
-                csvwriter.writerow(['length', 'width', 'circularED', 'aspectRatio', 'circularity', 'chords', 'ferret', 'round', 'sphere', 'psum', 'name'])
-
-            elif dataset_name == 'microsections':
-                csvwriter.writerow(['length', 'width', 'circularED', 'aspectRatio', 'circularity', 'chords', 'ferret', 'round', 'sphere', 'E_major', 'E_minor', 'Eccentricity', 'name'])
-            else:
-                csvwriter.writerow(['E_major', 'E_minor', 'Eccentricity', 'D10_avg_velocity', 'avg_velocity', 'D90_avg_velocity', 'avg_direction_x', 'avg_direction_y', 'magnitude', 'angle', 'angle_degrees', 'name'])
+            csvwriter.writerow(['Major axis length', 'Minor axis length', 'Eccentricity', 'C. Length', 'C. Width', 'Circular eq. diameter', 'Acpect ratio', 'Circularity', 'Chord length', 'Ferret diameter', 'Roundness', 'Sphericity', 'Detected scale bar', 'File name'])
 
     
             for test_img in os.listdir(test_img_path):
@@ -637,58 +631,4 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                         major_axis_length = major_axis / pixelsPerMetric * um_pix
                         minor_axis_length = minor_axis / pixelsPerMetric * um_pix
 
-                        if dataset_name != 'hw_patterns':
-                            CircularED = np.sqrt(4 * area / np.pi) * um_pix
-                            Chords = cv2.arcLength(c, True) * um_pix
-                            Roundness = 1 / Aspect_Ratio if Aspect_Ratio != 0 else 0
-                            Sphericity = (2 * np.sqrt(np.pi * dimArea)) / dimPerimeter * um_pix
-                            Circularity = 4 * np.pi * (dimArea / (dimPerimeter) ** 2) * um_pix
-                            Feret_diam = diaFeret * um_pix
-
-                            csvwriter.writerow([Length, Width, CircularED, Aspect_Ratio, Circularity, Chords, Feret_diam, Roundness, Sphericity, psum, test_img])
-
-                        elif dataset_name == 'microsections':
-                            CircularED = np.sqrt(4 * area / np.pi)
-                            Chords = cv2.arcLength(c, True)
-                            Roundness = 1 / Aspect_Ratio if Aspect_Ratio != 0 else 0
-                            Sphericity = (2 * np.sqrt(np.pi * dimArea)) / dimPerimeter
-                            Circularity = 4 * np.pi * (dimArea / (dimPerimeter) ** 2)
-                            Feret_diam = diaFeret
-
-                            csvwriter.writerow([Length, Width, CircularED, Aspect_Ratio, Circularity, Chords, Feret_diam, Roundness, Sphericity, major_axis_length, minor_axis_length, eccentricity, test_img])
-                            
-                        else:
-                            mask = np.zeros(im.shape[:2], dtype=np.uint8)
-                            cv2.drawContours(mask, [c], -1, 255, -1)
-                            masked_image = cv2.bitwise_and(im, im, mask=mask)
-                            
-                            wavelengths = []
-                            
-                            for i in range(masked_image.shape[0]):
-                                for j in range(masked_image.shape[1]):
-                                    if mask[i, j] == 255:
-                                        b, g, r = masked_image[i, j]
-                                        wavelength = rgb_to_wavelength(b, g, r)
-                                        wavelengths.append(wavelength)
-                            
-                            wavelengths = sorted(wavelengths)
-                            D10 = np.percentile(wavelengths, 10)
-                            D90 = np.percentile(wavelengths, 90)
-                            
-                            avg_velocity = ((sum(wavelengths) / len(wavelengths)) - global_min_wavelength) / (global_max_wavelength - global_min_wavelength)
-                            normalized_D10 = (D10 - global_min_wavelength) / (global_max_wavelength - global_min_wavelength)
-                            normalized_D90 = (D90 - global_min_wavelength) / (global_max_wavelength - global_min_wavelength)
-
-                            flow_vectors = detect_arrows(masked_image)
-                            if flow_vectors:
-                                avg_direction = np.mean(flow_vectors, axis=0)
-                            else:
-                                avg_direction = (0, 0)
-
-                            avg_direction_x, avg_direction_y = avg_direction[0], avg_direction[1]
-                            magnitude = math.sqrt(avg_direction_x**2 + avg_direction_y**2)
-                            
-                            angle = math.atan2(avg_direction_y, avg_direction_x)
-                            angle_degrees = math.degrees(angle)
-                            
-                            csvwriter.writerow([major_axis_length, minor_axis_length, eccentricity, normalized_D10, avg_velocity, normalized_D90, avg_direction_x, avg_direction_y, magnitude, angle, angle_degrees, test_img])
+                        csvwriter.writerow([major_axis_length, minor_axis_length, eccentricity, Length, Width, CircularED, Aspect_Ratio, Circularity, Chords, Feret_diam, Roundness, Sphericity, psum, test_img])
