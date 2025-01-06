@@ -42,7 +42,7 @@ def upload_data_to_bucket():
     upload_start_time = datetime.now()
     time_offset = timedelta(hours=2)
     timestamp = (datetime.now() + time_offset).strftime("%Y%m%d_%H%M%S")
-    archive_path = f"gs:// uw-com-vision/Archive/{timestamp}/"
+    archive_path = f"gs://uw-com-vision/Archive/{timestamp}/"
 
     # Check and upload .png files
     if any(fname.endswith('.png') for fname in os.listdir('/home/deamoon_uw_nn/')):
