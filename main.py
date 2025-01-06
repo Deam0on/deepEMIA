@@ -42,7 +42,7 @@ def upload_data_to_bucket():
     upload_start_time = datetime.now()
     time_offset = timedelta(hours=2)
     timestamp = (datetime.now() + time_offset).strftime("%Y%m%d_%H%M%S")
-    archive_path = f"gs://nn-uct/Archive/{timestamp}/"
+    archive_path = f"gs:// uw-com-vision/Archive/{timestamp}/"
 
     # Check and upload .png files
     if any(fname.endswith('.png') for fname in os.listdir('/home/deamoon_uw_nn/')):
@@ -141,7 +141,7 @@ def main():
 
     args = parser.parse_args()
 
-    os.system("gsutil -m cp -r gs://nn-uct/dataset_info.json /home/deamoon_uw_nn/uw-com-vision")
+    os.system("gsutil -m cp -r gs:// uw-com-vision/dataset_info.json /home/deamoon_uw_nn/uw-com-vision")
 
     img_dir = os.path.join("/home/deamoon_uw_nn/DATASET", args.dataset_name)
     output_dir = "/home/deamoon_uw_nn/split_dir"
