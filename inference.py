@@ -100,7 +100,7 @@ class CustomTrainer(DefaultTrainer):
     def build_train_loader(cls, cfg):
         return build_detection_train_loader(cfg, mapper=custom_mapper)
 
-def get_image_folder_path(base_path='/home/hladekf/DATASET/INFERENCE/'):
+def get_image_folder_path(base_path='/home/deamoon_uw_nn/DATASET/INFERENCE/'):
     """
     Determines the path to the folder containing images for inference.
 
@@ -461,10 +461,10 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
     Returns:
     - None
     """
-    dataset_info = read_dataset_info('/home/hladekf/uw-com-vision/dataset_info.json')
+    dataset_info = read_dataset_info('/home/deamoon_uw_nn/uw-com-vision/dataset_info.json')
     register_datasets(dataset_info, dataset_name)
     
-    trained_model_paths = get_trained_model_paths("/home/hladekf/split_dir")
+    trained_model_paths = get_trained_model_paths("/home/deamoon_uw_nn/split_dir")
     selected_model_dataset = dataset_name  # User-selected model
     predictor = choose_and_use_model(trained_model_paths, selected_model_dataset, threshold)
     
@@ -520,32 +520,30 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                 # Use canny edge detection
                 edges = cv2.Canny(gray, 50, 150, apertureSize=3)
 
-                if dataset_name == 'polyhipes':
-                    reader = easyocr.Reader(['en'])
-                    result = reader.readtext(gray, detail=0, paragraph=False, contrast_ths=0.85, adjust_contrast=0.85, add_margin=0.25, width_ths=0.25, decoder='beamsearch')
-                    if result:
-                        pxum_r = result[0]
-                        psum = re.sub("[^0-9]", "", pxum_r)
-                    else:
-                        pxum_r = ''
-                        psum = '0'
+               
+                reader = easyocr.Reader(['en'])
+                result = reader.readtext(gray, detail=0, paragraph=False, contrast_ths=0.85, adjust_contrast=0.85, add_margin=0.25, width_ths=0.25, decoder='beamsearch')
+                if result:
+                    pxum_r = result[0]
+                    psum = re.sub("[^0-9]", "", pxum_r)
+                else:
+                    pxum_r = ''
+                    psum = '0'
 
-                    lines_list = []
-                    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=100, minLineLength=100, maxLineGap=1)
-        
-                    if lines is not None:
-                        for points in lines:
-                            x1, y1, x2, y2 = points[0]
-                            cv2.line(im, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                            lines_list.append([(x1, y1), (x2, y2)])
-                            scale_len = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-                            um_pix = float(psum) / scale_len
-                    else:
-                        um_pix = 1
-                        psum = '0'
+                lines_list = []
+                lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=100, minLineLength=100, maxLineGap=1)
+    
+                if lines is not None:
+                    for points in lines:
+                        x1, y1, x2, y2 = points[0]
+                        cv2.line(im, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                        lines_list.append([(x1, y1), (x2, y2)])
+                        scale_len = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+                        um_pix = float(psum) / scale_len
                 else:
                     um_pix = 1
                     psum = '0'
+                
     
                 GetInference(predictor, im, x_pred, metadata, test_img)
                 GetCounts(predictor, im, TList, PList)
