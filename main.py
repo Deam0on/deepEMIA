@@ -141,7 +141,7 @@ def main():
 
     args = parser.parse_args()
 
-    os.system(f"gsutil -m cp -r gs:// uw-com-vision/dataset_info.json /home/deamoon_uw_nn/uw-com-vision")
+    os.system(f"gsutil -m cp -r gs://uw-com-vision/dataset_info.json /home/deamoon_uw_nn/uw-com-vision")
 
     img_dir = os.path.join("/home/deamoon_uw_nn/DATASET", args.dataset_name)
     output_dir = "/home/deamoon_uw_nn/split_dir"
