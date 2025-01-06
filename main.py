@@ -26,7 +26,7 @@ def download_data_from_bucket():
     if dirpath.exists() and dirpath.is_dir():
         shutil.rmtree(dirpath)
 
-    os.system("gsutil -m cp -r gs://nn-uct/DATASET /home/deamoon_uw_nn")
+    os.system("gsutil -m cp -r gs://uw-com-vision/DATASET /home/deamoon_uw_nn")
     download_end_time = datetime.now()
 
     return (download_end_time - download_start_time).total_seconds()
