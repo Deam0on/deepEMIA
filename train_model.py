@@ -91,7 +91,7 @@ def train_on_dataset(dataset_name, output_dir):
     - output_dir: Directory to save the trained model.
     """
     # Read dataset information
-    dataset_info = read_dataset_info('/home/hladekf/uw-com-vision/dataset_info.json')
+    dataset_info = read_dataset_info('/home/deamoon_uw_nn/uw-com-vision/dataset_info.json')
     
     # Register datasets
     register_datasets(dataset_info, dataset_name)
@@ -101,7 +101,7 @@ def train_on_dataset(dataset_name, output_dir):
     print(DatasetCatalog.get(f"{dataset_name}_test"))
     
     # Path for the split file
-    split_file = os.path.join("/home/hladekf/split_dir/", f"{dataset_name}_split.json")
+    split_file = os.path.join("/home/deamoon_uw_nn/split_dir/", f"{dataset_name}_split.json")
     print(f"Split file for {dataset_name}: {split_file}")
 
     # Configuration for training
