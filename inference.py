@@ -617,6 +617,13 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                         Length = min(dimA, dimB) * um_pix
                         Width = max(dimA, dimB) * um_pix
 
+                        CircularED = np.sqrt(4 * area / np.pi) * um_pix
+                        Chords = cv2.arcLength(c, True) * um_pix
+                        Roundness = 1 / Aspect_Ratio if Aspect_Ratio != 0 else 0
+                        Sphericity = (2 * np.sqrt(np.pi * dimArea)) / dimPerimeter * um_pix
+                        Circularity = 4 * np.pi * (dimArea / (dimPerimeter) ** 2) * um_pix
+                        Feret_diam = diaFeret * um_pix
+
                         ellipse = cv2.fitEllipse(c)
                         (x, y), (major_axis, minor_axis), angle = ellipse
                         
