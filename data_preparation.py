@@ -13,8 +13,8 @@ from detectron2.config import get_cfg
 from detectron2 import model_zoo
 
 # Constant paths
-SPLIT_DIR = "/home/hladekf/split_dir/"
-CATEGORY_JSON = "/home/hladekf/uw-com-vision/dataset_info.json"
+SPLIT_DIR = "/home/deamoon_uw_nn/split_dir/"
+CATEGORY_JSON = "/home/deamoon_uw_nn/uw-com-vision/dataset_info.json"
 
 def split_dataset(img_dir, dataset_name, test_size=0.2, seed=42):
     """
