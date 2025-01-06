@@ -532,6 +532,8 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
 
                 lines_list = []
                 lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=100, minLineLength=100, maxLineGap=1)
+
+                psum = '0'
     
                 if lines is not None:
                     for points in lines:
