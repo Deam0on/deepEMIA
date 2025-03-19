@@ -1,8 +1,8 @@
 # uw-com-vision
 Detectron2 / Torchvision NN image analysis for reaserch purposes
 
-For now servers as a ToDo list
-- optuna
-- inference pull in nn
-- metrics
-- fix measurements by classes.csv
+ToDo:
+- optimize & debug
+- reduce printout, add option for full
+- allow onsite result print
+- fix time estimates
