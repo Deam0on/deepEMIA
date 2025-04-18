@@ -148,7 +148,8 @@ def train_on_dataset(dataset_name, output_dir):
     # Set the number of classes
     thing_classes = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(thing_classes)
-    cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+    # cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+    cfg.MODEL.DEVICE = "cpu"
 
     # Output directory for the dataset
     dataset_output_dir = os.path.join(output_dir, dataset_name)

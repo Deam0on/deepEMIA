@@ -264,7 +264,8 @@ def choose_and_use_model(model_paths, dataset_name, threshold):
             "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
         )
     )
-    cfg.MODEL.DEVICE = "cuda"
+    # cfg.MODEL.DEVICE = "cuda"
+    cfg.MODEL.DEVICE = "cpu"
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = threshold
 
     predictor = load_model(cfg, model_path, dataset_name)
