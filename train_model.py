@@ -1,57 +1,71 @@
 ## IMPORTS
-import os
-import time
-import json
-import shutil
-import csv
-import torch
-import cv2
-import numpy as np
-import itertools
-import pandas as pd
-import random
-from pathlib import Path
 import copy
+import csv
+import itertools
+import json
+import os
+import random
+import shutil
+import time
 from datetime import datetime, timedelta
-from matplotlib import pyplot as plt
-from PIL import Image
-from shapely.geometry import Point
-from shapely.affinity import scale, rotate
+from pathlib import Path
+
+import cv2
 import detectron2.data.transforms as T
-from detectron2.structures import BoxMode
-from detectron2.data import detection_utils as utils
-from detectron2.engine import DefaultTrainer
-from detectron2.data import build_detection_test_loader, build_detection_train_loader
-from detectron2.data import DatasetCatalog, MetadataCatalog
+import numpy as np
+import pandas as pd
+import torch
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
-from detectron2.engine import DefaultPredictor
+from detectron2.data import (
+    DatasetCatalog,
+    MetadataCatalog,
+    build_detection_test_loader,
+    build_detection_train_loader,
+)
+from detectron2.data import detection_utils as utils
+from detectron2.engine import DefaultPredictor, DefaultTrainer
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
-from skimage.measure import label
+from detectron2.structures import BoxMode
+from matplotlib import pyplot as plt
+from PIL import Image
 from scipy.ndimage import binary_fill_holes
+from shapely.affinity import rotate, scale
+from shapely.geometry import Point
+from skimage.measure import label
 from skimage.morphology import dilation, erosion
 from sklearn.model_selection import train_test_split
-from data_preparation import split_dataset
-from data_preparation import split_dataset, register_datasets, get_split_dicts
-from data_preparation import get_trained_model_paths, load_model, choose_and_use_model, read_dataset_info
+
+from data_preparation import (
+    choose_and_use_model,
+    get_split_dicts,
+    get_trained_model_paths,
+    load_model,
+    read_dataset_info,
+    register_datasets,
+    split_dataset,
+)
 
 # Constant paths
 SPLIT_DIR = Path.home() / "split_dir"
 CATEGORY_JSON = Path.home() / "uw-com-vision" / "dataset_info.json"
 
+
 def custom_mapper(dataset_dicts):
     """
     Custom data mapper function for Detectron2. Applies various transformations to the image and annotations.
-    
+
     Parameters:
     - dataset_dicts: Dictionary containing image and annotation data.
-    
+
     Returns:
     - dataset_dicts: Updated dictionary with transformed image and annotations.
     """
-    dataset_dicts = copy.deepcopy(dataset_dicts)  # It will be modified by the code below
+    dataset_dicts = copy.deepcopy(
+        dataset_dicts
+    )  # It will be modified by the code below
     image = utils.read_image(dataset_dicts["file_name"], format="BGR")
-    
+
     transform_list = [
         T.Resize((800, 800)),
         T.RandomBrightness(0.8, 1.8),
@@ -76,16 +90,19 @@ def custom_mapper(dataset_dicts):
     # Create instances from annotations
     instances = utils.annotations_to_instances(annos, image.shape[:2])
     dataset_dicts["instances"] = utils.filter_empty_instances(instances)
-    
+
     return dataset_dicts
+
 
 class CustomTrainer(DefaultTrainer):
     """
     Custom trainer class extending Detectron2's DefaultTrainer to use a custom data mapper.
     """
+
     @classmethod
     def build_train_loader(cls, cfg):
         return build_detection_train_loader(cfg, mapper=custom_mapper)
+
 
 def train_on_dataset(dataset_name, output_dir):
     """
@@ -97,25 +114,31 @@ def train_on_dataset(dataset_name, output_dir):
     """
     # Read dataset information
     dataset_info = read_dataset_info(CATEGORY_JSON)
-    
+
     # Register datasets
     register_datasets(dataset_info, dataset_name)
 
     # Debug prints for verification
     print(DatasetCatalog.get(f"{dataset_name}_train"))
     print(DatasetCatalog.get(f"{dataset_name}_test"))
-    
+
     # Path for the split file
     split_file = os.path.join(SPLIT_DIR, f"{dataset_name}_split.json")
     print(f"Split file for {dataset_name}: {split_file}")
 
     # Configuration for training
     cfg = get_cfg()
-    cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"))
+    cfg.merge_from_file(
+        model_zoo.get_config_file(
+            "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
+        )
+    )
     cfg.DATASETS.TRAIN = (f"{dataset_name}_train",)
     cfg.DATASETS.TEST = (f"{dataset_name}_test",)
     cfg.DATALOADER.NUM_WORKERS = 2
-    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml")
+    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
+        "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
+    )
     cfg.SOLVER.IMS_PER_BATCH = 8
     cfg.SOLVER.BASE_LR = 0.00025
     cfg.SOLVER.MAX_ITER = 1000

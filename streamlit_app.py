@@ -1,16 +1,17 @@
-import streamlit as st
-import subprocess
-import os
 import json
-from google.cloud import storage
-from datetime import datetime, timedelta
-from google.api_core import page_iterator
-from io import BytesIO
-from PIL import Image
+import os
+import subprocess
 import time
 import zipfile
-from tempfile import TemporaryDirectory
+from datetime import datetime, timedelta
+from io import BytesIO
 from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import streamlit as st
+from google.api_core import page_iterator
+from google.cloud import storage
+from PIL import Image
 
 # Add these lines at the beginning of the script
 ADMIN_PASSWORD = "deamoon_uw_nn"
@@ -20,11 +21,12 @@ MAIN_SCRIPT_PATH = Path.home() / "uw-com-vision" / "main.py"
 ETA_FILE = Path.home() / "uw-com-vision" / "eta_data.json"
 
 # GCS bucket details
-GCS_BUCKET_NAME = 'nn-uct'
-GCS_DATASET_FOLDER = 'DATASET'
-GCS_INFERENCE_FOLDER = 'DATASET/INFERENCE'
-GCS_ARCHIVE_FOLDER = 'Archive'
-GCS_DATASET_INFO_PATH = 'dataset_info.json'
+GCS_BUCKET_NAME = "nn-uct"
+GCS_DATASET_FOLDER = "DATASET"
+GCS_INFERENCE_FOLDER = "DATASET/INFERENCE"
+GCS_ARCHIVE_FOLDER = "Archive"
+GCS_DATASET_INFO_PATH = "dataset_info.json"
+
 
 def create_zip_from_gcs(bucket_name, folder, zip_name="archive.zip"):
     """
@@ -41,18 +43,23 @@ def create_zip_from_gcs(bucket_name, folder, zip_name="archive.zip"):
     client = storage.Client()
     bucket = client.bucket(bucket_name)
     blobs = bucket.list_blobs(prefix=folder)
-    
+
     with TemporaryDirectory() as tempdir:
         zip_path = os.path.join(tempdir, zip_name)
-        with zipfile.ZipFile(zip_path, 'w') as zipf:
+        with zipfile.ZipFile(zip_path, "w") as zipf:
             for blob in blobs:
-                if blob.name.endswith('.png') or blob.name.endswith('results_x_pred_1.csv') or blob.name.endswith('results_x_pred_0.csv'):
+                if (
+                    blob.name.endswith(".png")
+                    or blob.name.endswith("results_x_pred_1.csv")
+                    or blob.name.endswith("results_x_pred_0.csv")
+                ):
                     file_path = os.path.join(tempdir, os.path.basename(blob.name))
                     blob.download_to_filename(file_path)
                     zipf.write(file_path, os.path.basename(blob.name))
         with open(zip_path, "rb") as f:
             bytes_zip = f.read()
     return bytes_zip
+
 
 def check_password():
     """
@@ -61,6 +68,7 @@ def check_password():
     Returns:
     - bool: True if the password is correct, else False.
     """
+
     def password_entered():
         if st.session_state["password"] == ADMIN_PASSWORD:
             st.session_state["password_correct"] = True
@@ -70,7 +78,9 @@ def check_password():
 
     if "password_correct" not in st.session_state:
         # First run, show input for password
-        st.text_input("Password", type="password", on_change=password_entered, key="password")
+        st.text_input(
+            "Password", type="password", on_change=password_entered, key="password"
+        )
         return False
     elif not st.session_state["password_correct"]:
         st.error("Incorrect password")
@@ -78,8 +88,10 @@ def check_password():
     else:
         return True
 
+
 def _item_to_value(iterator, item):
     return item
+
 
 def list_directories(bucket_name, prefix):
     """
@@ -92,14 +104,10 @@ def list_directories(bucket_name, prefix):
     Returns:
     - list: List of directory paths.
     """
-    if prefix and not prefix.endswith('/'):
-        prefix += '/'
+    if prefix and not prefix.endswith("/"):
+        prefix += "/"
 
-    extra_params = {
-        "projection": "noAcl",
-        "prefix": prefix,
-        "delimiter": '/'
-    }
+    extra_params = {"projection": "noAcl", "prefix": prefix, "delimiter": "/"}
 
     gcs = storage.Client()
 
@@ -109,12 +117,13 @@ def list_directories(bucket_name, prefix):
         client=gcs,
         api_request=gcs._connection.api_request,
         path=path,
-        items_key='prefixes',
+        items_key="prefixes",
         item_to_value=_item_to_value,
         extra_params=extra_params,
     )
 
     return [x for x in iterator]
+
 
 def run_command(command):
     """
@@ -126,7 +135,9 @@ def run_command(command):
     Returns:
     - tuple: (stdout, stderr, success_flag)
     """
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    process = subprocess.Popen(
+        command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
     stdout, stderr = [], []
     while process.poll() is None:
         output = process.stdout.readline()
@@ -135,7 +146,8 @@ def run_command(command):
     process.stdout.close()
     stderr_output = process.stderr.read()
     process.stderr.close()
-    return '\n'.join(stdout), stderr_output, process.returncode == 0
+    return "\n".join(stdout), stderr_output, process.returncode == 0
+
 
 def list_png_files_in_gcs_folder(bucket_name, folder):
     """
@@ -151,7 +163,8 @@ def list_png_files_in_gcs_folder(bucket_name, folder):
     client = storage.Client()
     bucket = client.bucket(bucket_name)
     blobs = bucket.list_blobs(prefix=folder)
-    return [blob for blob in blobs if blob.name.endswith('.png')]
+    return [blob for blob in blobs if blob.name.endswith(".png")]
+
 
 def list_specific_csv_files_in_gcs_folder(bucket_name, folder):
     """
@@ -168,9 +181,12 @@ def list_specific_csv_files_in_gcs_folder(bucket_name, folder):
     bucket = client.bucket(bucket_name)
     blobs = bucket.list_blobs(prefix=folder)
     return [
-        blob for blob in blobs
-        if blob.name.endswith('results_x_pred_1.csv') or blob.name.endswith('results_x_pred_0.csv')
+        blob
+        for blob in blobs
+        if blob.name.endswith("results_x_pred_1.csv")
+        or blob.name.endswith("results_x_pred_0.csv")
     ]
+
 
 def contains_errors(stderr):
     """
@@ -182,8 +198,9 @@ def contains_errors(stderr):
     Returns:
     - bool: True if errors found, else False.
     """
-    error_keywords = ['error', 'failed', 'exception', 'traceback', 'critical']
+    error_keywords = ["error", "failed", "exception", "traceback", "critical"]
     return any(keyword in stderr.lower() for keyword in error_keywords)
+
 
 def load_dataset_names_from_gcs():
     """
@@ -195,15 +212,16 @@ def load_dataset_names_from_gcs():
     client = storage.Client()
     bucket = client.bucket(GCS_BUCKET_NAME)
     blob = bucket.blob(GCS_DATASET_INFO_PATH)
-    
+
     try:
         data = json.loads(blob.download_as_bytes())
     except Exception as e:
         st.warning(f"dataset_info.json not found. Initializing a new one.")
         data = {}
         save_dataset_names_to_gcs(data)
-    
+
     return data
+
 
 def save_dataset_names_to_gcs(data):
     """
@@ -215,8 +233,9 @@ def save_dataset_names_to_gcs(data):
     client = storage.Client()
     bucket = client.bucket(GCS_BUCKET_NAME)
     blob = bucket.blob(GCS_DATASET_INFO_PATH)
-    blob.upload_from_string(json.dumps(data, indent=2), content_type='application/json')
+    blob.upload_from_string(json.dumps(data, indent=2), content_type="application/json")
     st.write("Dataset info updated in GCS.")
+
 
 def upload_files_to_gcs(bucket_name, target_folder, files, overwrite):
     """
@@ -230,17 +249,18 @@ def upload_files_to_gcs(bucket_name, target_folder, files, overwrite):
     """
     client = storage.Client()
     bucket = client.bucket(bucket_name)
-    
+
     if overwrite:
         blobs = bucket.list_blobs(prefix=target_folder)
         for blob in blobs:
             blob.delete()
         st.write(f"Existing files in '{target_folder}' have been deleted.")
-    
+
     for file in files:
         blob = bucket.blob(f"{target_folder}/{file.name}")
         blob.upload_from_file(file)
         st.write(f"Uploaded {file.name} to {target_folder}")
+
 
 def format_and_sort_folders(folders):
     """
@@ -255,16 +275,17 @@ def format_and_sort_folders(folders):
     """
     formatted_folders = []
     for folder in folders:
-        folder = folder.rstrip('/')
+        folder = folder.rstrip("/")
         try:
-            timestamp = datetime.strptime(folder.split('/')[-1], '%Y%m%d_%H%M%S')
-            formatted_name = timestamp.strftime('%B %d, %Y %H:%M:%S')
+            timestamp = datetime.strptime(folder.split("/")[-1], "%Y%m%d_%H%M%S")
+            formatted_name = timestamp.strftime("%B %d, %Y %H:%M:%S")
             formatted_folders.append((folder, formatted_name))
         except ValueError:
             formatted_folders.append((folder, folder))
 
     formatted_folders.sort(key=lambda x: x[1], reverse=True)
     return formatted_folders
+
 
 def estimate_eta(task, num_images=0):
     """
@@ -278,17 +299,18 @@ def estimate_eta(task, num_images=0):
     - tuple: (download_eta, task_eta, upload_eta)
     """
     data = read_eta_data()
-    if task == 'inference':
-        avg_time_per_image = data.get(task, {}).get('average_time_per_image', 1)
-        buffer = data.get(task, {}).get('buffer', 1)
+    if task == "inference":
+        avg_time_per_image = data.get(task, {}).get("average_time_per_image", 1)
+        buffer = data.get(task, {}).get("buffer", 1)
         task_eta = avg_time_per_image * num_images * buffer
     else:
-        task_eta = data.get(task, {}).get('average_time', 60)
-    
-    download_eta = data.get('download', {}).get('average_time', 60)
-    upload_eta = data.get('upload', {}).get('average_time', 60)
-    
+        task_eta = data.get(task, {}).get("average_time", 60)
+
+    download_eta = data.get("download", {}).get("average_time", 60)
+    upload_eta = data.get("upload", {}).get("average_time", 60)
+
     return download_eta, task_eta, upload_eta
+
 
 def read_eta_data():
     """
@@ -298,21 +320,22 @@ def read_eta_data():
     - dict: ETA data.
     """
     if os.path.exists(ETA_FILE):
-        with open(ETA_FILE, 'r') as file:
+        with open(ETA_FILE, "r") as file:
             return json.load(file)
 
+
 # Initialize session state
-if 'show_errors' not in st.session_state:
+if "show_errors" not in st.session_state:
     st.session_state.show_errors = False
-if 'stderr' not in st.session_state:
+if "stderr" not in st.session_state:
     st.session_state.stderr = ""
-if 'folders' not in st.session_state:
+if "folders" not in st.session_state:
     st.session_state.folders = []
-if 'show_images' not in st.session_state:
+if "show_images" not in st.session_state:
     st.session_state.show_images = False
-if 'datasets' not in st.session_state:
+if "datasets" not in st.session_state:
     st.session_state.datasets = load_dataset_names_from_gcs()
-if 'confirm_delete' not in st.session_state:
+if "confirm_delete" not in st.session_state:
     st.session_state.confirm_delete = False
 
 # Streamlit interface
@@ -332,31 +355,41 @@ if check_password():
             path2 = path1
             new_classes = st.text_input("Enter classes (comma separated)")
             if st.button("Add Dataset"):
-                classes = [cls.strip() for cls in new_classes.split(',')] if new_classes else []
+                classes = (
+                    [cls.strip() for cls in new_classes.split(",")]
+                    if new_classes
+                    else []
+                )
                 if new_dataset_name and classes:
-                    st.session_state.datasets[new_dataset_name] = [path1, path2, classes]
+                    st.session_state.datasets[new_dataset_name] = [
+                        path1,
+                        path2,
+                        classes,
+                    ]
                     save_dataset_names_to_gcs(st.session_state.datasets)
                     st.success(f"Dataset '{new_dataset_name}' added.")
                 else:
                     st.warning("Please enter a valid dataset name and classes.")
-                    
+
     confirm_deletion = st.checkbox("Confirm Deletion")
     if st.button("Remove Dataset"):
         if confirm_deletion:
             del st.session_state.datasets[dataset_name]
             save_dataset_names_to_gcs(st.session_state.datasets)
             st.success(f"Dataset '{dataset_name}' deleted.")
-            st.session_state.confirm_delete = False  # Automatically uncheck after deletion
+            st.session_state.confirm_delete = (
+                False  # Automatically uncheck after deletion
+            )
             st.experimental_rerun()  # Refresh to reflect deletion
         else:
             st.warning("Please check the confirmation box to delete the dataset.")
-                
+
 # Define the task mapping
 task_mapping = {
     "inference": "MEASUREMENT",
     "evaluate": "MODEL EVALUATE",
     "prepare": "DATA PREPARATION FOR TRAINING",
-    "train": "NEW MODEL TRAINING"
+    "train": "NEW MODEL TRAINING",
 }
 
 # Change the task order and create a reverse mapping for the command
@@ -376,7 +409,7 @@ threshold = st.slider(
     max_value=1.0,
     value=0.65,
     step=0.01,
-    help="Adjust the detection threshold for the model."
+    help="Adjust the detection threshold for the model.",
 )
 
 # Update the task execution button code to handle the combined ETA
@@ -384,11 +417,11 @@ if st.button("Run Task"):
     visualize_flag = "--visualize"  # Always true
     upload_flag = "--upload"  # Always true
     download_flag = "--download"
-    
+
     # Calculate ETAs
     download_eta, task_eta, upload_eta = estimate_eta(task)
     total_eta = download_eta + task_eta + upload_eta
-    
+
     command = f"python3 {MAIN_SCRIPT_PATH} --task {task} --dataset_name {dataset_name} --threshold {threshold} {visualize_flag} {download_flag} {upload_flag}"
     st.info(f"Running: {command}")
 
@@ -408,7 +441,7 @@ if st.button("Run Task"):
                 # If task phase and the command finished, exit the loop
                 break
 
-    with st.spinner('Running task...'):
+    with st.spinner("Running task..."):
         progress_bar = st.progress(0)
         countdown_placeholder = st.empty()
         start_time = time.time()
@@ -418,7 +451,13 @@ if st.button("Run Task"):
 
         # Task Phase
         task_start_time = time.time()  # Reset start time for task phase
-        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        process = subprocess.Popen(
+            command,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
         update_progress_bar_and_countdown(task_start_time, task_eta, "Task in progress")
 
         stdout, stderr = process.communicate()
@@ -443,26 +482,29 @@ if st.button("Run Task"):
 # Conditionally show the upload section
 upload_folder_mapping = {
     f"{GCS_DATASET_FOLDER}/{dataset_name}": "TRAINING DATA",
-    GCS_INFERENCE_FOLDER: "MEASUREMENT DATA"
+    GCS_INFERENCE_FOLDER: "MEASUREMENT DATA",
 }
 reverse_upload_folder_mapping = {v: k for k, v in upload_folder_mapping.items()}
 
 if use_new_data:
     st.header("Upload Files to GCS")
-    upload_folder_display_names = [upload_folder_mapping[f"{GCS_DATASET_FOLDER}/{dataset_name}"], upload_folder_mapping[GCS_INFERENCE_FOLDER]]
+    upload_folder_display_names = [
+        upload_folder_mapping[f"{GCS_DATASET_FOLDER}/{dataset_name}"],
+        upload_folder_mapping[GCS_INFERENCE_FOLDER],
+    ]
     selected_upload_folder_display = st.selectbox(
-        "Select folder to upload to",
-        upload_folder_display_names
+        "Select folder to upload to", upload_folder_display_names
     )
     upload_folder = reverse_upload_folder_mapping[selected_upload_folder_display]
     overwrite = st.checkbox("Overwrite existing data in the folder")
     uploaded_files = st.file_uploader(
-        "Choose files to upload",
-        accept_multiple_files=True
+        "Choose files to upload", accept_multiple_files=True
     )
     if st.button("Upload Files") and uploaded_files:
-        with st.spinner('Uploading files...'):
-            upload_files_to_gcs(GCS_BUCKET_NAME, upload_folder, uploaded_files, overwrite)
+        with st.spinner("Uploading files..."):
+            upload_files_to_gcs(
+                GCS_BUCKET_NAME, upload_folder, uploaded_files, overwrite
+            )
         st.success("Files uploaded successfully.")
 
 # Show errors and warnings
@@ -480,7 +522,7 @@ else:
 
 # List folders in the GCS bucket
 st.header("Google Cloud Storage")
-if 'folders' not in st.session_state or not st.session_state.folders:
+if "folders" not in st.session_state or not st.session_state.folders:
     st.session_state.folders = list_directories(GCS_BUCKET_NAME, GCS_ARCHIVE_FOLDER)
 
 # Apply formatting and sorting
@@ -488,9 +530,9 @@ formatted_folders = format_and_sort_folders(st.session_state.folders)
 
 if formatted_folders:
     folder_dropdown = st.selectbox(
-        "Select Folder", 
-        formatted_folders, 
-        format_func=lambda x: x[1]  # Display the formatted name
+        "Select Folder",
+        formatted_folders,
+        format_func=lambda x: x[1],  # Display the formatted name
     )
 else:
     st.write("No folders found in the GCS bucket.")
@@ -503,8 +545,12 @@ if st.button("Show Inference Images") and st.session_state.folders:
 
 # Display images if available
 if st.session_state.show_images:
-    st.write(f"Displaying images from folder: {folder_dropdown[1]}")  # Use formatted name for display
-    image_files = list_png_files_in_gcs_folder(GCS_BUCKET_NAME, selected_folder)  # Use original name for operations
+    st.write(
+        f"Displaying images from folder: {folder_dropdown[1]}"
+    )  # Use formatted name for display
+    image_files = list_png_files_in_gcs_folder(
+        GCS_BUCKET_NAME, selected_folder
+    )  # Use original name for operations
     if image_files:
         for blob in image_files:
             img_bytes = blob.download_as_bytes()
@@ -514,28 +560,30 @@ if st.session_state.show_images:
         st.write("No images found in the selected folder.")
 
     # Button to download specific CSV files
-    csv_files = list_specific_csv_files_in_gcs_folder(GCS_BUCKET_NAME, selected_folder)  # Use original name for operations
+    csv_files = list_specific_csv_files_in_gcs_folder(
+        GCS_BUCKET_NAME, selected_folder
+    )  # Use original name for operations
     if csv_files:
         for blob in csv_files:
             csv_bytes = blob.download_as_bytes()
             csv_name = os.path.basename(blob.name)
-            if csv_name == 'results_x_pred_1.csv':
-                if dataset_name != 'hw_patterns':
-                    download_name = 'results_pores.csv'
+            if csv_name == "results_x_pred_1.csv":
+                if dataset_name != "hw_patterns":
+                    download_name = "results_pores.csv"
                 else:
-                    download_name = 'results_cyclones.csv'
-            elif csv_name == 'results_x_pred_0.csv':
-                if dataset_name != 'hw_patterns':
-                    download_name = 'results_throats.csv'
+                    download_name = "results_cyclones.csv"
+            elif csv_name == "results_x_pred_0.csv":
+                if dataset_name != "hw_patterns":
+                    download_name = "results_throats.csv"
                 else:
-                    download_name = 'results_flows.csv'
+                    download_name = "results_flows.csv"
             else:
                 continue  # Skip files that don't match the specific names
             st.download_button(
                 label=f"Download {download_name}",
                 data=csv_bytes,
                 file_name=download_name,
-                mime='text/csv'
+                mime="text/csv",
             )
     else:
         st.write("No specific CSV files found in the selected folder.")
@@ -547,24 +595,28 @@ if st.session_state.show_images:
             label="Download All",
             data=zip_bytes,
             file_name="inference_results.zip",
-            mime="application/zip"
+            mime="application/zip",
         )
 
 # Help and Tips Section
 st.sidebar.title("Help & Tips")
 
 st.sidebar.subheader("Tips")
-st.sidebar.write("""
+st.sidebar.write(
+    """
 - **Dataset Preparation:** Ensure your dataset is well-structured.
 - **Inference:** Use the slider to adjust the detection threshold.
 - **Uploading Files:** Use the 'Upload Files' section to add new data.
-""")
+"""
+)
 
 st.sidebar.subheader("Tutorials")
-st.sidebar.write("""
+st.sidebar.write(
+    """
     - **Step 1:** Select the task you want to run (prepare, train, evaluate, inference).
     - **Step 2:** Choose the dataset name from the dropdown.
     - **Step 3:** Adjust the detection threshold using the slider.
     - **Step 4:** Optionally, use new data from the bucket by checking the respective box.
     - **Step 5:** Click 'Run Task' to execute the selected task.
-    """)
+    """
+)

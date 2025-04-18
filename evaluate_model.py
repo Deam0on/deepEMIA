@@ -1,26 +1,39 @@
-import os
+import csv
 import json
+import os
+from pathlib import Path
+
+import detectron2.data.transforms as T
 import numpy as np
 import torch
-import detectron2.data.transforms as T
-from detectron2.structures import BoxMode
-from detectron2.data import detection_utils as utils
-from detectron2.engine import DefaultTrainer
-from detectron2.data import build_detection_test_loader, build_detection_train_loader
-from detectron2.data import DatasetCatalog, MetadataCatalog
-from detectron2.utils.visualizer import Visualizer, ColorMode
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
-from detectron2.engine import DefaultPredictor
+from detectron2.data import (
+    DatasetCatalog,
+    MetadataCatalog,
+    build_detection_test_loader,
+    build_detection_train_loader,
+)
+from detectron2.data import detection_utils as utils
+from detectron2.engine import DefaultPredictor, DefaultTrainer
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
-import csv
-from pathlib import Path
-from data_preparation import split_dataset, register_datasets, get_split_dicts
-from data_preparation import get_trained_model_paths, load_model, choose_and_use_model, read_dataset_info
+from detectron2.structures import BoxMode
+from detectron2.utils.visualizer import ColorMode, Visualizer
+
+from data_preparation import (
+    choose_and_use_model,
+    get_split_dicts,
+    get_trained_model_paths,
+    load_model,
+    read_dataset_info,
+    register_datasets,
+    split_dataset,
+)
 
 # Constant paths
 SPLIT_DIR = Path.home() / "split_dir"
 CATEGORY_JSON = Path.home() / "uw-com-vision" / "dataset_info.json"
+
 
 def evaluate_model(dataset_name, output_dir, visualize=False):
     """
@@ -39,22 +52,22 @@ def evaluate_model(dataset_name, output_dir, visualize=False):
 
     # Register the datasets
     register_datasets(dataset_info, dataset_name)
-    
+
     # Get paths to trained models
     trained_model_paths = get_trained_model_paths(SPLIT_DIR)
 
     # Set detection threshold
     threshold = 0.45
-    
+
     # Choose and load the model
     predictor = choose_and_use_model(trained_model_paths, dataset_name, threshold)
-    
+
     # Initialize configuration
     cfg = get_cfg()
 
     # Set up COCO evaluator
     evaluator = COCOEvaluator(f"{dataset_name}_test", cfg, False, output_dir=output_dir)
-    
+
     # Ensure no cached data is used
     coco_format_cache = os.path.join(SPLIT_DIR, f"{dataset_name}_test_coco_format.json")
     if os.path.exists(coco_format_cache):
@@ -70,18 +83,19 @@ def evaluate_model(dataset_name, output_dir, visualize=False):
     # Save metrics to CSV
     csv_path = os.path.join(output_dir, "metrics.csv")
     os.makedirs(output_dir, exist_ok=True)
-    with open(csv_path, mode='w', newline='') as csv_file:
-        fieldnames = ['metric', 'value']
+    with open(csv_path, mode="w", newline="") as csv_file:
+        fieldnames = ["metric", "value"]
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         writer.writeheader()
         for key, value in metrics.items():
-            writer.writerow({'metric': key, 'value': value})
-    
+            writer.writerow({"metric": key, "value": value})
+
     print(f"Metrics saved to {csv_path}")
 
     # Visualize predictions if requested
     if visualize:
         visualize_predictions(predictor, dataset_name, output_dir)
+
 
 def visualize_predictions(predictor, dataset_name, output_dir):
     """
