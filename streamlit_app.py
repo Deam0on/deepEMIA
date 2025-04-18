@@ -14,7 +14,7 @@ from google.cloud import storage
 from PIL import Image
 
 # Add these lines at the beginning of the script
-ADMIN_PASSWORD = "deamoon_uw_nn"
+ADMIN_PASSWORD = "admin"
 
 # Absolute path to main.py
 MAIN_SCRIPT_PATH = Path.home() / "uw-com-vision" / "main.py"
