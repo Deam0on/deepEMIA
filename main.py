@@ -11,8 +11,11 @@ from inference import run_inference
 
 from setuptools._vendor.packaging.version import Version as LooseVersion
 
-
-ETA_FILE = '/home/deamoon_uw_nn/uw-com-vision/eta_data.json'
+# Constant paths
+SPLIT_DIR = Path.home() / "split_dir"
+CATEGORY_JSON = Path.home() / "uw-com-vision" / "dataset_info.json"
+ETA_FILE = Path.home() / "uw-com-vision" / "eta_data.json"
+local_dataset_path = Path.home()
 
 def download_data_from_bucket():
     """
@@ -22,11 +25,11 @@ def download_data_from_bucket():
     - float: Time taken to download data in seconds.
     """
     download_start_time = datetime.now()
-    dirpath = Path('/home/deamoon_uw_nn') / 'DATASET'
+    dirpath = Path.home() / 'DATASET'
     if dirpath.exists() and dirpath.is_dir():
         shutil.rmtree(dirpath)
 
-    os.system("gsutil -m cp -r gs://uw-com-vision/DATASET /home/deamoon_uw_nn")
+    os.system(f"gsutil -m cp -r gs://uw-com-vision/DATASET {local_dataset_path}")
     download_end_time = datetime.now()
 
     return (download_end_time - download_start_time).total_seconds()
@@ -44,17 +47,21 @@ def upload_data_to_bucket():
     timestamp = (datetime.now() + time_offset).strftime("%Y%m%d_%H%M%S")
     archive_path = f"gs://uw-com-vision/Archive/{timestamp}/"
 
+
     # Check and upload .png files
-    if any(fname.endswith('.png') for fname in os.listdir('/home/deamoon_uw_nn/')):
-        os.system(f"gsutil -m cp -r /home/deamoon_uw_nn/*.png {archive_path}")
+    if any(fname.endswith('.png') for fname in os.listdir({local_dataset_path})):
+        local_path = Path.home() / "*.png"
+        os.system(f"gsutil -m cp -r {local_path} {archive_path}")
 
     # Check and upload .csv files
-    if any(fname.endswith('.csv') for fname in os.listdir('/home/deamoon_uw_nn/')):
-        os.system(f"gsutil -m cp -r /home/deamoon_uw_nn/*.csv {archive_path}")
+    if any(fname.endswith('.csv') for fname in os.listdir({local_dataset_path})):
+        local_path = Path.home() / "*.csv"
+        os.system(f"gsutil -m cp -r {local_path} {archive_path}")
 
     # Check and upload files in the output directory
-    if os.path.exists('/home/deamoon_uw_nn/output/') and os.listdir('/home/deamoon_uw_nn/output/'):
-        os.system(f"gsutil -m cp -r /home/deamoon_uw_nn/output/ {archive_path}")
+    if os.path.exists({local_dataset_path} / "output") and os.listdir({local_dataset_path} / "output"):
+        local_path = Path.home() / "output/*"
+        os.system(f"gsutil -m cp -r {local_path} {archive_path}")
 
     upload_end_time = datetime.now()
     return (upload_end_time - upload_start_time).total_seconds()
@@ -140,11 +147,12 @@ def main():
     )
 
     args = parser.parse_args()
+    
+    local_path = Path.home() / "uw-com-vision"
+    os.system(f"gsutil -m cp -r gs://uw-com-vision/dataset_info.json {local_path}")
 
-    os.system(f"gsutil -m cp -r gs://uw-com-vision/dataset_info.json /home/deamoon_uw_nn/uw-com-vision")
-
-    img_dir = os.path.join("/home/deamoon_uw_nn/DATASET", args.dataset_name)
-    output_dir = "/home/deamoon_uw_nn/split_dir"
+    img_dir = os.path.join(local_dataset_path / "DATASET", args.dataset_name)
+    output_dir = SPLIT_DIR
 
     total_start_time = datetime.now()
     download_time_taken = 0

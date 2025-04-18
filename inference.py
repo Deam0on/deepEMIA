@@ -30,6 +30,7 @@ from matplotlib import pyplot as plt
 from scipy.stats import norm
 from PIL import Image
 import seaborn as sns
+from pathlib import Path
 import shapely
 from math import sqrt
 from shapely.geometry import Point
@@ -57,6 +58,10 @@ import re
 from numpy import sqrt
 from data_preparation import split_dataset, register_datasets, get_split_dicts
 from data_preparation import get_trained_model_paths, load_model, choose_and_use_model, read_dataset_info
+
+# Constant paths
+SPLIT_DIR = Path.home() / "split_dir"
+CATEGORY_JSON = Path.home() / "uw-com-vision" / "dataset_info.json"
 
 def custom_mapper(dataset_dicts):
     """
@@ -101,7 +106,7 @@ class CustomTrainer(DefaultTrainer):
     def build_train_loader(cls, cfg):
         return build_detection_train_loader(cfg, mapper=custom_mapper)
 
-def get_image_folder_path(base_path='/home/deamoon_uw_nn/DATASET/INFERENCE/'):
+def get_image_folder_path(base_path=Path.home() / "DATASET" / "INFERENCE"):
     """
     Determines the path to the folder containing images for inference.
 
@@ -462,10 +467,10 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
     Returns:
     - None
     """
-    dataset_info = read_dataset_info('/home/deamoon_uw_nn/uw-com-vision/dataset_info.json')
+    dataset_info = read_dataset_info(CATEGORY_JSON )
     register_datasets(dataset_info, dataset_name)
     
-    trained_model_paths = get_trained_model_paths("/home/deamoon_uw_nn/split_dir")
+    trained_model_paths = get_trained_model_paths(SPLIT_DIR)
     selected_model_dataset = dataset_name  # User-selected model
     predictor = choose_and_use_model(trained_model_paths, selected_model_dataset, threshold)
     

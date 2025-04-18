@@ -14,8 +14,13 @@ from detectron2.config import get_cfg
 from detectron2.engine import DefaultPredictor
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
 import csv
+from pathlib import Path
 from data_preparation import split_dataset, register_datasets, get_split_dicts
 from data_preparation import get_trained_model_paths, load_model, choose_and_use_model, read_dataset_info
+
+# Constant paths
+SPLIT_DIR = Path.home() / "split_dir"
+CATEGORY_JSON = Path.home() / "uw-com-vision" / "dataset_info.json"
 
 def evaluate_model(dataset_name, output_dir, visualize=False):
     """
@@ -30,13 +35,13 @@ def evaluate_model(dataset_name, output_dir, visualize=False):
     - None
     """
     # Load dataset information
-    dataset_info = read_dataset_info('/home/deamoon_uw_nn/uw-com-vision/dataset_info.json')
+    dataset_info = read_dataset_info(CATEGORY_JSON)
 
     # Register the datasets
     register_datasets(dataset_info, dataset_name)
     
     # Get paths to trained models
-    trained_model_paths = get_trained_model_paths("/home/deamoon_uw_nn/split_dir")
+    trained_model_paths = get_trained_model_paths(SPLIT_DIR)
 
     # Set detection threshold
     threshold = 0.45
@@ -51,7 +56,7 @@ def evaluate_model(dataset_name, output_dir, visualize=False):
     evaluator = COCOEvaluator(f"{dataset_name}_test", cfg, False, output_dir=output_dir)
     
     # Ensure no cached data is used
-    coco_format_cache = os.path.join("/home/deamoon_uw_nn/split_dir", f"{dataset_name}_test_coco_format.json")
+    coco_format_cache = os.path.join(SPLIT_DIR, f"{dataset_name}_test_coco_format.json")
     if os.path.exists(coco_format_cache):
         os.remove(coco_format_cache)
 

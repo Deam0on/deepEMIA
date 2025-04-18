@@ -10,12 +10,14 @@ from PIL import Image
 import time
 import zipfile
 from tempfile import TemporaryDirectory
+from pathlib import Path
 
 # Add these lines at the beginning of the script
 ADMIN_PASSWORD = "deamoon_uw_nn"
 
 # Absolute path to main.py
-MAIN_SCRIPT_PATH = '/home/deamoon_uw_nn/uw-com-vision/main.py'
+MAIN_SCRIPT_PATH = Path.home() / "uw-com-vision" / "main.py"
+ETA_FILE = Path.home() / "uw-com-vision" / "eta_data.json"
 
 # GCS bucket details
 GCS_BUCKET_NAME = 'nn-uct'
@@ -295,7 +297,6 @@ def read_eta_data():
     Returns:
     - dict: ETA data.
     """
-    ETA_FILE = '/home/deamoon_uw_nn/uw-com-vision/eta_data.json'
     if os.path.exists(ETA_FILE):
         with open(ETA_FILE, 'r') as file:
             return json.load(file)
@@ -327,7 +328,7 @@ if check_password():
     if new_dataset:
         new_dataset_name = st.text_input("Enter new dataset name")
         if new_dataset_name:
-            path1 = f"/home/deamoon_uw_nn/DATASET/{new_dataset_name}/"
+            path1 = f"/home//DATASET/{new_dataset_name}/"
             path2 = path1
             new_classes = st.text_input("Enter classes (comma separated)")
             if st.button("Add Dataset"):

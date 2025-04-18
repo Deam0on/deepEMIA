@@ -10,6 +10,7 @@ import numpy as np
 import itertools
 import pandas as pd
 import random
+from pathlib import Path
 import copy
 from datetime import datetime, timedelta
 from matplotlib import pyplot as plt
@@ -33,6 +34,10 @@ from sklearn.model_selection import train_test_split
 from data_preparation import split_dataset
 from data_preparation import split_dataset, register_datasets, get_split_dicts
 from data_preparation import get_trained_model_paths, load_model, choose_and_use_model, read_dataset_info
+
+# Constant paths
+SPLIT_DIR = Path.home() / "split_dir"
+CATEGORY_JSON = Path.home() / "uw-com-vision" / "dataset_info.json"
 
 def custom_mapper(dataset_dicts):
     """
@@ -91,7 +96,7 @@ def train_on_dataset(dataset_name, output_dir):
     - output_dir: Directory to save the trained model.
     """
     # Read dataset information
-    dataset_info = read_dataset_info('/home/deamoon_uw_nn/uw-com-vision/dataset_info.json')
+    dataset_info = read_dataset_info(CATEGORY_JSON)
     
     # Register datasets
     register_datasets(dataset_info, dataset_name)
@@ -101,7 +106,7 @@ def train_on_dataset(dataset_name, output_dir):
     print(DatasetCatalog.get(f"{dataset_name}_test"))
     
     # Path for the split file
-    split_file = os.path.join("/home/deamoon_uw_nn/split_dir/", f"{dataset_name}_split.json")
+    split_file = os.path.join(SPLIT_DIR, f"{dataset_name}_split.json")
     print(f"Split file for {dataset_name}: {split_file}")
 
     # Configuration for training
