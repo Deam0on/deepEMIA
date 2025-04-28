@@ -10,15 +10,19 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import albumentations as A
 import cv2
 import detectron2.data.transforms as T
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn as nn
+from albumentations.pytorch import ToTensorV2
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
 from detectron2.data import (
     DatasetCatalog,
+    DatasetMapper,
     MetadataCatalog,
     build_detection_test_loader,
     build_detection_train_loader,
@@ -35,6 +39,8 @@ from shapely.geometry import Point
 from skimage.measure import label
 from skimage.morphology import dilation, erosion
 from sklearn.model_selection import train_test_split
+from torch.quantization import quantize_dynamic
+from torch.utils.data import DataLoader
 
 from data_preparation import (
     choose_and_use_model,
@@ -50,58 +56,72 @@ from data_preparation import (
 SPLIT_DIR = Path.home() / "split_dir"
 CATEGORY_JSON = Path.home() / "uw-com-vision" / "dataset_info.json"
 
+# Set dynamic threading and quantization engine
+torch.set_num_threads(os.cpu_count() // 2)
+torch.backends.quantized.engine = "qnnpack"
+
+
+def get_albumentations_transform():
+    return A.Compose(
+        [
+            A.Resize(800, 800),
+            A.RandomBrightnessContrast(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+            A.Rotate(limit=90, p=0.5),
+            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            ToTensorV2(),
+        ]
+    )
+
 
 def custom_mapper(dataset_dicts):
     """
-    Custom data mapper function for Detectron2. Applies various transformations to the image and annotations.
-
-    Parameters:
-    - dataset_dicts: Dictionary containing image and annotation data.
-
-    Returns:
-    - dataset_dicts: Updated dictionary with transformed image and annotations.
+    Custom data mapper function using Albumentations for faster CPU transforms.
     """
-    dataset_dicts = copy.deepcopy(
-        dataset_dicts
-    )  # It will be modified by the code below
-    image = utils.read_image(dataset_dicts["file_name"], format="BGR")
+    dataset_dicts = copy.deepcopy(dataset_dicts)
+    image = cv2.imread(dataset_dicts["file_name"])
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    transform_list = [
-        T.Resize((800, 800)),
-        T.RandomBrightness(0.8, 1.8),
-        T.RandomContrast(0.6, 1.3),
-        T.RandomSaturation(0.8, 1.4),
-        T.RandomRotation(angle=[90, 90]),
-        T.RandomLighting(0.7),
-        T.RandomFlip(prob=0.4, horizontal=False, vertical=True),
-    ]
+    transform = get_albumentations_transform()
+    augmented = transform(image=image)
+    image = augmented["image"]
 
-    # Apply transformations
-    image, transforms = T.apply_transform_gens(transform_list, image)
-    dataset_dicts["image"] = torch.as_tensor(image.transpose(2, 0, 1).astype("float32"))
+    dataset_dicts["image"] = image
 
-    # Transform annotations
     annos = [
-        utils.transform_instance_annotations(obj, transforms, image.shape[:2])
+        utils.transform_instance_annotations(obj, None, image.shape[1:])
         for obj in dataset_dicts.pop("annotations")
         if obj.get("iscrowd", 0) == 0
     ]
 
-    # Create instances from annotations
-    instances = utils.annotations_to_instances(annos, image.shape[:2])
+    instances = utils.annotations_to_instances(annos, image.shape[1:])
     dataset_dicts["instances"] = utils.filter_empty_instances(instances)
 
     return dataset_dicts
 
 
 class CustomTrainer(DefaultTrainer):
-    """
-    Custom trainer class extending Detectron2's DefaultTrainer to use a custom data mapper.
-    """
-
     @classmethod
     def build_train_loader(cls, cfg):
-        return build_detection_train_loader(cfg, mapper=custom_mapper)
+        dataset = build_detection_train_loader(
+            cfg,
+            mapper=custom_mapper,
+            sampler=None,
+            total_batch_size=cfg.SOLVER.IMS_PER_BATCH,
+        ).dataset  # Extract the dataset only
+
+        cpu_count = os.cpu_count() or 2
+        num_workers = max(1, cpu_count // 2)
+
+        return DataLoader(
+            dataset,
+            batch_size=cfg.SOLVER.IMS_PER_BATCH,
+            shuffle=True,
+            num_workers=num_workers,
+            prefetch_factor=2,
+            pin_memory=False,
+        )
 
 
 def train_on_dataset(dataset_name, output_dir):
@@ -135,11 +155,12 @@ def train_on_dataset(dataset_name, output_dir):
     )
     cfg.DATASETS.TRAIN = (f"{dataset_name}_train",)
     cfg.DATASETS.TEST = (f"{dataset_name}_test",)
-    cfg.DATALOADER.NUM_WORKERS = 2
+    cpu_count = os.cpu_count() or 2
+    cfg.DATALOADER.NUM_WORKERS = max(1, cpu_count // 2)
     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
         "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
     )
-    cfg.SOLVER.IMS_PER_BATCH = 8
+    cfg.SOLVER.IMS_PER_BATCH = 8 if torch.cuda.is_available() else 2
     cfg.SOLVER.BASE_LR = 0.00025
     cfg.SOLVER.MAX_ITER = 1000
     cfg.SOLVER.STEPS = []
@@ -164,3 +185,11 @@ def train_on_dataset(dataset_name, output_dir):
     model_path = os.path.join(dataset_output_dir, "model_final.pth")
     torch.save(trainer.model.state_dict(), model_path)
     print(f"Model trained on {dataset_name} saved to {model_path}")
+
+    # Quantize the trained model
+    quantized_model = quantize_dynamic(trainer.model, {nn.Linear}, dtype=torch.qint8)
+
+    # Save quantized model separately
+    quantized_model_path = os.path.join(dataset_output_dir, "model_final_quantized.pth")
+    torch.save(quantized_model.state_dict(), quantized_model_path)
+    print(f"Quantized model saved to {quantized_model_path}")

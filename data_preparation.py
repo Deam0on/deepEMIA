@@ -3,10 +3,11 @@ import json
 import os
 import random
 from pathlib import Path
-import torch
+
 import numpy as np
 import shapely.affinity
 import shapely.geometry
+import torch
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
 from detectron2.data import DatasetCatalog, MetadataCatalog
@@ -264,7 +265,7 @@ def choose_and_use_model(model_paths, dataset_name, threshold):
             "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
         )
     )
-    
+
     cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = threshold
 
