@@ -101,26 +101,36 @@ def custom_mapper(dataset_dicts):
     image = augmented["image"]
 
     new_annos = []
+    height, width = image.shape[1:]
+    bitmask_list = []
+
     for i, (box, label) in enumerate(zip(augmented["bboxes"], augmented["category_ids"])):
+        segm = segmentations[i]
+        try:
+            mask = polygons_to_bitmask(segm, height, width)
+            bitmask_list.append(mask)
+        except Exception:
+            continue  # skip invalid segmentation
+
         new_annos.append({
             "bbox": list(box),
             "bbox_mode": BoxMode.XYXY_ABS,
             "category_id": label,
-            "segmentation": segmentations[i]  # unchanged
+            "segmentation": segm
         })
 
     dataset_dicts["image"] = image
 
     instances = utils.annotations_to_instances(new_annos, image.shape[1:])
-    instances = utils.filter_empty_instances(instances)
 
-    if len(instances) > 0:
-        masks = []
-        height, width = image.shape[1:]  # CHW
-        for segm in segmentations:
-            mask = polygons_to_bitmask(segm, height, width)
-            masks.append(mask)
-        instances.gt_masks = BitMasks(torch.stack([torch.tensor(m) for m in masks]))
+    if len(instances) != len(bitmask_list):
+        # Make lengths match
+        min_len = min(len(instances), len(bitmask_list))
+        instances = instances[:min_len]
+        bitmask_list = bitmask_list[:min_len]
+
+    instances.gt_masks = BitMasks(torch.stack([torch.tensor(m) for m in bitmask_list]))
+    instances = utils.filter_empty_instances(instances)
 
     dataset_dicts["instances"] = instances
     return dataset_dicts
