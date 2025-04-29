@@ -39,7 +39,6 @@ from shapely.geometry import Point
 from skimage.measure import label
 from skimage.morphology import dilation, erosion
 from sklearn.model_selection import train_test_split
-
 from torch.quantization import quantize_dynamic
 from torch.utils.data import DataLoader
 
@@ -63,17 +62,14 @@ torch.backends.quantized.engine = "qnnpack"
 
 
 def get_albumentations_transform():
-    return A.Compose(
-        [
-            A.Resize(800, 800),
-            A.RandomBrightnessContrast(p=0.5),
-            A.HorizontalFlip(p=0.5),
-            A.VerticalFlip(p=0.5),
-            A.Rotate(limit=90, p=0.5),
-            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-            ToTensorV2(),
-        ]
-    )
+    return A.Compose([
+        A.Resize(640, 640),
+        A.HorizontalFlip(p=0.5),
+        A.VerticalFlip(p=0.5),
+        A.RandomBrightnessContrast(p=0.3),
+        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        ToTensorV2()
+    ])
 
 
 def custom_mapper(dataset_dicts):
@@ -104,30 +100,13 @@ def custom_mapper(dataset_dicts):
 
 class CustomTrainer(DefaultTrainer):
     @classmethod
-    def build_model(cls, cfg):
-        model = super().build_model(cfg)
-
-        if torch.cuda.is_available() or torch.backends.mps.is_available():
-            # GPU users benefit more from compilation
-            model = torch.compile(model, mode="default")
-        else:
-            # CPU path: still helpful on PyTorch 2+
-            try:
-                model = torch.compile(model, mode="reduce-overhead")
-            except Exception as e:
-                print(f"torch.compile failed: {e} -- continuing without compile.")
-
-        return model
-
-    @classmethod
     def build_train_loader(cls, cfg):
-        # already adjusted in earlier step with custom DataLoader
         dataset = build_detection_train_loader(
             cfg,
             mapper=custom_mapper,
             sampler=None,
             total_batch_size=cfg.SOLVER.IMS_PER_BATCH,
-        ).dataset
+        ).dataset  # Extract the dataset only
 
         cpu_count = os.cpu_count() or 2
         num_workers = max(1, cpu_count // 2)
@@ -157,8 +136,10 @@ def train_on_dataset(dataset_name, output_dir):
     register_datasets(dataset_info, dataset_name)
 
     # Debug prints for verification
-    print(DatasetCatalog.get(f"{dataset_name}_train"))
-    print(DatasetCatalog.get(f"{dataset_name}_test"))
+    # print(DatasetCatalog.get(f"{dataset_name}_train"))
+    # print(DatasetCatalog.get(f"{dataset_name}_test"))
+    print(f"[INFO] {dataset_name}_train: {len(DatasetCatalog.get(f'{dataset_name}_train'))} samples")
+    print(f"[INFO] {dataset_name}_test: {len(DatasetCatalog.get(f'{dataset_name}_test'))} samples")
 
     # Path for the split file
     split_file = os.path.join(SPLIT_DIR, f"{dataset_name}_split.json")
@@ -179,20 +160,18 @@ def train_on_dataset(dataset_name, output_dir):
         "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
     )
     cfg.SOLVER.IMS_PER_BATCH = 8 if torch.cuda.is_available() else 2
-    cfg.SOLVER.OPTIMIZER = "Adam"
-    cfg.SOLVER.BASE_LR = 0.0001
-    cfg.SOLVER.MAX_ITER = 1000
+    cfg.SOLVER.BASE_LR = 0.0001 * (cfg.SOLVER.IMS_PER_BATCH / 2)
+    num_images = len(DatasetCatalog.get(f"{dataset_name}_train"))
+    epochs = 20
+    iters_per_epoch = num_images // cfg.SOLVER.IMS_PER_BATCH
+    cfg.SOLVER.MAX_ITER = epochs * iters_per_epoch
     cfg.SOLVER.STEPS = []
-    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 32
-    cfg.SOLVER.LR_SCHEDULER_NAME = "WarmupCosineLR"
-    cfg.SOLVER.WARMUP_ITERS = 100
-    cfg.SOLVER.WARMUP_FACTOR = 0.001
+    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 16 * cfg.SOLVER.IMS_PER_BATCH
 
     # Set the number of classes
     thing_classes = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(thing_classes)
     cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-    cfg.TEST.EVAL_PERIOD = 0
 
     # Output directory for the dataset
     dataset_output_dir = os.path.join(output_dir, dataset_name)
@@ -200,9 +179,8 @@ def train_on_dataset(dataset_name, output_dir):
     cfg.OUTPUT_DIR = dataset_output_dir
 
     # Initialize and start the trainer
-    trainer = DefaultTrainer(cfg)
+    trainer = CustomTrainer(cfg)
     trainer.resume_or_load(resume=False)
-
     trainer.train()
 
     # Save the trained model
