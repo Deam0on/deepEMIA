@@ -75,19 +75,19 @@ def get_albumentations_transform():
 
 def custom_mapper(dataset_dicts):
     """
-    Custom data mapper using Albumentations to apply image and bbox transforms.
+    Albumentations-based mapper for image, bbox, and mask transforms.
     """
     dataset_dicts = copy.deepcopy(dataset_dicts)
 
-    # Load and prepare image
     image = cv2.imread(dataset_dicts["file_name"])
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    # Extract bboxes and labels from annotations
-    bboxes = [obj["bbox"] for obj in dataset_dicts["annotations"]]
-    labels = [obj["category_id"] for obj in dataset_dicts["annotations"]]
+    # Extract bounding boxes, labels, and segmentations
+    bboxes = [anno["bbox"] for anno in dataset_dicts["annotations"]]
+    labels = [anno["category_id"] for anno in dataset_dicts["annotations"]]
+    segmentations = [anno["segmentation"] for anno in dataset_dicts["annotations"]]
 
-    # Apply Albumentations transforms including bbox transforms
+    # Apply Albumentations (note: Albumentations doesn't transform masks in polygon format)
     transform = A.Compose(
         [
             A.Resize(800, 800),
@@ -101,22 +101,31 @@ def custom_mapper(dataset_dicts):
         bbox_params=A.BboxParams(format="pascal_voc", label_fields=["category_ids"])
     )
 
+    # Albumentations can't transform polygon masks -> assumes resized image instead
     augmented = transform(image=image, bboxes=bboxes, category_ids=labels)
     image = augmented["image"]
 
-    # Rebuild annotations after bbox transform
     new_annos = []
-    for box, label in zip(augmented["bboxes"], augmented["category_ids"]):
+    for i, (box, label) in enumerate(zip(augmented["bboxes"], augmented["category_ids"])):
         new_annos.append({
             "bbox": list(box),
             "bbox_mode": BoxMode.XYXY_ABS,
-            "category_id": label
+            "category_id": label,
+            "segmentation": segmentations[i]  # pass unchanged
         })
 
     dataset_dicts["image"] = image
-    dataset_dicts["instances"] = utils.annotations_to_instances(new_annos, image.shape[1:])
-    dataset_dicts["instances"] = utils.filter_empty_instances(dataset_dicts["instances"])
 
+    # Convert annotations to Detectron2 Instances
+    instances = utils.annotations_to_instances(new_annos, image.shape[1:])
+
+    # Convert polygons to BitMasks
+    if len(instances) > 0:
+        masks = [obj["segmentation"] for obj in new_annos]
+        instances.gt_masks = utils.annotations_to_bitmask(masks, image.shape[1:])
+        instances = utils.filter_empty_instances(instances)
+
+    dataset_dicts["instances"] = instances
     return dataset_dicts
 
 
