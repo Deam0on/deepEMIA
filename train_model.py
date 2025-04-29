@@ -39,6 +39,7 @@ from shapely.geometry import Point
 from skimage.measure import label
 from skimage.morphology import dilation, erosion
 from sklearn.model_selection import train_test_split
+from torch.autocast import cpu
 from torch.quantization import quantize_dynamic
 from torch.utils.data import DataLoader
 
@@ -103,13 +104,30 @@ def custom_mapper(dataset_dicts):
 
 class CustomTrainer(DefaultTrainer):
     @classmethod
+    def build_model(cls, cfg):
+        model = super().build_model(cfg)
+
+        if torch.cuda.is_available() or torch.backends.mps.is_available():
+            # GPU users benefit more from compilation
+            model = torch.compile(model, mode="default")
+        else:
+            # CPU path: still helpful on PyTorch 2+
+            try:
+                model = torch.compile(model, mode="reduce-overhead")
+            except Exception as e:
+                print(f"torch.compile failed: {e} -- continuing without compile.")
+
+        return model
+
+    @classmethod
     def build_train_loader(cls, cfg):
+        # already adjusted in earlier step with custom DataLoader
         dataset = build_detection_train_loader(
             cfg,
             mapper=custom_mapper,
             sampler=None,
             total_batch_size=cfg.SOLVER.IMS_PER_BATCH,
-        ).dataset  # Extract the dataset only
+        ).dataset
 
         cpu_count = os.cpu_count() or 2
         num_workers = max(1, cpu_count // 2)
@@ -161,15 +179,20 @@ def train_on_dataset(dataset_name, output_dir):
         "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
     )
     cfg.SOLVER.IMS_PER_BATCH = 8 if torch.cuda.is_available() else 2
-    cfg.SOLVER.BASE_LR = 0.00025
+    cfg.SOLVER.OPTIMIZER = "Adam"
+    cfg.SOLVER.BASE_LR = 0.0001
     cfg.SOLVER.MAX_ITER = 1000
     cfg.SOLVER.STEPS = []
     cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 32
+    cfg.SOLVER.LR_SCHEDULER_NAME = "WarmupCosineLR"
+    cfg.SOLVER.WARMUP_ITERS = 100
+    cfg.SOLVER.WARMUP_FACTOR = 0.001
 
     # Set the number of classes
     thing_classes = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(thing_classes)
     cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+    cfg.TEST.EVAL_PERIOD = 0
 
     # Output directory for the dataset
     dataset_output_dir = os.path.join(output_dir, dataset_name)
@@ -179,7 +202,9 @@ def train_on_dataset(dataset_name, output_dir):
     # Initialize and start the trainer
     trainer = DefaultTrainer(cfg)
     trainer.resume_or_load(resume=False)
-    trainer.train()
+
+    with cpu(dtype=torch.bfloat16):
+        trainer.train()
 
     # Save the trained model
     model_path = os.path.join(dataset_output_dir, "model_final.pth")

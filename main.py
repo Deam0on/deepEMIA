@@ -51,18 +51,18 @@ def upload_data_to_bucket():
     archive_path = f"gs://nn-uct/Archive/{timestamp}/"
 
     # Check and upload .png files
-    if any(fname.endswith(".png") for fname in os.listdir({local_dataset_path})):
+    if any(fname.endswith(".png") for fname in os.listdir(local_dataset_path)):
         local_path = Path.home() / "*.png"
         os.system(f"gsutil -m cp -r {local_path} {archive_path}")
 
     # Check and upload .csv files
-    if any(fname.endswith(".csv") for fname in os.listdir({local_dataset_path})):
+    if any(fname.endswith(".csv") for fname in os.listdir(local_dataset_path)):
         local_path = Path.home() / "*.csv"
         os.system(f"gsutil -m cp -r {local_path} {archive_path}")
 
     # Check and upload files in the output directory
-    if os.path.exists({local_dataset_path} / "output") and os.listdir(
-        {local_dataset_path} / "output"
+    if os.path.exists(local_dataset_path / "output") and os.listdir(
+        local_dataset_path / "output"
     ):
         local_path = Path.home() / "output/*"
         os.system(f"gsutil -m cp -r {local_path} {archive_path}")
