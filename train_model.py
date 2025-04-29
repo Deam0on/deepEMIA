@@ -41,7 +41,7 @@ from skimage.morphology import dilation, erosion
 from sklearn.model_selection import train_test_split
 from torch.quantization import quantize_dynamic
 from torch.utils.data import DataLoader
-
+from detectron2.structures import BoxMode
 from data_preparation import (
     choose_and_use_model,
     get_split_dicts,
@@ -63,37 +63,59 @@ torch.backends.quantized.engine = "qnnpack"
 
 def get_albumentations_transform():
     return A.Compose([
-        A.Resize(640, 640),
+        A.Resize(800, 800),
         A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.5),
-        A.RandomBrightnessContrast(p=0.3),
-        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-        ToTensorV2()
-    ])
+        A.RandomBrightnessContrast(p=0.5),
+        A.Rotate(limit=90, p=0.5),
+        A.Normalize(...),
+        ToTensorV2(),
+    ], bbox_params=A.BboxParams(format="pascal_voc", label_fields=["category_ids"]))
+
 
 
 def custom_mapper(dataset_dicts):
     """
-    Custom data mapper function using Albumentations for faster CPU transforms.
+    Custom data mapper using Albumentations to apply image and bbox transforms.
     """
     dataset_dicts = copy.deepcopy(dataset_dicts)
+
+    # Load and prepare image
     image = cv2.imread(dataset_dicts["file_name"])
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    transform = get_albumentations_transform()
-    augmented = transform(image=image)
+    # Extract bboxes and labels from annotations
+    bboxes = [obj["bbox"] for obj in dataset_dicts["annotations"]]
+    labels = [obj["category_id"] for obj in dataset_dicts["annotations"]]
+
+    # Apply Albumentations transforms including bbox transforms
+    transform = A.Compose(
+        [
+            A.Resize(800, 800),
+            A.RandomBrightnessContrast(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+            A.Rotate(limit=90, p=0.5),
+            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            ToTensorV2(),
+        ],
+        bbox_params=A.BboxParams(format="pascal_voc", label_fields=["category_ids"])
+    )
+
+    augmented = transform(image=image, bboxes=bboxes, category_ids=labels)
     image = augmented["image"]
 
+    # Rebuild annotations after bbox transform
+    new_annos = []
+    for box, label in zip(augmented["bboxes"], augmented["category_ids"]):
+        new_annos.append({
+            "bbox": list(box),
+            "bbox_mode": BoxMode.XYXY_ABS,
+            "category_id": label
+        })
+
     dataset_dicts["image"] = image
-
-    annos = [
-        utils.transform_instance_annotations(obj, None, image.shape[1:])
-        for obj in dataset_dicts.pop("annotations")
-        if obj.get("iscrowd", 0) == 0
-    ]
-
-    instances = utils.annotations_to_instances(annos, image.shape[1:])
-    dataset_dicts["instances"] = utils.filter_empty_instances(instances)
+    dataset_dicts["instances"] = utils.annotations_to_instances(new_annos, image.shape[1:])
+    dataset_dicts["instances"] = utils.filter_empty_instances(dataset_dicts["instances"])
 
     return dataset_dicts
 
