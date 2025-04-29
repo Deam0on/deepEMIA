@@ -39,7 +39,7 @@ from shapely.geometry import Point
 from skimage.measure import label
 from skimage.morphology import dilation, erosion
 from sklearn.model_selection import train_test_split
-from torch.autocast import cpu
+
 from torch.quantization import quantize_dynamic
 from torch.utils.data import DataLoader
 
@@ -203,8 +203,7 @@ def train_on_dataset(dataset_name, output_dir):
     trainer = DefaultTrainer(cfg)
     trainer.resume_or_load(resume=False)
 
-    with cpu(dtype=torch.bfloat16):
-        trainer.train()
+    trainer.train()
 
     # Save the trained model
     model_path = os.path.join(dataset_output_dir, "model_final.pth")
