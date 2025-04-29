@@ -101,23 +101,9 @@ def custom_mapper(dataset_dicts):
 class CustomTrainer(DefaultTrainer):
     @classmethod
     def build_train_loader(cls, cfg):
-        dataset = build_detection_train_loader(
+        return build_detection_train_loader(
             cfg,
-            mapper=custom_mapper,
-            sampler=None,
-            total_batch_size=cfg.SOLVER.IMS_PER_BATCH,
-        ).dataset  # Extract the dataset only
-
-        cpu_count = os.cpu_count() or 2
-        num_workers = max(1, cpu_count // 2)
-
-        return DataLoader(
-            dataset,
-            batch_size=cfg.SOLVER.IMS_PER_BATCH,
-            shuffle=True,
-            num_workers=num_workers,
-            prefetch_factor=2,
-            pin_memory=False,
+            mapper=custom_mapper
         )
 
 
