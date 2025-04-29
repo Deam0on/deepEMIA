@@ -27,7 +27,6 @@ from detectron2.data import (
     build_detection_test_loader,
     build_detection_train_loader,
 )
-from detectron2.structures import BitMasks, polygons_to_bitmask
 from detectron2.data import detection_utils as utils
 from detectron2.engine import DefaultPredictor, DefaultTrainer
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
@@ -42,7 +41,7 @@ from skimage.morphology import dilation, erosion
 from sklearn.model_selection import train_test_split
 from torch.quantization import quantize_dynamic
 from torch.utils.data import DataLoader
-from detectron2.structures import BoxMode
+
 from data_preparation import (
     choose_and_use_model,
     get_split_dicts,
@@ -63,28 +62,7 @@ torch.backends.quantized.engine = "qnnpack"
 
 
 def get_albumentations_transform():
-    return A.Compose([
-        A.Resize(800, 800),
-        A.HorizontalFlip(p=0.5),
-        A.RandomBrightnessContrast(p=0.5),
-        A.Rotate(limit=90, p=0.5),
-        A.Normalize(...),
-        ToTensorV2(),
-    ], bbox_params=A.BboxParams(format="pascal_voc", label_fields=["category_ids"]))
-
-
-
-def custom_mapper(dataset_dicts):
-    dataset_dicts = copy.deepcopy(dataset_dicts)
-
-    image = cv2.imread(dataset_dicts["file_name"])
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-    bboxes = [anno["bbox"] for anno in dataset_dicts["annotations"]]
-    labels = [anno["category_id"] for anno in dataset_dicts["annotations"]]
-    segmentations = [anno["segmentation"] for anno in dataset_dicts["annotations"]]
-
-    transform = A.Compose(
+    return A.Compose(
         [
             A.Resize(800, 800),
             A.RandomBrightnessContrast(p=0.5),
@@ -93,55 +71,56 @@ def custom_mapper(dataset_dicts):
             A.Rotate(limit=90, p=0.5),
             A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
             ToTensorV2(),
-        ],
-        bbox_params=A.BboxParams(format="pascal_voc", label_fields=["category_ids"])
+        ]
     )
 
-    augmented = transform(image=image, bboxes=bboxes, category_ids=labels)
+
+def custom_mapper(dataset_dicts):
+    """
+    Custom data mapper function using Albumentations for faster CPU transforms.
+    """
+    dataset_dicts = copy.deepcopy(dataset_dicts)
+    image = cv2.imread(dataset_dicts["file_name"])
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    transform = get_albumentations_transform()
+    augmented = transform(image=image)
     image = augmented["image"]
-
-    new_annos = []
-    height, width = image.shape[1:]
-    bitmask_list = []
-
-    for i, (box, label) in enumerate(zip(augmented["bboxes"], augmented["category_ids"])):
-        segm = segmentations[i]
-        try:
-            mask = polygons_to_bitmask(segm, height, width)
-            bitmask_list.append(mask)
-        except Exception:
-            continue  # skip invalid segmentation
-
-        new_annos.append({
-            "bbox": list(box),
-            "bbox_mode": BoxMode.XYXY_ABS,
-            "category_id": label,
-            "segmentation": segm
-        })
 
     dataset_dicts["image"] = image
 
-    instances = utils.annotations_to_instances(new_annos, image.shape[1:])
+    annos = [
+        utils.transform_instance_annotations(obj, None, image.shape[1:])
+        for obj in dataset_dicts.pop("annotations")
+        if obj.get("iscrowd", 0) == 0
+    ]
 
-    if len(instances) != len(bitmask_list):
-        # Make lengths match
-        min_len = min(len(instances), len(bitmask_list))
-        instances = instances[:min_len]
-        bitmask_list = bitmask_list[:min_len]
+    instances = utils.annotations_to_instances(annos, image.shape[1:])
+    dataset_dicts["instances"] = utils.filter_empty_instances(instances)
 
-    instances.gt_masks = BitMasks(torch.stack([torch.tensor(m) for m in bitmask_list]))
-    instances = utils.filter_empty_instances(instances)
-
-    dataset_dicts["instances"] = instances
     return dataset_dicts
 
 
 class CustomTrainer(DefaultTrainer):
     @classmethod
     def build_train_loader(cls, cfg):
-        return build_detection_train_loader(
+        dataset = build_detection_train_loader(
             cfg,
-            mapper=custom_mapper
+            mapper=custom_mapper,
+            sampler=None,
+            total_batch_size=cfg.SOLVER.IMS_PER_BATCH,
+        ).dataset  # Extract the dataset only
+
+        cpu_count = os.cpu_count() or 2
+        num_workers = max(1, cpu_count // 2)
+
+        return DataLoader(
+            dataset,
+            batch_size=cfg.SOLVER.IMS_PER_BATCH,
+            shuffle=True,
+            num_workers=num_workers,
+            prefetch_factor=2,
+            pin_memory=False,
         )
 
 
@@ -160,10 +139,8 @@ def train_on_dataset(dataset_name, output_dir):
     register_datasets(dataset_info, dataset_name)
 
     # Debug prints for verification
-    # print(DatasetCatalog.get(f"{dataset_name}_train"))
-    # print(DatasetCatalog.get(f"{dataset_name}_test"))
-    print(f"[INFO] {dataset_name}_train: {len(DatasetCatalog.get(f'{dataset_name}_train'))} samples")
-    print(f"[INFO] {dataset_name}_test: {len(DatasetCatalog.get(f'{dataset_name}_test'))} samples")
+    print(DatasetCatalog.get(f"{dataset_name}_train"))
+    print(DatasetCatalog.get(f"{dataset_name}_test"))
 
     # Path for the split file
     split_file = os.path.join(SPLIT_DIR, f"{dataset_name}_split.json")
@@ -186,9 +163,7 @@ def train_on_dataset(dataset_name, output_dir):
     cfg.SOLVER.IMS_PER_BATCH = 8 if torch.cuda.is_available() else 2
     cfg.SOLVER.BASE_LR = 0.0001 * (cfg.SOLVER.IMS_PER_BATCH / 2)
     num_images = len(DatasetCatalog.get(f"{dataset_name}_train"))
-    epochs = 20
-    iters_per_epoch = num_images // cfg.SOLVER.IMS_PER_BATCH
-    cfg.SOLVER.MAX_ITER = epochs * iters_per_epoch
+    cfg.SOLVER.MAX_ITER = max(1000, int(100 * num_images))
     cfg.SOLVER.STEPS = []
     cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 16 * cfg.SOLVER.IMS_PER_BATCH
 
@@ -203,9 +178,12 @@ def train_on_dataset(dataset_name, output_dir):
     cfg.OUTPUT_DIR = dataset_output_dir
 
     # Initialize and start the trainer
-    trainer = CustomTrainer(cfg)
+    trainer = DefaultTrainer(cfg)
     trainer.resume_or_load(resume=False)
     trainer.train()
+
+    evaluator = COCOEvaluator(f"{dataset_name}_test", output_dir=dataset_output_dir)
+    trainer.test(evaluators=[evaluator])
 
     # Save the trained model
     model_path = os.path.join(dataset_output_dir, "model_final.pth")
