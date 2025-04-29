@@ -27,6 +27,7 @@ from detectron2.data import (
     build_detection_test_loader,
     build_detection_train_loader,
 )
+from detectron2.structures import BitMasks, polygons_to_bitmask
 from detectron2.data import detection_utils as utils
 from detectron2.engine import DefaultPredictor, DefaultTrainer
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
@@ -74,20 +75,15 @@ def get_albumentations_transform():
 
 
 def custom_mapper(dataset_dicts):
-    """
-    Albumentations-based mapper for image, bbox, and mask transforms.
-    """
     dataset_dicts = copy.deepcopy(dataset_dicts)
 
     image = cv2.imread(dataset_dicts["file_name"])
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    # Extract bounding boxes, labels, and segmentations
     bboxes = [anno["bbox"] for anno in dataset_dicts["annotations"]]
     labels = [anno["category_id"] for anno in dataset_dicts["annotations"]]
     segmentations = [anno["segmentation"] for anno in dataset_dicts["annotations"]]
 
-    # Apply Albumentations (note: Albumentations doesn't transform masks in polygon format)
     transform = A.Compose(
         [
             A.Resize(800, 800),
@@ -101,7 +97,6 @@ def custom_mapper(dataset_dicts):
         bbox_params=A.BboxParams(format="pascal_voc", label_fields=["category_ids"])
     )
 
-    # Albumentations can't transform polygon masks -> assumes resized image instead
     augmented = transform(image=image, bboxes=bboxes, category_ids=labels)
     image = augmented["image"]
 
@@ -111,19 +106,21 @@ def custom_mapper(dataset_dicts):
             "bbox": list(box),
             "bbox_mode": BoxMode.XYXY_ABS,
             "category_id": label,
-            "segmentation": segmentations[i]  # pass unchanged
+            "segmentation": segmentations[i]  # unchanged
         })
 
     dataset_dicts["image"] = image
 
-    # Convert annotations to Detectron2 Instances
     instances = utils.annotations_to_instances(new_annos, image.shape[1:])
+    instances = utils.filter_empty_instances(instances)
 
-    # Convert polygons to BitMasks
     if len(instances) > 0:
-        masks = [obj["segmentation"] for obj in new_annos]
-        instances.gt_masks = utils.annotations_to_bitmask(masks, image.shape[1:])
-        instances = utils.filter_empty_instances(instances)
+        masks = []
+        height, width = image.shape[1:]  # CHW
+        for segm in segmentations:
+            mask = polygons_to_bitmask(segm, height, width)
+            masks.append(mask)
+        instances.gt_masks = BitMasks(torch.stack([torch.tensor(m) for m in masks]))
 
     dataset_dicts["instances"] = instances
     return dataset_dicts
