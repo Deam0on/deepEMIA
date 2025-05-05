@@ -185,6 +185,10 @@ def train_on_dataset(dataset_name, output_dir):
     os.makedirs(dataset_output_dir, exist_ok=True)
     cfg.OUTPUT_DIR = dataset_output_dir
 
+    # Set multithreading limits
+    torch.set_num_threads(cpu_count)
+    torch.set_num_interop_threads(max(1, cpu_count // 2))
+
     # Initialize and start the trainer
     trainer = DefaultTrainer(cfg)
     trainer.resume_or_load(resume=False)
