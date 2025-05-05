@@ -156,7 +156,7 @@ def train_on_dataset(dataset_name, output_dir):
 
     # Scale batch size by CPU capability
     cfg.SOLVER.IMS_PER_BATCH = 8 if use_cuda else min(8, max(2, cpu_count // 12))
-    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 64 if not use_cuda else 128
+    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 16 if not use_cuda else 32
 
     # Adaptive learning rate
     cfg.SOLVER.BASE_LR = 0.0001 * (cfg.SOLVER.IMS_PER_BATCH / 2)
