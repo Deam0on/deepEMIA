@@ -128,89 +128,80 @@ class CustomTrainer(DefaultTrainer):
 
 def train_on_dataset(dataset_name, output_dir):
     """
-    Trains a model on the specified dataset with tuned hyperparameters for CPU-based training.
+    Trains a model on the specified dataset.
+
+    Parameters:
+    - dataset_name: Name of the dataset.
+    - output_dir: Directory to save the trained model.
     """
+    # Read dataset information
     dataset_info = read_dataset_info(CATEGORY_JSON)
+
+    # Register datasets
     register_datasets(dataset_info, dataset_name)
 
+    # Debug prints for verification
     print(DatasetCatalog.get(f"{dataset_name}_train"))
     print(DatasetCatalog.get(f"{dataset_name}_test"))
 
+    # Path for the split file
     split_file = os.path.join(SPLIT_DIR, f"{dataset_name}_split.json")
     print(f"Split file for {dataset_name}: {split_file}")
 
+    # Configuration for training
     cfg = get_cfg()
     cfg.merge_from_file(
-        model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml")
+        model_zoo.get_config_file(
+            "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
+        )
     )
-
     cfg.DATASETS.TRAIN = (f"{dataset_name}_train",)
     cfg.DATASETS.TEST = (f"{dataset_name}_test",)
-
     cpu_count = os.cpu_count() or 2
     cfg.DATALOADER.NUM_WORKERS = max(1, cpu_count // 2)
-
-    # Use CPU if CUDA is not available
-    use_cuda = torch.cuda.is_available()
-    cfg.MODEL.DEVICE = "cuda" if use_cuda else "cpu"
-
-    # Scale batch size by CPU capability
-    cfg.SOLVER.IMS_PER_BATCH = 8 if use_cuda else min(8, max(2, cpu_count // 12))
-    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 16 if not use_cuda else 32
-
-    # Adaptive learning rate
+    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
+        "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
+    )
+    cfg.SOLVER.IMS_PER_BATCH = 8 if torch.cuda.is_available() else 2
     cfg.SOLVER.BASE_LR = 0.0001 * (cfg.SOLVER.IMS_PER_BATCH / 2)
-
-    # Number of training images
     num_images = len(DatasetCatalog.get(f"{dataset_name}_train"))
-
+    # cfg.SOLVER.MAX_ITER = max(1000, int(100 * num_images))
     # MAX_ITER logic
+    num_images = len(DatasetCatalog.get(f"{dataset_name}_train"))
     if num_images < 100:
         cfg.SOLVER.MAX_ITER = max(1000, int(200 * num_images))
     else:
         cfg.SOLVER.MAX_ITER = max(1000, int(100 * num_images))
+    cfg.SOLVER.STEPS = []
+    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 16 * cfg.SOLVER.IMS_PER_BATCH
 
-    # LR scheduler and warmup for better CPU stability
-    cfg.SOLVER.STEPS = [int(0.6 * cfg.SOLVER.MAX_ITER), int(0.8 * cfg.SOLVER.MAX_ITER)]
-    cfg.SOLVER.GAMMA = 0.1
-    cfg.SOLVER.WARMUP_ITERS = 1000
-    cfg.SOLVER.WARMUP_FACTOR = 1e-3
+    # Set the number of classes
+    thing_classes = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
+    cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(thing_classes)
+    cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # Enable periodic eval + checkpointing
-    cfg.TEST.EVAL_PERIOD = 100
-    cfg.SOLVER.CHECKPOINT_PERIOD = 200
-
-    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
-        "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
-    )
-
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(MetadataCatalog.get(f"{dataset_name}_train").thing_classes)
-
+    # Output directory for the dataset
     dataset_output_dir = os.path.join(output_dir, dataset_name)
     os.makedirs(dataset_output_dir, exist_ok=True)
     cfg.OUTPUT_DIR = dataset_output_dir
 
-    # Set multithreading limits
-    torch.set_num_threads(cpu_count)
-    torch.set_num_interop_threads(max(1, cpu_count // 2))
-
-    print(f"Threads: {cpu_count} | Batch: {cfg.SOLVER.IMS_PER_BATCH} | "
-      f"LR: {cfg.SOLVER.BASE_LR} | MAX_ITER: {cfg.SOLVER.MAX_ITER}")
-
+    # Initialize and start the trainer
     trainer = DefaultTrainer(cfg)
     trainer.resume_or_load(resume=False)
     trainer.train()
 
-    # Evaluation
     evaluator = COCOEvaluator(f"{dataset_name}_test", output_dir=dataset_output_dir)
     DefaultTrainer.test(cfg, trainer.model, evaluators=[evaluator])
 
-    # Save final and quantized model
-    final_path = os.path.join(dataset_output_dir, "model_final.pth")
-    torch.save(trainer.model.state_dict(), final_path)
-    print(f"Model saved to {final_path}")
+    # Save the trained model
+    model_path = os.path.join(dataset_output_dir, "model_final.pth")
+    torch.save(trainer.model.state_dict(), model_path)
+    print(f"Model trained on {dataset_name} saved to {model_path}")
 
+    # Quantize the trained model
     quantized_model = quantize_dynamic(trainer.model, {nn.Linear}, dtype=torch.qint8)
-    quantized_path = os.path.join(dataset_output_dir, "model_final_quantized.pth")
-    torch.save(quantized_model.state_dict(), quantized_path)
-    print(f"Quantized model saved to {quantized_path}")
+
+    # Save quantized model separately
+    quantized_model_path = os.path.join(dataset_output_dir, "model_final_quantized.pth")
+    torch.save(quantized_model.state_dict(), quantized_model_path)
+    print(f"Quantized model saved to {quantized_model_path}")
