@@ -172,7 +172,14 @@ def train_on_dataset(dataset_name, output_dir):
         cfg.SOLVER.MAX_ITER = max(1000, int(200 * num_images))
     else:
         cfg.SOLVER.MAX_ITER = max(1000, int(100 * num_images))
-    cfg.SOLVER.STEPS = []
+    #cfg.SOLVER.STEPS = []
+
+    # LR scheduler and warmup for better CPU stability
+    cfg.SOLVER.STEPS = [int(0.6 * cfg.SOLVER.MAX_ITER), int(0.8 * cfg.SOLVER.MAX_ITER)]
+    cfg.SOLVER.GAMMA = 0.1
+    cfg.SOLVER.WARMUP_ITERS = 1000
+    cfg.SOLVER.WARMUP_FACTOR = 1e-3
+    
     cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 16 * cfg.SOLVER.IMS_PER_BATCH
 
     # Set the number of classes
@@ -184,10 +191,6 @@ def train_on_dataset(dataset_name, output_dir):
     dataset_output_dir = os.path.join(output_dir, dataset_name)
     os.makedirs(dataset_output_dir, exist_ok=True)
     cfg.OUTPUT_DIR = dataset_output_dir
-
-    # Set multithreading limits
-    torch.set_num_threads(cpu_count)
-    torch.set_num_interop_threads(max(1, cpu_count // 2))
 
     # Initialize and start the trainer
     trainer = DefaultTrainer(cfg)
