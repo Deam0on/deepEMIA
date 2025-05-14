@@ -223,54 +223,84 @@ def get_trained_model_paths(base_dir):
     return model_paths
 
 
-def load_model(cfg, model_path, dataset_name):
+def load_model(cfg, model_path, dataset_name, is_quantized=False):
     """
-    Loads a trained model with a specific configuration.
+    Loads a trained model. If quantized fails, fallback must be handled by caller.
 
     Parameters:
-    - cfg: Configuration object for the model.
-    - model_path: Path to the trained model.
-    - dataset_name: Name of the dataset for metadata.
+    - cfg: Detectron2 config object.
+    - model_path: Path to model file.
+    - dataset_name: Dataset name for metadata.
+    - is_quantized: Whether the model is quantized (full object, not state_dict).
 
     Returns:
-    - predictor: Loaded predictor object.
+    - predictor: callable predictor object.
     """
+    if is_quantized:
+        try:
+            model = torch.load(model_path, map_location=cfg.MODEL.DEVICE)
+            model.eval()
+
+            class QuantizedPredictor:
+                def __init__(self, model):
+                    self.model = model
+
+                def __call__(self, image):
+                    with torch.no_grad():
+                        image_tensor = torch.from_numpy(image).permute(2, 0, 1).float().unsqueeze(0)
+                        image_tensor = image_tensor.to(next(self.model.parameters()).device)
+                        inputs = [{"image": image_tensor[0], "height": image.shape[0], "width": image.shape[1]}]
+                        return self.model(inputs)[0]
+
+            return QuantizedPredictor(model)
+
+        except Exception as e:
+            print(f"Failed to load or initialize quantized model: {e}")
+            raise RuntimeError("Quantized model load failed.")
+
+    # fallback or standard model
     cfg.MODEL.WEIGHTS = model_path
     thing_classes = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(thing_classes)
-    predictor = DefaultPredictor(cfg)
-    return predictor
+    return DefaultPredictor(cfg)
+
 
 
 def choose_and_use_model(model_paths, dataset_name, threshold):
     """
-    Selects and loads a trained model for a specific dataset.
+    Selects and loads trained model. Prefers quantized on CPU if available, but falls back to standard if any error.
 
     Parameters:
-    - model_paths: Dictionary of model paths.
-    - dataset_name: Name of the dataset for which the model is used.
-    - threshold: Detection threshold for ROI heads score.
+    - model_paths: Dictionary of dataset_name -> model_final.pth path.
+    - dataset_name: Target dataset.
+    - threshold: Detection threshold.
 
     Returns:
-    - predictor: Predictor object for inference.
+    - predictor: Callable model predictor.
     """
     if dataset_name not in model_paths:
         print(f"No model found for dataset {dataset_name}")
         return None
 
-    model_path = model_paths[dataset_name]
-    cfg = get_cfg()
-    cfg.merge_from_file(
-        model_zoo.get_config_file(
-            "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
-        )
-    )
+    base_model_path = model_paths[dataset_name]
+    quantized_model_path = base_model_path.replace("model_final.pth", "model_final_quantized.pth")
 
+    cfg = get_cfg()
+    cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"))
     cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = threshold
 
-    predictor = load_model(cfg, model_path, dataset_name)
-    return predictor
+    # try quantized if no CUDA and file exists
+    if not torch.cuda.is_available() and os.path.exists(quantized_model_path):
+        try:
+            print(f"Trying quantized model for {dataset_name}")
+            return load_model(cfg, quantized_model_path, dataset_name, is_quantized=True)
+        except RuntimeError:
+            print(f"Falling back to standard model for {dataset_name}")
+
+    print(f"Using standard model for {dataset_name}")
+    return load_model(cfg, base_model_path, dataset_name, is_quantized=False)
+
 
 
 def read_dataset_info(file_path):

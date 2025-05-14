@@ -210,5 +210,5 @@ def train_on_dataset(dataset_name, output_dir):
 
     # Save quantized model separately
     quantized_model_path = os.path.join(dataset_output_dir, "model_final_quantized.pth")
-    torch.save(quantized_model.state_dict(), quantized_model_path)
+    torch.save(quantized_model, quantized_model_path)
     print(f"Quantized model saved to {quantized_model_path}")
