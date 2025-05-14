@@ -223,7 +223,7 @@ def get_trained_model_paths(base_dir):
     return model_paths
 
 
-def load_model(cfg, model_path, dataset_name):
+def load_model(cfg, model_path, dataset_name, is_quantized=False):
     """
     Loads a trained model with a specific configuration.
 
@@ -231,16 +231,33 @@ def load_model(cfg, model_path, dataset_name):
     - cfg: Configuration object for the model.
     - model_path: Path to the trained model.
     - dataset_name: Name of the dataset for metadata.
+    - is_quantized: Whether the model is quantized TorchScript.
 
     Returns:
     - predictor: Loaded predictor object.
     """
+    if is_quantized:
+        model = torch.jit.load(model_path, map_location=cfg.MODEL.DEVICE)
+        model.eval()
+
+        class QuantizedPredictor:
+            def __init__(self, model):
+                self.model = model
+
+            def __call__(self, image):
+                # Convert to tensor and normalize shape (B, C, H, W)
+                with torch.no_grad():
+                    image_tensor = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).float().to(cfg.MODEL.DEVICE)
+                    outputs = self.model(image_tensor)[0]
+                return outputs
+
+        return QuantizedPredictor(model)
+
+    # Normal Detectron2 path
     cfg.MODEL.WEIGHTS = model_path
     thing_classes = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(thing_classes)
-    predictor = DefaultPredictor(cfg)
-    return predictor
-
+    return DefaultPredictor(cfg)
 
 def choose_and_use_model(model_paths, dataset_name, threshold):
     """
@@ -261,21 +278,21 @@ def choose_and_use_model(model_paths, dataset_name, threshold):
 
     base_model_path = model_paths[dataset_name]
     quantized_model_path = base_model_path.replace("model_final.pth", "model_final_quantized.pth")
-
-    # Prefer quantized if no CUDA and file exists
     use_quantized = not torch.cuda.is_available() and os.path.exists(quantized_model_path)
     model_path = quantized_model_path if use_quantized else base_model_path
 
     cfg = get_cfg()
-    cfg.merge_from_file(
-        model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml")
-    )
-
+    cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"))
     cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = threshold
 
-    predictor = load_model(cfg, model_path, dataset_name)
+    predictor = load_model(cfg, model_path, dataset_name, is_quantized=use_quantized)
+    if use_quantized:
+        print(f"Loaded quantized TorchScript model: {model_path}")
+    else:
+        print(f"Loaded standard model: {model_path}")
     return predictor
+
 
 
 def read_dataset_info(file_path):
