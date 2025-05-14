@@ -14,9 +14,6 @@ from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.engine import DefaultPredictor
 from detectron2.structures import BoxMode
 from sklearn.model_selection import train_test_split
-from detectron2.checkpoint import DetectionCheckpointer
-from detectron2.modeling import build_model
-
 
 # Constant paths
 SPLIT_DIR = Path.home() / "split_dir"
@@ -226,41 +223,28 @@ def get_trained_model_paths(base_dir):
     return model_paths
 
 
-def load_model(cfg, model_path, dataset_name, is_quantized=False):
-    if is_quantized:
-        # Build standard Detectron2 model
-        model = build_model(cfg)
-        DetectionCheckpointer(model).load(model_path)
-        model.eval()
+def load_model(cfg, model_path, dataset_name):
+    """
+    Loads a trained model with a specific configuration.
 
-        class QuantizedPredictor:
-            def __init__(self, model):
-                self.model = model
-                self.cfg = cfg
+    Parameters:
+    - cfg: Configuration object for the model.
+    - model_path: Path to the trained model.
+    - dataset_name: Name of the dataset for metadata.
 
-            def __call__(self, image):
-                with torch.no_grad():
-                    image_tensor = torch.from_numpy(image).permute(2, 0, 1).float()
-                    inputs = [{"image": image_tensor, "height": image.shape[0], "width": image.shape[1]}]
-                    return self.model(inputs)[0]
-
-        return QuantizedPredictor(model)
-
-    # Default
+    Returns:
+    - predictor: Loaded predictor object.
+    """
     cfg.MODEL.WEIGHTS = model_path
     thing_classes = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(thing_classes)
-    return DefaultPredictor(cfg)
-    # Normal Detectron2 path
-    cfg.MODEL.WEIGHTS = model_path
-    thing_classes = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(thing_classes)
-    return DefaultPredictor(cfg)
+    predictor = DefaultPredictor(cfg)
+    return predictor
+
 
 def choose_and_use_model(model_paths, dataset_name, threshold):
     """
     Selects and loads a trained model for a specific dataset.
-    Prefers quantized model if available and CUDA is not available.
 
     Parameters:
     - model_paths: Dictionary of model paths.
@@ -274,23 +258,19 @@ def choose_and_use_model(model_paths, dataset_name, threshold):
         print(f"No model found for dataset {dataset_name}")
         return None
 
-    base_model_path = model_paths[dataset_name]
-    quantized_model_path = base_model_path.replace("model_final.pth", "model_final_quantized.pth")
-    use_quantized = not torch.cuda.is_available() and os.path.exists(quantized_model_path)
-    model_path = quantized_model_path if use_quantized else base_model_path
-
+    model_path = model_paths[dataset_name]
     cfg = get_cfg()
-    cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"))
+    cfg.merge_from_file(
+        model_zoo.get_config_file(
+            "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
+        )
+    )
+
     cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = threshold
 
-    predictor = load_model(cfg, model_path, dataset_name, is_quantized=use_quantized)
-    if use_quantized:
-        print(f"Loaded quantized TorchScript model: {model_path}")
-    else:
-        print(f"Loaded standard model: {model_path}")
+    predictor = load_model(cfg, model_path, dataset_name)
     return predictor
-
 
 
 def read_dataset_info(file_path):
