@@ -245,6 +245,7 @@ def load_model(cfg, model_path, dataset_name):
 def choose_and_use_model(model_paths, dataset_name, threshold):
     """
     Selects and loads a trained model for a specific dataset.
+    Prefers quantized model if available and CUDA is not available.
 
     Parameters:
     - model_paths: Dictionary of model paths.
@@ -258,12 +259,16 @@ def choose_and_use_model(model_paths, dataset_name, threshold):
         print(f"No model found for dataset {dataset_name}")
         return None
 
-    model_path = model_paths[dataset_name]
+    base_model_path = model_paths[dataset_name]
+    quantized_model_path = base_model_path.replace("model_final.pth", "model_final_quantized.pth")
+
+    # Prefer quantized if no CUDA and file exists
+    use_quantized = not torch.cuda.is_available() and os.path.exists(quantized_model_path)
+    model_path = quantized_model_path if use_quantized else base_model_path
+
     cfg = get_cfg()
     cfg.merge_from_file(
-        model_zoo.get_config_file(
-            "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
-        )
+        model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml")
     )
 
     cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
