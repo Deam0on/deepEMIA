@@ -27,6 +27,7 @@ from detectron2.data import (
     build_detection_test_loader,
     build_detection_train_loader,
 )
+from torch.quantization import prepare_qat, convert, get_default_qat_qconfig
 from detectron2.data import detection_utils as utils
 from detectron2.engine import DefaultPredictor, DefaultTrainer
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
@@ -192,6 +193,7 @@ def train_on_dataset(dataset_name, output_dir):
     os.makedirs(dataset_output_dir, exist_ok=True)
     cfg.OUTPUT_DIR = dataset_output_dir
 
+    # Phase 1: standard training
     # Initialize and start the trainer
     trainer = DefaultTrainer(cfg)
     trainer.resume_or_load(resume=False)
@@ -205,10 +207,23 @@ def train_on_dataset(dataset_name, output_dir):
     torch.save(trainer.model.state_dict(), model_path)
     print(f"Model trained on {dataset_name} saved to {model_path}")
 
-    # Quantize the trained model
-    quantized_model = quantize_dynamic(trainer.model, {nn.Linear}, dtype=torch.qint8)
+    # # Quantize the trained model
+    # # Phase 2: QAT fine-tuning
+    # trainer.model.qconfig = torch.quantization.get_default_qat_qconfig("qnnpack")
+    # model_qat = torch.quantization.prepare_qat(trainer.model)
+    # model_qat.train()
 
-    # Save quantized model separately
-    quantized_model_path = os.path.join(dataset_output_dir, "model_final_quantized.pth")
-    torch.save(quantized_model, quantized_model_path)
-    print(f"Quantized model saved to {quantized_model_path}")
+    # # Update config for QAT fine-tuning
+    # cfg.SOLVER.MAX_ITER = 500  # short fine-tuning
+    # cfg.SOLVER.BASE_LR = cfg.SOLVER.BASE_LR * 0.1  # smaller LR
+
+    # trainer.model = model_qat
+    # trainer.resume_or_load(resume=False)
+    # trainer.train()
+
+    # # Convert to quantized model
+    # quantized_model_path = os.path.join(dataset_output_dir, "model_final_quantized.pth")
+    # model_quantized = torch.quantization.convert(model_qat.eval())
+    # torch.save(model_quantized, quantized_model_path)
+
+    # print(f"Quantized model saved to {quantized_model_path}")
