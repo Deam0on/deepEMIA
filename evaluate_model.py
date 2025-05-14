@@ -94,7 +94,8 @@ def evaluate_model(dataset_name, output_dir, visualize=False):
 
     # Visualize predictions if requested
     if visualize:
-        visualize_predictions(predictor, dataset_name, output_dir)
+        # visualize_predictions(predictor, dataset_name, output_dir)
+        pass
 
 
 def visualize_predictions(predictor, dataset_name, output_dir):
