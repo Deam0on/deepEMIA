@@ -14,6 +14,9 @@ from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.engine import DefaultPredictor
 from detectron2.structures import BoxMode
 from sklearn.model_selection import train_test_split
+from detectron2.checkpoint import DetectionCheckpointer
+from detectron2.modeling import build_model
+
 
 # Constant paths
 SPLIT_DIR = Path.home() / "split_dir"
@@ -224,35 +227,30 @@ def get_trained_model_paths(base_dir):
 
 
 def load_model(cfg, model_path, dataset_name, is_quantized=False):
-    """
-    Loads a trained model with a specific configuration.
-
-    Parameters:
-    - cfg: Configuration object for the model.
-    - model_path: Path to the trained model.
-    - dataset_name: Name of the dataset for metadata.
-    - is_quantized: Whether the model is quantized TorchScript.
-
-    Returns:
-    - predictor: Loaded predictor object.
-    """
     if is_quantized:
-        model = torch.jit.load(model_path, map_location=cfg.MODEL.DEVICE)
+        # Build standard Detectron2 model
+        model = build_model(cfg)
+        DetectionCheckpointer(model).load(model_path)
         model.eval()
 
         class QuantizedPredictor:
             def __init__(self, model):
                 self.model = model
+                self.cfg = cfg
 
             def __call__(self, image):
-                # Convert to tensor and normalize shape (B, C, H, W)
                 with torch.no_grad():
-                    image_tensor = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).float().to(cfg.MODEL.DEVICE)
-                    outputs = self.model(image_tensor)[0]
-                return outputs
+                    image_tensor = torch.from_numpy(image).permute(2, 0, 1).float()
+                    inputs = [{"image": image_tensor, "height": image.shape[0], "width": image.shape[1]}]
+                    return self.model(inputs)[0]
 
         return QuantizedPredictor(model)
 
+    # Default
+    cfg.MODEL.WEIGHTS = model_path
+    thing_classes = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
+    cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(thing_classes)
+    return DefaultPredictor(cfg)
     # Normal Detectron2 path
     cfg.MODEL.WEIGHTS = model_path
     thing_classes = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
