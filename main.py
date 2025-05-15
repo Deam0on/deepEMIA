@@ -4,6 +4,7 @@ import os
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
+import yaml
 
 from setuptools._vendor.packaging.version import Version as LooseVersion
 
@@ -18,6 +19,11 @@ CATEGORY_JSON = Path.home() / "uw-com-vision" / "dataset_info.json"
 ETA_FILE = Path.home() / "uw-com-vision" / "eta_data.json"
 local_dataset_path = Path.home()
 
+# Load bucket name from config.yaml
+with open("config.yaml", "r") as f:
+    config = yaml.safe_load(f)
+bucket = config["bucket"]
+
 
 def download_data_from_bucket():
     """
@@ -31,7 +37,7 @@ def download_data_from_bucket():
     if dirpath.exists() and dirpath.is_dir():
         shutil.rmtree(dirpath)
 
-    os.system(f"gsutil -m cp -r gs://nn-uct/DATASET {local_dataset_path}")
+    os.system(f"gsutil -m cp -r gs://{bucket}/DATASET {local_dataset_path}")
     download_end_time = datetime.now()
 
     return (download_end_time - download_start_time).total_seconds()
@@ -48,7 +54,7 @@ def upload_data_to_bucket():
     upload_start_time = datetime.now()
     time_offset = timedelta(hours=2)
     timestamp = (datetime.now() + time_offset).strftime("%Y%m%d_%H%M%S")
-    archive_path = f"gs://nn-uct/Archive/{timestamp}/"
+    archive_path = f"gs://{bucket}/Archive/{timestamp}/"
 
     # Check and upload .png files
     if any(fname.endswith(".png") for fname in os.listdir(local_dataset_path)):
@@ -174,7 +180,7 @@ def main():
     args = parser.parse_args()
 
     local_path = Path.home() / "uw-com-vision"
-    os.system(f"gsutil -m cp -r gs://nn-uct/dataset_info.json {local_path}")
+    os.system(f"gsutil -m cp -r gs://{bucket}/dataset_info.json {local_path}")
 
     img_dir = os.path.join(local_dataset_path / "DATASET", args.dataset_name)
     output_dir = SPLIT_DIR

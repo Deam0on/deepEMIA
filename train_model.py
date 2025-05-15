@@ -207,23 +207,23 @@ def train_on_dataset(dataset_name, output_dir):
     torch.save(trainer.model.state_dict(), model_path)
     print(f"Model trained on {dataset_name} saved to {model_path}")
 
-    # # Quantize the trained model
-    # # Phase 2: QAT fine-tuning
-    # trainer.model.qconfig = torch.quantization.get_default_qat_qconfig("qnnpack")
-    # model_qat = torch.quantization.prepare_qat(trainer.model)
-    # model_qat.train()
+    # Quantize the trained model
+    # Phase 2: QAT fine-tuning
+    trainer.model.qconfig = torch.quantization.get_default_qat_qconfig("qnnpack")
+    model_qat = torch.quantization.prepare_qat(trainer.model)
+    model_qat.train()
 
-    # # Update config for QAT fine-tuning
-    # cfg.SOLVER.MAX_ITER = 500  # short fine-tuning
-    # cfg.SOLVER.BASE_LR = cfg.SOLVER.BASE_LR * 0.1  # smaller LR
+    # Update config for QAT fine-tuning
+    cfg.SOLVER.MAX_ITER = 500  # short fine-tuning
+    cfg.SOLVER.BASE_LR = cfg.SOLVER.BASE_LR * 0.1  # smaller LR
 
-    # trainer.model = model_qat
-    # trainer.resume_or_load(resume=False)
-    # trainer.train()
+    trainer.model = model_qat
+    trainer.resume_or_load(resume=False)
+    trainer.train()
 
-    # # Convert to quantized model
-    # quantized_model_path = os.path.join(dataset_output_dir, "model_final_quantized.pth")
-    # model_quantized = torch.quantization.convert(model_qat.eval())
-    # torch.save(model_quantized, quantized_model_path)
+    # Convert to quantized model
+    quantized_model_path = os.path.join(dataset_output_dir, "model_final_quantized.pth")
+    model_quantized = torch.quantization.convert(model_qat.eval())
+    torch.save(model_quantized, quantized_model_path)
 
-    # print(f"Quantized model saved to {quantized_model_path}")
+    print(f"Quantized model saved to {quantized_model_path}")
