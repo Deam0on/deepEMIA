@@ -38,7 +38,7 @@ from detectron2.engine import DefaultTrainer
 from detectron2.evaluation import COCOEvaluator
 from torch.utils.data import DataLoader
 
-from data.data_preparation import read_dataset_info, register_datasets
+from src.data.data_preparation import read_dataset_info, register_datasets
 
 # Load config once at the start of your program
 with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:

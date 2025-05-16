@@ -22,7 +22,7 @@ from detectron2.data import (DatasetCatalog, MetadataCatalog,
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
 from detectron2.utils.visualizer import Visualizer
 
-from data.data_preparation import (choose_and_use_model,
+from src.data.data_preparation import (choose_and_use_model,
                                    get_trained_model_paths, read_dataset_info,
                                    register_datasets)
 
