@@ -1,74 +1,35 @@
 ## IMPORTS
 import copy
 import csv
-import datetime
-import glob
 import itertools
-import json
 import os
-import random
 import re
-import shutil
-import statistics
-import tempfile
-import time
-from contextlib import redirect_stdout
-from datetime import timedelta
-from distutils import dir_util, file_util
-from distutils.dir_util import copy_tree
-from itertools import groupby
 from math import sqrt
-from os import listdir
 from pathlib import Path
-
 import cv2
 import detectron2.data.transforms as T
 import easyocr
 import imutils
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import pycocotools.mask as mask_util
-import scipy
-import seaborn as sns
-import shapely
-import torch
-import torchvision
-from detectron2 import model_zoo
-from detectron2.config import get_cfg
 from detectron2.data import (
-    DatasetCatalog,
     MetadataCatalog,
-    build_detection_test_loader,
     build_detection_train_loader,
 )
 from detectron2.data import detection_utils as utils
-from detectron2.data.datasets import register_coco_instances
-from detectron2.engine import DefaultPredictor, DefaultTrainer
-from detectron2.evaluation import COCOEvaluator, inference_on_dataset
-from detectron2.structures import BoxMode
+from detectron2.engine import DefaultTrainer
 from detectron2.utils.visualizer import ColorMode, Visualizer
-from google.cloud import storage
-from imutils import contours, perspective
-from matplotlib import pyplot as plt
+from imutils import perspective
 from numpy import sqrt
-from PIL import Image
 from scipy.ndimage import binary_fill_holes
 from scipy.spatial import distance as dist
-from scipy.stats import norm
-from shapely.affinity import rotate, scale
-from shapely.geometry import Point
-from skimage.measure import find_contours, label
+from skimage.measure import label
 from skimage.morphology import dilation, erosion
-
 from data_preparation import (
     choose_and_use_model,
-    get_split_dicts,
     get_trained_model_paths,
-    load_model,
     read_dataset_info,
     register_datasets,
-    split_dataset,
 )
 
 # Constant paths

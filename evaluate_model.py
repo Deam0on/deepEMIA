@@ -1,33 +1,20 @@
 import csv
-import json
 import os
 from pathlib import Path
-
-import detectron2.data.transforms as T
-import numpy as np
-import torch
-from detectron2 import model_zoo
 from detectron2.config import get_cfg
 from detectron2.data import (
     DatasetCatalog,
     MetadataCatalog,
     build_detection_test_loader,
-    build_detection_train_loader,
 )
-from detectron2.data import detection_utils as utils
-from detectron2.engine import DefaultPredictor, DefaultTrainer
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
-from detectron2.structures import BoxMode
-from detectron2.utils.visualizer import ColorMode, Visualizer
+from detectron2.utils.visualizer import Visualizer
 
 from data_preparation import (
     choose_and_use_model,
-    get_split_dicts,
     get_trained_model_paths,
-    load_model,
     read_dataset_info,
     register_datasets,
-    split_dataset,
 )
 
 # Constant paths

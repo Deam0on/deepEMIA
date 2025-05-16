@@ -1,15 +1,8 @@
 ## IMPORTS
 import copy
-import csv
-import itertools
-import json
 import os
-import random
-import shutil
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
-
 import albumentations as A
 import cv2
 import detectron2.data.transforms as T
@@ -22,37 +15,19 @@ from detectron2 import model_zoo
 from detectron2.config import get_cfg
 from detectron2.data import (
     DatasetCatalog,
-    DatasetMapper,
     MetadataCatalog,
-    build_detection_test_loader,
     build_detection_train_loader,
 )
-from torch.quantization import prepare_qat, convert, get_default_qat_qconfig
 from detectron2.data import detection_utils as utils
-from detectron2.engine import DefaultPredictor, DefaultTrainer
-from detectron2.evaluation import COCOEvaluator, inference_on_dataset
-from detectron2.structures import BoxMode
+from detectron2.engine import DefaultTrainer
+from detectron2.evaluation import COCOEvaluator
 from detectron2.evaluation import COCOEvaluator
 from detectron2.engine import DefaultTrainer
-from matplotlib import pyplot as plt
-from PIL import Image
-from scipy.ndimage import binary_fill_holes
-from shapely.affinity import rotate, scale
-from shapely.geometry import Point
-from skimage.measure import label
-from skimage.morphology import dilation, erosion
-from sklearn.model_selection import train_test_split
-from torch.quantization import quantize_dynamic
 from torch.utils.data import DataLoader
 
 from data_preparation import (
-    choose_and_use_model,
-    get_split_dicts,
-    get_trained_model_paths,
-    load_model,
     read_dataset_info,
     register_datasets,
-    split_dataset,
 )
 
 # Constant paths

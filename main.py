@@ -5,9 +5,6 @@ import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 import yaml
-
-from setuptools._vendor.packaging.version import Version as LooseVersion
-
 from data_preparation import split_dataset
 from evaluate_model import evaluate_model
 from inference import run_inference
