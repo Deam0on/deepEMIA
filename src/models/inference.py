@@ -25,6 +25,7 @@ import os
 import re
 from math import sqrt
 from pathlib import Path
+import time
 
 import cv2
 import detectron2.data.transforms as T
@@ -657,10 +658,14 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                 ]
             )
 
-            for idx, test_img in enumerate(os.listdir(test_img_path), 1):
-                print(
-                    f"Inferencing image {idx} out of {len(os.listdir(test_img_path))}"
-                )
+            image_list = os.listdir(test_img_path)
+            num_images = len(image_list)
+            total_time = 0
+
+            for idx, test_img in enumerate(image_list, 1):
+                start_time = time.perf_counter()
+                print(f"Inferencing image {idx} out of {num_images}")
+
                 input_path = os.path.join(test_img_path, test_img)
                 im = cv2.imread(input_path)
 
@@ -908,3 +913,10 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                                 test_img,
                             ]
                         )
+                elapsed = time.perf_counter() - start_time
+                total_time += elapsed
+                print(f"Time taken for image {idx}: {elapsed:.3f} seconds")
+
+    average_time = total_time / num_images if num_images else 0
+    print(f"Average inference time per image: {average_time:.3f} seconds")
+
