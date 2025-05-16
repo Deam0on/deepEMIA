@@ -16,6 +16,15 @@ The module handles:
 
 import json
 import os
+from pathlib import Path
+import yaml
+
+# Load config once at the start of your program
+with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
+    config = yaml.safe_load(f)
+
+# Resolve paths
+ETA_FILE = Path(config["paths"]["eta_file"]).expanduser().resolve()
 
 
 def read_eta_data():
