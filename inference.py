@@ -468,13 +468,13 @@ def detect_scale_bar_sem(image):
     - annotated_image: Copy of input image with OCR box and scale bar drawn (BGR, numpy array).
     """
     h, w = image.shape[:2]
-    roi = image[2*h//3:h, 2*w//3:w].copy()
+    roi = image[h//2:h, w//2:w].copy()
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
 
     reader = easyocr.Reader(["en"], verbose=False)
     result = reader.readtext(gray, detail=1, paragraph=False)
 
-    unit_pattern = re.compile(r"(\d+)\s*(nm|µm|um|mm)", re.IGNORECASE)
+    unit_pattern = re.compile(r"(\d+)\s*(µm|um)", re.IGNORECASE)
     scale_value = "0"
     unit = "um"
     scale_center = None
@@ -516,7 +516,7 @@ def detect_scale_bar_sem(image):
     um_per_pixel = real_um / bar_px_length if bar_found else 1.0
 
     annotated_image = image.copy()
-    annotated_image[2*h//3:h, 2*w//3:w] = roi
+    annotated_image[h//2:h, w//2:w] = roi
 
     return um_per_pixel, str(real_um), bar_px_length, annotated_image
 
