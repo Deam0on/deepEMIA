@@ -378,7 +378,7 @@ if "confirm_delete" not in st.session_state:
     st.session_state.confirm_delete = False
 
 # Streamlit interface
-st.title("PaCE Neural Network Control Panel")
+st.title("DL-IA Control Panel")
 
 # Task selection
 st.header("Script controls")
@@ -551,10 +551,11 @@ if st.session_state.show_errors:
     if st.button("Hide Errors and Warnings"):
         st.session_state.show_errors = False
     else:
-        if contains_errors(st.session_state.stderr):
-            st.error(st.session_state.stderr)
-        else:
-            st.warning(st.session_state.stderr)
+        with st.expander("Show errors and warnings", expanded=False):
+            if contains_errors(st.session_state.stderr):
+                st.error(st.session_state.stderr)
+            else:
+                st.warning(st.session_state.stderr)
 else:
     if st.session_state.stderr and st.button("Show Errors and Warnings"):
         st.session_state.show_errors = True
