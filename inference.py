@@ -507,8 +507,7 @@ def detect_scale_bar(image):
                 break
 
     um_per_pixel = real_um / bar_len_px if bar_len_px > 0 else 1.0
-    return um_per_pixel, real_um, bar_len_px, roi, psum
-
+    return um_per_pixel, real_um
 
 def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
     """
@@ -725,9 +724,9 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                 #     um_pix = 1
                 #     psum = "0"
 
-                um_per_pixel, psum, marked_image = detect_scale_bar(im)
+                um_per_pixel, real_um = detect_scale_bar(im)
                 um_pix = um_per_pixel
-                cv2.imwrite("detected_scale_bar_{test_img}.png", marked_image)
+                psum = real_um
 
                 # end new here #######################
 
