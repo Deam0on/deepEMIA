@@ -1,0 +1,7 @@
+bucket: zent-sem
+paths:
+  main_script: "~/uw-com-vision/main.py"
+  split_dir: "~/split_dir"
+  category_json: "~/uw-com-vision/dataset_info.json"
+  eta_file: "~/uw-com-vision/config/eta_data.json"
+  local_dataset_root: "~"

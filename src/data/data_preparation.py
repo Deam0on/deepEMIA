@@ -1,4 +1,16 @@
-import csv
+"""
+Data preparation module for the UW Computer Vision project.
+
+This module handles:
+- Dataset splitting into train and test sets
+- Dataset registration for Detectron2
+- Model loading and preparation
+- Dataset information management
+
+The module integrates with Detectron2 for computer vision tasks and provides
+utilities for handling various data formats and model types.
+"""
+
 import json
 import os
 import random
@@ -8,6 +20,7 @@ import numpy as np
 import shapely.affinity
 import shapely.geometry
 import torch
+import yaml
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
 from detectron2.data import DatasetCatalog, MetadataCatalog
@@ -15,9 +28,13 @@ from detectron2.engine import DefaultPredictor
 from detectron2.structures import BoxMode
 from sklearn.model_selection import train_test_split
 
+# Load config once at the start of your program
+with open("config.yaml", "r") as f:
+    config = yaml.safe_load(f)
+
 # Constant paths
-SPLIT_DIR = Path.home() / "split_dir"
-CATEGORY_JSON = Path.home() / "uw-com-vision" / "dataset_info.json"
+SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
+CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
 
 
 def split_dataset(img_dir, dataset_name, test_size=0.2, seed=42):
@@ -25,14 +42,13 @@ def split_dataset(img_dir, dataset_name, test_size=0.2, seed=42):
     Splits the dataset into training and testing sets and saves the split information.
 
     Parameters:
-    - img_dir: Directory containing images.
-    - dataset_name: Name of the dataset.
-    - test_size: Proportion of the dataset to include in the test split.
-    - seed: Random seed for reproducibility.
+    - img_dir (str): Directory containing images
+    - dataset_name (str): Name of the dataset
+    - test_size (float): Proportion of the dataset to include in the test split
+    - seed (int): Random seed for reproducibility
 
     Returns:
-    - train_files: List of training label files.
-    - test_files: List of testing label files.
+    - tuple: (train_files, test_files) Lists of training and testing label files
     """
     # Set the random seed for reproducibility
     random.seed(seed)
@@ -66,9 +82,12 @@ def register_datasets(dataset_info, dataset_name, test_size=0.2):
     Registers the selected dataset in the Detectron2 framework.
 
     Parameters:
-    - dataset_info: Dictionary containing dataset names and their info.
-    - dataset_name: Name of the dataset to register.
-    - test_size: Proportion of the dataset to include in the test split.
+    - dataset_info (dict): Dictionary containing dataset names and their info
+    - dataset_name (str): Name of the dataset to register
+    - test_size (float): Proportion of the dataset to include in the test split
+
+    Raises:
+    - ValueError: If the dataset name is not found in dataset_info
     """
     if dataset_name not in dataset_info:
         raise ValueError(f"Dataset '{dataset_name}' not found in dataset_info.")
@@ -121,14 +140,17 @@ def get_split_dicts(img_dir, label_dir, files, category_json, category_key):
     Generates a list of dictionaries for Detectron2 dataset registration.
 
     Parameters:
-    - img_dir: Directory containing images.
-    - label_dir: Directory containing labels.
-    - files: List of label files to process.
-    - category_json: Path to the JSON file containing category information.
-    - category_key: Key in JSON to select category names.
+    - img_dir (str): Directory containing images
+    - label_dir (str): Directory containing labels
+    - files (list): List of label files to process
+    - category_json (str): Path to the JSON file containing category information
+    - category_key (str): Key in JSON to select category names
 
     Returns:
-    - dataset_dicts: List of dictionaries with image and annotation data.
+    - list: List of dictionaries with image and annotation data
+
+    Raises:
+    - ValueError: If the category key is not found in the JSON file
     """
     # Load category names and create a mapping to category IDs
     dataset_info = read_dataset_info(category_json)
@@ -209,10 +231,10 @@ def get_trained_model_paths(base_dir):
     Retrieves paths to trained models in a given base directory.
 
     Parameters:
-    - base_dir: Directory containing trained models.
+    - base_dir (str): Directory containing trained models
 
     Returns:
-    - model_paths: Dictionary with dataset names as keys and model paths as values.
+    - dict: Dictionary with dataset names as keys and model paths as values
     """
     model_paths = {}
     for dataset_name in os.listdir(base_dir):
@@ -228,13 +250,13 @@ def load_model(cfg, model_path, dataset_name, is_quantized=False):
     Loads a trained model. If quantized fails, fallback must be handled by caller.
 
     Parameters:
-    - cfg: Detectron2 config object.
-    - model_path: Path to model file.
-    - dataset_name: Dataset name for metadata.
-    - is_quantized: Whether the model is quantized (full object, not state_dict).
+    - cfg (CfgNode): Detectron2 config object
+    - model_path (str): Path to model file
+    - dataset_name (str): Dataset name for metadata
+    - is_quantized (bool): Whether the model is quantized
 
     Returns:
-    - predictor: callable predictor object.
+    - object: Predictor object for making predictions
     """
     if is_quantized:
         try:
@@ -247,9 +269,22 @@ def load_model(cfg, model_path, dataset_name, is_quantized=False):
 
                 def __call__(self, image):
                     with torch.no_grad():
-                        image_tensor = torch.from_numpy(image).permute(2, 0, 1).float().unsqueeze(0)
-                        image_tensor = image_tensor.to(next(self.model.parameters()).device)
-                        inputs = [{"image": image_tensor[0], "height": image.shape[0], "width": image.shape[1]}]
+                        image_tensor = (
+                            torch.from_numpy(image)
+                            .permute(2, 0, 1)
+                            .float()
+                            .unsqueeze(0)
+                        )
+                        image_tensor = image_tensor.to(
+                            next(self.model.parameters()).device
+                        )
+                        inputs = [
+                            {
+                                "image": image_tensor[0],
+                                "height": image.shape[0],
+                                "width": image.shape[1],
+                            }
+                        ]
                         return self.model(inputs)[0]
 
             return QuantizedPredictor(model)
@@ -265,28 +300,33 @@ def load_model(cfg, model_path, dataset_name, is_quantized=False):
     return DefaultPredictor(cfg)
 
 
-
 def choose_and_use_model(model_paths, dataset_name, threshold):
     """
-    Selects and loads trained model. Prefers quantized on CPU if available, but falls back to standard if any error.
+    Chooses and loads the appropriate model for a given dataset.
 
     Parameters:
-    - model_paths: Dictionary of dataset_name -> model_final.pth path.
-    - dataset_name: Target dataset.
-    - threshold: Detection threshold.
+    - model_paths (dict): Dictionary of available model paths
+    - dataset_name (str): Name of the dataset
+    - threshold (float): Confidence threshold for predictions
 
     Returns:
-    - predictor: Callable model predictor.
+    - tuple: (predictor, metadata) The loaded model and its metadata
     """
     if dataset_name not in model_paths:
         print(f"No model found for dataset {dataset_name}")
         return None
 
     base_model_path = model_paths[dataset_name]
-    quantized_model_path = base_model_path.replace("model_final.pth", "model_final_quantized.pth")
+    quantized_model_path = base_model_path.replace(
+        "model_final.pth", "model_final_quantized.pth"
+    )
 
     cfg = get_cfg()
-    cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"))
+    cfg.merge_from_file(
+        model_zoo.get_config_file(
+            "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
+        )
+    )
     cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = threshold
 
@@ -294,7 +334,9 @@ def choose_and_use_model(model_paths, dataset_name, threshold):
     if not torch.cuda.is_available() and os.path.exists(quantized_model_path):
         try:
             print(f"Trying quantized model for {dataset_name}")
-            return load_model(cfg, quantized_model_path, dataset_name, is_quantized=True)
+            return load_model(
+                cfg, quantized_model_path, dataset_name, is_quantized=True
+            )
         except RuntimeError:
             print(f"Falling back to standard model for {dataset_name}")
 
@@ -302,16 +344,15 @@ def choose_and_use_model(model_paths, dataset_name, threshold):
     return load_model(cfg, base_model_path, dataset_name, is_quantized=False)
 
 
-
 def read_dataset_info(file_path):
     """
     Reads dataset information from a JSON file.
 
     Parameters:
-    - file_path: Path to the JSON file.
+    - file_path (str): Path to the JSON file
 
     Returns:
-    - dataset_info: Dictionary with dataset information.
+    - dict: Dataset information
     """
     with open(file_path, "r") as file:
         data = json.load(file)

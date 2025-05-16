@@ -1,25 +1,38 @@
+"""
+Model evaluation module for the UW Computer Vision project.
+
+This module handles:
+- Model evaluation on test datasets
+- Performance metrics calculation
+- Prediction visualization
+- Results saving and reporting
+
+The module integrates with Detectron2 for evaluation and provides
+utilities for visualizing and saving model predictions.
+"""
+
 import csv
 import os
 from pathlib import Path
+
+import yaml
 from detectron2.config import get_cfg
-from detectron2.data import (
-    DatasetCatalog,
-    MetadataCatalog,
-    build_detection_test_loader,
-)
+from detectron2.data import (DatasetCatalog, MetadataCatalog,
+                             build_detection_test_loader)
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
 from detectron2.utils.visualizer import Visualizer
 
-from data_preparation import (
-    choose_and_use_model,
-    get_trained_model_paths,
-    read_dataset_info,
-    register_datasets,
-)
+from data.data_preparation import (choose_and_use_model,
+                                   get_trained_model_paths, read_dataset_info,
+                                   register_datasets)
+
+# Load config once at the start of your program
+with open("config.yaml", "r") as f:
+    config = yaml.safe_load(f)
 
 # Constant paths
-SPLIT_DIR = Path.home() / "split_dir"
-CATEGORY_JSON = Path.home() / "uw-com-vision" / "dataset_info.json"
+SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
+CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
 
 
 def evaluate_model(dataset_name, output_dir, visualize=False):
@@ -27,9 +40,15 @@ def evaluate_model(dataset_name, output_dir, visualize=False):
     Evaluates the model on the specified dataset and optionally visualizes predictions.
 
     Parameters:
-    - dataset_name: Name of the dataset to evaluate.
-    - output_dir: Directory to save evaluation results and visualizations.
-    - visualize: Boolean flag to indicate if visualizations should be generated.
+    - dataset_name (str): Name of the dataset to evaluate
+    - output_dir (str): Directory to save evaluation results and visualizations
+    - visualize (bool): Whether to generate and save prediction visualizations
+
+    The function performs:
+    1. Dataset registration and model loading
+    2. COCO-style evaluation
+    3. Metrics calculation and saving
+    4. Optional prediction visualization
 
     Returns:
     - None
@@ -90,9 +109,15 @@ def visualize_predictions(predictor, dataset_name, output_dir):
     Visualizes predictions made by the model on the test dataset.
 
     Parameters:
-    - predictor: The predictor object used for inference.
-    - dataset_name: Name of the dataset to visualize.
-    - output_dir: Directory to save the visualizations.
+    - predictor (object): The predictor object used for inference
+    - dataset_name (str): Name of the dataset to visualize
+    - output_dir (str): Directory to save the visualizations
+
+    The function:
+    1. Loads test dataset images
+    2. Generates predictions
+    3. Creates visualizations with bounding boxes and masks
+    4. Saves visualizations to the output directory
 
     Returns:
     - None

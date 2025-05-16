@@ -1,133 +1,64 @@
+"""
+Main pipeline script for the UW Computer Vision project.
+
+This script provides a command-line interface for running various computer vision tasks:
+- Dataset preparation
+- Model training
+- Model evaluation
+- Inference on new images
+
+The script integrates with Google Cloud Storage for data management and provides
+progress tracking and ETA estimation for long-running tasks.
+"""
+
 import argparse
 import json
 import os
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
-import yaml
-from data_preparation import split_dataset
-from evaluate_model import evaluate_model
-from inference import run_inference
-from train_model import train_on_dataset
 
-# Constant paths
-SPLIT_DIR = Path.home() / "split_dir"
-CATEGORY_JSON = Path.home() / "uw-com-vision" / "dataset_info.json"
-ETA_FILE = Path.home() / "uw-com-vision" / "eta_data.json"
-local_dataset_path = Path.home()
+import yaml
+
+from data.data_preparation import split_dataset
+from models.evaluate_model import evaluate_model
+from models.inference import run_inference
+from models.train_model import train_on_dataset
+from src.utils.eta_utils import update_eta_data
+from src.utils.gcs_utils import (download_data_from_bucket,
+                                 upload_data_to_bucket)
+
+# Load config once at the start of your program
+with open("config.yaml", "r") as f:
+    config = yaml.safe_load(f)
+
+# Resolve paths
+SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
+CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
+ETA_FILE = Path(config["paths"]["eta_file"]).expanduser().resolve()
+local_dataset_path = Path(config["paths"]["local_dataset_root"]).expanduser().resolve()
 
 # Load bucket name from config.yaml
-with open(Path.home() / "uw-com-vision" / "config.yaml", "r") as f:
+with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
     config = yaml.safe_load(f)
 bucket = config["bucket"]
 
 
-def download_data_from_bucket():
-    """
-    Download data from a Google Cloud Storage bucket to a local directory.
-
-    Returns:
-    - float: Time taken to download data in seconds.
-    """
-    download_start_time = datetime.now()
-    dirpath = Path.home() / "DATASET"
-    if dirpath.exists() and dirpath.is_dir():
-        shutil.rmtree(dirpath)
-
-    os.system(f"gsutil -m cp -r gs://{bucket}/DATASET {local_dataset_path}")
-    download_end_time = datetime.now()
-
-    return (download_end_time - download_start_time).total_seconds()
-
-
-def upload_data_to_bucket():
-    """
-    Upload data from local directories to a Google Cloud Storage bucket,
-    only if files are present to upload.
-
-    Returns:
-    - float: Time taken to upload data in seconds.
-    """
-    upload_start_time = datetime.now()
-    time_offset = timedelta(hours=2)
-    timestamp = (datetime.now() + time_offset).strftime("%Y%m%d_%H%M%S")
-    archive_path = f"gs://{bucket}/Archive/{timestamp}/"
-
-    # Check and upload .png files
-    if any(fname.endswith(".png") for fname in os.listdir(local_dataset_path)):
-        local_path = Path.home() / "*.png"
-        os.system(f"gsutil -m cp -r {local_path} {archive_path}")
-
-    # Check and upload .csv files
-    if any(fname.endswith(".csv") for fname in os.listdir(local_dataset_path)):
-        local_path = Path.home() / "*.csv"
-        os.system(f"gsutil -m cp -r {local_path} {archive_path}")
-
-    # Check and upload files in the output directory
-    if os.path.exists(local_dataset_path / "output") and os.listdir(
-        local_dataset_path / "output"
-    ):
-        local_path = Path.home() / "output/*"
-        os.system(f"gsutil -m cp -r {local_path} {archive_path}")
-
-    upload_end_time = datetime.now()
-    return (upload_end_time - upload_start_time).total_seconds()
-
-
-def read_eta_data():
-    """
-    Read ETA data from a JSON file.
-
-    Returns:
-    - dict: ETA data.
-    """
-    if os.path.exists(ETA_FILE):
-        with open(ETA_FILE, "r") as file:
-            return json.load(file)
-    else:
-        return {
-            "prepare": {"average_time": 300},
-            "evaluate": {"average_time": 1800},
-            "inference": {"average_time_per_image": 5, "buffer": 1.1},
-            "download": {"average_time": 60},
-            "upload": {"average_time": 60},
-        }
-
-
-def update_eta_data(task, time_taken, num_images=0):
-    """
-    Update ETA data with new timings.
-
-    Parameters:
-    - task: Task name (e.g., 'inference', 'prepare').
-    - time_taken: Time taken for the task.
-    - num_images: Number of images processed (relevant for 'inference' task).
-    """
-    data = read_eta_data()
-
-    if task == "inference":
-        avg_time_per_image = time_taken / max(num_images, 1)
-        current_avg = data.get(task, {}).get(
-            "average_time_per_image", avg_time_per_image
-        )
-        buffer = data.get(task, {}).get("buffer", 1.1)
-
-        new_avg_time_per_image = (current_avg + avg_time_per_image) / 2
-        data[task] = {
-            "average_time_per_image": new_avg_time_per_image,
-            "buffer": buffer,
-        }
-    else:
-        current_avg = data.get(task, {}).get("average_time", time_taken)
-
-        new_avg_time = (current_avg + time_taken) / 2
-        data[task] = {"average_time": new_avg_time}
-
-    with open(ETA_FILE, "w") as file:
-        json.dump(data, file, indent=2)
-
-
 def main():
+    """
+    Main function that parses command line arguments and executes the requested task.
+
+    Tasks include:
+    - prepare: Split dataset into train and test sets
+    - train: Train a model on the dataset
+    - evaluate: Evaluate the trained model
+    - inference: Run inference on new data
+
+    The function handles:
+    - Data download/upload from/to Google Cloud Storage
+    - Progress tracking and ETA estimation
+    - Task execution with appropriate parameters
+    """
     parser = argparse.ArgumentParser(
         description="Pipeline for preparing data, training, evaluating, and running inference on models."
     )

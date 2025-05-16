@@ -1,3 +1,17 @@
+"""
+Streamlit web interface for the UW Computer Vision project.
+
+This module provides a user-friendly web interface for:
+- Dataset management
+- Model training and evaluation
+- Running inference
+- Visualizing results
+- Downloading predictions and visualizations
+
+The interface integrates with Google Cloud Storage for data management and
+provides real-time progress tracking and ETA estimation.
+"""
+
 import json
 import os
 import subprocess
@@ -9,6 +23,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import streamlit as st
+import yaml
 from google.api_core import page_iterator
 from google.cloud import storage
 from PIL import Image
@@ -16,9 +31,14 @@ from PIL import Image
 # Add these lines at the beginning of the script
 ADMIN_PASSWORD = "admin"
 
+
+# Load config once at the start of your program
+with open("config.yaml", "r") as f:
+    config = yaml.safe_load(f)
+
 # Absolute path to main.py
-MAIN_SCRIPT_PATH = Path.home() / "uw-com-vision" / "main.py"
-ETA_FILE = Path.home() / "uw-com-vision" / "eta_data.json"
+MAIN_SCRIPT_PATH = Path(config["paths"]["main_script"]).expanduser().resolve()
+ETA_FILE = Path(config["paths"]["eta_file"]).expanduser().resolve()
 
 # GCS bucket details
 GCS_BUCKET_NAME = "nn-uct"
@@ -33,12 +53,12 @@ def create_zip_from_gcs(bucket_name, folder, zip_name="archive.zip"):
     Creates a ZIP archive from files in a GCS bucket folder.
 
     Parameters:
-    - bucket_name: Name of the GCS bucket.
-    - folder: Folder in the GCS bucket.
-    - zip_name: Name of the ZIP archive to create.
+    - bucket_name (str): Name of the GCS bucket
+    - folder (str): Folder in the GCS bucket
+    - zip_name (str): Name of the ZIP archive to create
 
     Returns:
-    - bytes: ZIP archive as bytes.
+    - bytes: ZIP archive as bytes
     """
     client = storage.Client()
     bucket = client.bucket(bucket_name)
@@ -66,7 +86,7 @@ def check_password():
     Checks the entered password against the admin password.
 
     Returns:
-    - bool: True if the password is correct, else False.
+    - bool: True if the password is correct, else False
     """
 
     def password_entered():
@@ -90,6 +110,16 @@ def check_password():
 
 
 def _item_to_value(iterator, item):
+    """
+    Helper function for GCS directory listing.
+
+    Parameters:
+    - iterator: GCS iterator
+    - item: Current item
+
+    Returns:
+    - item: The item value
+    """
     return item
 
 
@@ -98,11 +128,11 @@ def list_directories(bucket_name, prefix):
     Lists directories in a GCS bucket with the given prefix.
 
     Parameters:
-    - bucket_name: Name of the GCS bucket.
-    - prefix: Prefix to filter directories.
+    - bucket_name (str): Name of the GCS bucket
+    - prefix (str): Prefix to filter directories
 
     Returns:
-    - list: List of directory paths.
+    - list: List of directory paths
     """
     if prefix and not prefix.endswith("/"):
         prefix += "/"
@@ -127,10 +157,10 @@ def list_directories(bucket_name, prefix):
 
 def run_command(command):
     """
-    Runs a shell command.
+    Runs a shell command and captures its output.
 
     Parameters:
-    - command: Command to run.
+    - command (str): Command to run
 
     Returns:
     - tuple: (stdout, stderr, success_flag)
@@ -154,11 +184,11 @@ def list_png_files_in_gcs_folder(bucket_name, folder):
     Lists .png files in a GCS folder.
 
     Parameters:
-    - bucket_name: Name of the GCS bucket.
-    - folder: Folder in the GCS bucket.
+    - bucket_name (str): Name of the GCS bucket
+    - folder (str): Folder in the GCS bucket
 
     Returns:
-    - list: List of blob objects for .png files.
+    - list: List of blob objects for .png files
     """
     client = storage.Client()
     bucket = client.bucket(bucket_name)
@@ -171,11 +201,11 @@ def list_specific_csv_files_in_gcs_folder(bucket_name, folder):
     Lists specific .csv files in a GCS folder.
 
     Parameters:
-    - bucket_name: Name of the GCS bucket.
-    - folder: Folder in the GCS bucket.
+    - bucket_name (str): Name of the GCS bucket
+    - folder (str): Folder in the GCS bucket
 
     Returns:
-    - list: List of blob objects for specific .csv files.
+    - list: List of blob objects for specific .csv files
     """
     client = storage.Client()
     bucket = client.bucket(bucket_name)
@@ -193,10 +223,10 @@ def contains_errors(stderr):
     Checks if stderr contains any errors.
 
     Parameters:
-    - stderr: Stderr output as string.
+    - stderr (str): Stderr output as string
 
     Returns:
-    - bool: True if errors found, else False.
+    - bool: True if errors found, else False
     """
     error_keywords = ["error", "failed", "exception", "traceback", "critical"]
     return any(keyword in stderr.lower() for keyword in error_keywords)
@@ -207,7 +237,7 @@ def load_dataset_names_from_gcs():
     Loads dataset names from a JSON file in GCS.
 
     Returns:
-    - dict: Dataset names and details.
+    - dict: Dataset names and details
     """
     client = storage.Client()
     bucket = client.bucket(GCS_BUCKET_NAME)
@@ -228,7 +258,7 @@ def save_dataset_names_to_gcs(data):
     Saves dataset names to a JSON file in GCS.
 
     Parameters:
-    - data: Dataset names and details.
+    - data (dict): Dataset names and details
     """
     client = storage.Client()
     bucket = client.bucket(GCS_BUCKET_NAME)
@@ -242,10 +272,13 @@ def upload_files_to_gcs(bucket_name, target_folder, files, overwrite):
     Uploads files to a GCS bucket.
 
     Parameters:
-    - bucket_name: Name of the GCS bucket.
-    - target_folder: Folder in the GCS bucket to upload files to.
-    - files: List of files to upload.
-    - overwrite: Flag to indicate whether to overwrite existing files.
+    - bucket_name (str): Name of the GCS bucket
+    - target_folder (str): Target folder in the bucket
+    - files (list): List of files to upload
+    - overwrite (bool): Whether to overwrite existing files
+
+    Returns:
+    - bool: True if upload successful, else False
     """
     client = storage.Client()
     bucket = client.bucket(bucket_name)
@@ -264,14 +297,13 @@ def upload_files_to_gcs(bucket_name, target_folder, files, overwrite):
 
 def format_and_sort_folders(folders):
     """
-    Format folder names from 'YYYYMMDD_HHMMSS' to a more readable format
-    and sort them from newest to oldest.
+    Formats and sorts folder names for display.
 
     Parameters:
-    - folders: List of folder names.
+    - folders (list): List of folder paths
 
     Returns:
-    - List of tuples (original_name, formatted_name), sorted from newest to oldest.
+    - list: Sorted and formatted folder names
     """
     formatted_folders = []
     for folder in folders:
@@ -289,14 +321,14 @@ def format_and_sort_folders(folders):
 
 def estimate_eta(task, num_images=0):
     """
-    Estimate ETA for a task based on previous timings.
+    Estimates the time remaining for a task based on historical data.
 
     Parameters:
-    - task: Task name (e.g., 'inference', 'prepare').
-    - num_images: Number of images to process (relevant for 'inference' task).
+    - task (str): Name of the task
+    - num_images (int): Number of images for inference task
 
     Returns:
-    - tuple: (download_eta, task_eta, upload_eta)
+    - float: Estimated time remaining in seconds
     """
     data = read_eta_data()
     if task == "inference":
@@ -314,10 +346,12 @@ def estimate_eta(task, num_images=0):
 
 def read_eta_data():
     """
-    Read ETA data from a JSON file.
+    Updates the progress bar and countdown timer.
 
-    Returns:
-    - dict: ETA data.
+    Parameters:
+    - start_time (datetime): Start time of the task
+    - eta (float): Estimated time remaining in seconds
+    - phase (str): Current phase of the task
     """
     if os.path.exists(ETA_FILE):
         with open(ETA_FILE, "r") as file:

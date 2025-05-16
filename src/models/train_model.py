@@ -1,8 +1,25 @@
+"""
+Model training module for the UW Computer Vision project.
+
+This module handles:
+- Model training with Detectron2
+- Data augmentation using Albumentations
+- Model quantization for CPU inference
+- Custom training pipeline with CPU optimizations
+
+The module provides a complete training pipeline with support for:
+- Custom data augmentation
+- CPU-optimized training
+- Model quantization
+- Evaluation during training
+"""
+
 ## IMPORTS
 import copy
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+
 import albumentations as A
 import cv2
 import detectron2.data.transforms as T
@@ -10,29 +27,26 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+import yaml
 from albumentations.pytorch import ToTensorV2
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
-from detectron2.data import (
-    DatasetCatalog,
-    MetadataCatalog,
-    build_detection_train_loader,
-)
+from detectron2.data import (DatasetCatalog, MetadataCatalog,
+                             build_detection_train_loader)
 from detectron2.data import detection_utils as utils
 from detectron2.engine import DefaultTrainer
 from detectron2.evaluation import COCOEvaluator
-from detectron2.evaluation import COCOEvaluator
-from detectron2.engine import DefaultTrainer
 from torch.utils.data import DataLoader
 
-from data_preparation import (
-    read_dataset_info,
-    register_datasets,
-)
+from data.data_preparation import read_dataset_info, register_datasets
 
-# Constant paths
-SPLIT_DIR = Path.home() / "split_dir"
-CATEGORY_JSON = Path.home() / "uw-com-vision" / "dataset_info.json"
+# Load config once at the start of your program
+with open("config.yaml", "r") as f:
+    config = yaml.safe_load(f)
+
+# Resolve paths
+SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
+CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
 
 # Set dynamic threading and quantization engine
 torch.set_num_threads(os.cpu_count() // 2)
@@ -40,6 +54,18 @@ torch.backends.quantized.engine = "qnnpack"
 
 
 def get_albumentations_transform():
+    """
+    Creates an Albumentations transform pipeline for data augmentation.
+
+    Returns:
+    - A.Compose: Albumentations transform pipeline with:
+        - Resize to 800x800
+        - Random brightness/contrast
+        - Horizontal and vertical flips
+        - Rotation
+        - Normalization
+        - Conversion to tensor
+    """
     return A.Compose(
         [
             A.Resize(800, 800),
@@ -56,6 +82,12 @@ def get_albumentations_transform():
 def custom_mapper(dataset_dicts):
     """
     Custom data mapper function using Albumentations for faster CPU transforms.
+
+    Parameters:
+    - dataset_dicts (dict): Dictionary containing image and annotation data
+
+    Returns:
+    - dict: Transformed dataset dictionary with augmented image and annotations
     """
     dataset_dicts = copy.deepcopy(dataset_dicts)
     image = cv2.imread(dataset_dicts["file_name"])
@@ -80,8 +112,26 @@ def custom_mapper(dataset_dicts):
 
 
 class CustomTrainer(DefaultTrainer):
+    """
+    Custom trainer class that extends DefaultTrainer with optimized data loading.
+
+    This trainer implements:
+    - CPU-optimized data loading
+    - Dynamic worker count based on CPU cores
+    - Prefetching for better performance
+    """
+
     @classmethod
     def build_train_loader(cls, cfg):
+        """
+        Builds a custom training data loader with optimized settings.
+
+        Parameters:
+        - cfg (CfgNode): Detectron2 configuration object
+
+        Returns:
+        - DataLoader: PyTorch DataLoader with optimized settings
+        """
         dataset = build_detection_train_loader(
             cfg,
             mapper=custom_mapper,
@@ -104,11 +154,17 @@ class CustomTrainer(DefaultTrainer):
 
 def train_on_dataset(dataset_name, output_dir):
     """
-    Trains a model on the specified dataset.
+    Trains a model on the specified dataset with both standard and quantized training.
 
     Parameters:
-    - dataset_name: Name of the dataset.
-    - output_dir: Directory to save the trained model.
+    - dataset_name (str): Name of the dataset to train on
+    - output_dir (str): Directory to save the trained models
+
+    The function performs:
+    1. Standard training with Detectron2
+    2. Model evaluation on test set
+    3. Quantization-aware training (QAT)
+    4. Model conversion to quantized format
     """
     # Read dataset information
     dataset_info = read_dataset_info(CATEGORY_JSON)
@@ -148,14 +204,14 @@ def train_on_dataset(dataset_name, output_dir):
         cfg.SOLVER.MAX_ITER = max(1000, int(200 * num_images))
     else:
         cfg.SOLVER.MAX_ITER = max(1000, int(100 * num_images))
-    #cfg.SOLVER.STEPS = []
+    # cfg.SOLVER.STEPS = []
 
     # LR scheduler and warmup for better CPU stability
     cfg.SOLVER.STEPS = [int(0.6 * cfg.SOLVER.MAX_ITER), int(0.8 * cfg.SOLVER.MAX_ITER)]
     cfg.SOLVER.GAMMA = 0.1
     cfg.SOLVER.WARMUP_ITERS = 1000
     cfg.SOLVER.WARMUP_FACTOR = 1e-3
-    
+
     cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 16 * cfg.SOLVER.IMS_PER_BATCH
 
     # Set the number of classes

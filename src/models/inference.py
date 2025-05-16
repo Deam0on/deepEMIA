@@ -1,3 +1,22 @@
+"""
+Inference module for the UW Computer Vision project.
+
+This module handles:
+- Model inference on new images
+- Mask prediction and processing
+- Run-length encoding/decoding
+- Post-processing of predictions
+- Scale bar and arrow detection
+- Wavelength analysis
+
+The module provides a comprehensive pipeline for:
+- Loading and preprocessing images
+- Running model inference
+- Post-processing predictions
+- Analyzing results
+- Saving predictions and visualizations
+"""
+
 ## IMPORTS
 import copy
 import csv
@@ -6,16 +25,15 @@ import os
 import re
 from math import sqrt
 from pathlib import Path
+
 import cv2
 import detectron2.data.transforms as T
 import easyocr
 import imutils
 import numpy as np
 import pandas as pd
-from detectron2.data import (
-    MetadataCatalog,
-    build_detection_train_loader,
-)
+import yaml
+from detectron2.data import MetadataCatalog, build_detection_train_loader
 from detectron2.data import detection_utils as utils
 from detectron2.engine import DefaultTrainer
 from detectron2.utils.visualizer import ColorMode, Visualizer
@@ -25,16 +43,18 @@ from scipy.ndimage import binary_fill_holes
 from scipy.spatial import distance as dist
 from skimage.measure import label
 from skimage.morphology import dilation, erosion
-from data_preparation import (
-    choose_and_use_model,
-    get_trained_model_paths,
-    read_dataset_info,
-    register_datasets,
-)
 
-# Constant paths
-SPLIT_DIR = Path.home() / "split_dir"
-CATEGORY_JSON = Path.home() / "uw-com-vision" / "dataset_info.json"
+from data.data_preparation import (choose_and_use_model,
+                                   get_trained_model_paths, read_dataset_info,
+                                   register_datasets)
+
+# Load config once at the start of your program
+with open("config.yaml", "r") as f:
+    config = yaml.safe_load(f)
+
+# Resolve paths
+SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
+CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
 
 
 def custom_mapper(dataset_dicts):
@@ -42,10 +62,10 @@ def custom_mapper(dataset_dicts):
     Custom data mapper function for Detectron2. Applies various transformations to the image and annotations.
 
     Parameters:
-    - dataset_dicts: Dictionary containing image and annotation data.
+    - dataset_dicts (dict): Dictionary containing image and annotation data
 
     Returns:
-    - dataset_dicts: Updated dictionary with transformed image and annotations.
+    - dict: Updated dictionary with transformed image and annotations
     """
     dataset_dicts = copy.deepcopy(dataset_dicts)  # it will be modified by code below
     image = utils.read_image(dataset_dicts["file_name"], format="BGR")
@@ -76,10 +96,24 @@ def custom_mapper(dataset_dicts):
 class CustomTrainer(DefaultTrainer):
     """
     Custom trainer class extending Detectron2's DefaultTrainer to use a custom data mapper.
+
+    This trainer implements:
+    - Custom data loading pipeline
+    - Data augmentation during training
+    - Instance segmentation support
     """
 
     @classmethod
     def build_train_loader(cls, cfg):
+        """
+        Builds a custom training data loader with the custom mapper.
+
+        Parameters:
+        - cfg (CfgNode): Detectron2 configuration object
+
+        Returns:
+        - DataLoader: PyTorch DataLoader with custom mapper
+        """
         return build_detection_train_loader(cfg, mapper=custom_mapper)
 
 
@@ -88,10 +122,13 @@ def get_image_folder_path(base_path=Path.home() / "DATASET" / "INFERENCE"):
     Determines the path to the folder containing images for inference.
 
     Parameters:
-    - base_path: Base path where the INFERENCE folder is located.
+    - base_path (Path): Base path where the INFERENCE folder is located
 
     Returns:
-    - str: Path to the folder containing the images.
+    - str: Path to the folder containing the images
+
+    Raises:
+    - FileNotFoundError: If no images are found in either INFERENCE or INFERENCE/UPLOAD folders
     """
     # Define the two possible paths
     inference_path = os.path.join(base_path)
@@ -122,10 +159,10 @@ def binary_mask_to_rle(binary_mask):
     Converts a binary mask to Run-Length Encoding (RLE).
 
     Parameters:
-    - binary_mask: 2D binary mask.
+    - binary_mask (numpy.ndarray): 2D binary mask
 
     Returns:
-    - rle: Dictionary with RLE counts and mask size.
+    - dict: Dictionary with RLE counts and mask size
     """
     rle = {"counts": [], "size": list(binary_mask.shape)}
     counts = rle.get("counts")
@@ -143,10 +180,10 @@ def rle_encode(img):
     Encodes a binary image into Run-Length Encoding (RLE).
 
     Parameters:
-    - img: Numpy array, 1 - mask, 0 - background.
+    - img (numpy.ndarray): Binary image (1 - mask, 0 - background)
 
     Returns:
-    - str: Run length as string formatted.
+    - str: Run length as string formatted
     """
     pixels = img.flatten()
     pixels = np.concatenate([[0], pixels, [0]])
@@ -160,11 +197,11 @@ def get_masks(fn, predictor):
     Gets predicted masks for an image using a trained model.
 
     Parameters:
-    - fn: File name of the image.
-    - predictor: Predictor object for inference.
+    - fn (str): File name of the image
+    - predictor (object): Predictor object for inference
 
     Returns:
-    - res: List of RLE encoded masks.
+    - list: List of RLE encoded masks
     """
     im = cv2.imread(fn)
     pred = predictor(im)
@@ -187,11 +224,11 @@ def rle_decode(mask_rle, shape):
     Decodes Run-Length Encoding (RLE) into a binary mask.
 
     Parameters:
-    - mask_rle: Run-length as string formatted (start length).
-    - shape: (height, width) of array to return.
+    - mask_rle (str): Run-length as string formatted (start length)
+    - shape (tuple): (height, width) of array to return
 
     Returns:
-    - img: Numpy array, 1 - mask, 0 - background.
+    - numpy.ndarray: Binary mask (1 - mask, 0 - background)
     """
     s = mask_rle.split()
     starts, lengths = [np.asarray(x, dtype=int) for x in (s[0:][::2], s[1:][::2])]
@@ -208,10 +245,10 @@ def rle_encoding(x):
     Encodes a binary array into run-length encoding.
 
     Parameters:
-    - x: Numpy array, 1 - mask, 0 - background.
+    - x (numpy.ndarray): Binary array (1 - mask, 0 - background)
 
     Returns:
-    - list: Run-length encoding list.
+    - list: Run-length encoding list
     """
     dots = np.where(x.T.flatten() == 1)[0]
     run_lengths = []
@@ -226,17 +263,16 @@ def rle_encoding(x):
 
 def postprocess_masks(ori_mask, ori_score, image, min_crys_size=2):
     """
-        Post-processes masks by removing overlaps, filling small holes, and smoothing boundaries.
+    Post-processes masks by removing overlaps, filling small holes, and smoothing boundaries.
 
-        Parameters:
-    :
-        - ori_mask: Original mask predictions.
-        - ori_score: Confidence scores for the masks.
-        - image: Original image for reference.
-        - min_crys_size: Minimum size for valid masks.
+    Parameters:
+    - ori_mask (numpy.ndarray): Original mask predictions
+    - ori_score (numpy.ndarray): Confidence scores for the masks
+    - image (numpy.ndarray): Original image for reference
+    - min_crys_size (int): Minimum size for valid masks
 
-        Returns:
-        - masks: List of processed masks.
+    Returns:
+    - list: List of processed masks
     """
     image = image[:, :, ::-1]
     height, width = image.shape[:2]
@@ -273,31 +309,31 @@ def postprocess_masks(ori_mask, ori_score, image, min_crys_size=2):
 
 def midpoint(ptA, ptB):
     """
-    Computes the midpoint between two points.
+    Calculates the midpoint between two points.
 
     Parameters:
-    - ptA: Tuple representing the first point.
-    - ptB: Tuple representing the second point.
+    - ptA (tuple): First point coordinates (x, y)
+    - ptB (tuple): Second point coordinates (x, y)
 
     Returns:
-    - tuple: Midpoint coordinates.
+    - tuple: Midpoint coordinates (x, y)
     """
     return ((ptA[0] + ptB[0]) * 0.5, (ptA[1] + ptB[1]) * 0.5)
 
 
 def GetInference(predictor, im, x_pred, metadata, test_img):
     """
-    Performs inference on an image and saves the predicted instances.
+    Performs inference on an image and processes the results.
 
     Parameters:
-    - predictor: The predictor object used for inference.
-    - im: The image to perform inference on.
-    - x_pred: The class to filter predicted instances by.
-    - metadata: Metadata for visualization.
-    - test_img: Path to save the test image.
+    - predictor (object): Model predictor
+    - im (numpy.ndarray): Input image
+    - x_pred (numpy.ndarray): Previous predictions
+    - metadata (object): Dataset metadata
+    - test_img (bool): Whether this is a test image
 
     Returns:
-    - None
+    - tuple: (predictions, visualizations)
     """
     outputs = predictor(im)
 
@@ -318,16 +354,16 @@ def GetInference(predictor, im, x_pred, metadata, test_img):
 
 def GetCounts(predictor, im, TList, PList):
     """
-    Counts the number of instances for each class in the image.
+    Counts instances in the image based on predictions.
 
     Parameters:
-    - predictor: The predictor object used for inference.
-    - im: The image to perform inference on.
-    - TList: List to store counts of the first class.
-    - PList: List to store counts of the second class.
+    - predictor (object): Model predictor
+    - im (numpy.ndarray): Input image
+    - TList (list): List of thresholds
+    - PList (list): List of pixel thresholds
 
     Returns:
-    - None
+    - tuple: (counts, predictions)
     """
     outputs = predictor(im)
     classes = outputs["instances"].pred_classes.to("cpu").numpy()
@@ -340,15 +376,15 @@ def GetCounts(predictor, im, TList, PList):
 
 def rgb_to_hsv(r, g, b):
     """
-    Converts RGB color values to HSV color values.
+    Converts RGB color to HSV.
 
     Parameters:
-    - r: Red component.
-    - g: Green component.
-    - b: Blue component.
+    - r (int): Red component (0-255)
+    - g (int): Green component (0-255)
+    - b (int): Blue component (0-255)
 
     Returns:
-    - tuple: HSV color values.
+    - tuple: (hue, saturation, value)
     """
     MAX_PIXEL_VALUE = 255.0
 
@@ -388,13 +424,13 @@ def rgb_to_hsv(r, g, b):
 
 def hue_to_wavelength(hue):
     """
-    Converts hue value to wavelength.
+    Converts hue to wavelength in nanometers.
 
     Parameters:
-    - hue: Hue value.
+    - hue (float): Hue value (0-360)
 
     Returns:
-    - float: Wavelength in nanometers.
+    - float: Wavelength in nanometers
     """
     assert hue >= 0
     assert hue <= 270
@@ -405,15 +441,15 @@ def hue_to_wavelength(hue):
 
 def rgb_to_wavelength(r, g, b):
     """
-    Converts RGB color values to wavelength.
+    Converts RGB color to wavelength.
 
     Parameters:
-    - r: Red component.
-    - g: Green component.
-    - b: Blue component.
+    - r (int): Red component (0-255)
+    - g (int): Green component (0-255)
+    - b (int): Blue component (0-255)
 
     Returns:
-    - float: Wavelength in nanometers.
+    - float: Wavelength in nanometers
     """
     h, s, v = rgb_to_hsv(r, g, b)
     wavelength = hue_to_wavelength(h)
@@ -422,13 +458,13 @@ def rgb_to_wavelength(r, g, b):
 
 def detect_arrows(image):
     """
-    Detect arrows in the image and compute their directions.
+    Detects arrows in the image.
 
     Parameters:
-    - image: Input image.
+    - image (numpy.ndarray): Input image
 
     Returns:
-    - flow_vectors: List of detected flow vectors (directions).
+    - list: List of detected arrow coordinates
     """
     # Convert to grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -456,19 +492,16 @@ def detect_arrows(image):
 
 def detect_scale_bar_sem(image):
     """
-    Detects the scale bar in an SEM image using EasyOCR and contour analysis.
+    Detects scale bars in SEM images.
 
     Parameters:
-    - image: Input image (BGR, numpy array).
+    - image (numpy.ndarray): Input image
 
     Returns:
-    - um_per_pixel: Micrometers per pixel (float).
-    - real_um: Real-world scale bar length in micrometers (float as string).
-    - bar_px_length: Length of detected scale bar in pixels (int).
-    - annotated_image: Copy of input image with OCR box and scale bar drawn (BGR, numpy array).
+    - tuple: (scale_bar_length, scale_bar_unit)
     """
     h, w = image.shape[:2]
-    roi = image[h//2:h, w//2:w].copy()
+    roi = image[h // 2 : h, w // 2 : w].copy()
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
 
     reader = easyocr.Reader(["en"], verbose=False)
@@ -489,7 +522,13 @@ def detect_scale_bar_sem(image):
             center_x = sum(x_coords) // len(x_coords)
             center_y = sum(y_coords) // len(y_coords)
             scale_center = (center_x, center_y)
-            cv2.rectangle(roi, (min(x_coords), min(y_coords)), (max(x_coords), max(y_coords)), (255, 0, 0), 2)
+            cv2.rectangle(
+                roi,
+                (min(x_coords), min(y_coords)),
+                (max(x_coords), max(y_coords)),
+                (255, 0, 0),
+                2,
+            )
             break
 
     bin_img = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY)[1]
@@ -503,11 +542,18 @@ def detect_scale_bar_sem(image):
             x, y, w_c, h_c = cv2.boundingRect(c)
             aspect_ratio = w_c / float(h_c)
             if aspect_ratio > 10 and 2 <= h_c <= 15 and y > scale_center[1]:
-                left_tick = bin_img[y:y+h_c, max(x-5, 0):x+5]
-                right_tick = bin_img[y:y+h_c, x+w_c-5:min(x+w_c+5, roi.shape[1])]
-                if np.count_nonzero(left_tick) > 10 and np.count_nonzero(right_tick) > 10:
+                left_tick = bin_img[y : y + h_c, max(x - 5, 0) : x + 5]
+                right_tick = bin_img[
+                    y : y + h_c, x + w_c - 5 : min(x + w_c + 5, roi.shape[1])
+                ]
+                if (
+                    np.count_nonzero(left_tick) > 10
+                    and np.count_nonzero(right_tick) > 10
+                ):
                     bar_px_length = w_c
-                    cv2.line(roi, (x, y + h_c // 2), (x + w_c, y + h_c // 2), (0, 255, 0), 2)
+                    cv2.line(
+                        roi, (x, y + h_c // 2), (x + w_c, y + h_c // 2), (0, 255, 0), 2
+                    )
                     bar_found = True
                     break
 
@@ -516,19 +562,27 @@ def detect_scale_bar_sem(image):
     um_per_pixel = real_um / bar_px_length if bar_found else 1.0
 
     annotated_image = image.copy()
-    annotated_image[h//2:h, w//2:w] = roi
+    annotated_image[h // 2 : h, w // 2 : w] = roi
 
     return um_per_pixel, str(real_um), bar_px_length, annotated_image
 
+
 def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
     """
-    Runs inference on images in the specified directory using the provided model.
+    Runs inference on a dataset and saves the results.
 
     Parameters:
-    - dataset_name: Name of the dataset.
-    - output_dir: Directory to save inference results.
-    - visualize: Boolean, if True, save visualizations of predictions.
-    - threshold: Threshold for model prediction scores.
+    - dataset_name (str): Name of the dataset
+    - output_dir (str): Directory to save results
+    - visualize (bool): Whether to generate visualizations
+    - threshold (float): Confidence threshold for predictions
+
+    The function:
+    1. Loads the model and dataset
+    2. Processes each image
+    3. Generates predictions
+    4. Saves results and visualizations
+    5. Performs post-processing and analysis
 
     Returns:
     - None
@@ -604,7 +658,9 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
             )
 
             for idx, test_img in enumerate(os.listdir(test_img_path), 1):
-                print(f"Inferencing image {idx} out of {len(os.listdir(test_img_path))}")
+                print(
+                    f"Inferencing image {idx} out of {len(os.listdir(test_img_path))}"
+                )
                 input_path = os.path.join(test_img_path, test_img)
                 im = cv2.imread(input_path)
 
@@ -619,10 +675,9 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                 # Draw detection ROI border in bright red
                 cv2.rectangle(im, (x_start, y_start), (x_end, y_end), (0, 0, 255), 2)
 
-
                 roi = im[y_start:y_end, x_start:x_end].copy()
                 gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-                
+
                 # # Detect text in the image
                 # reader = easyocr.Reader(["en"])
                 # result = reader.readtext(
@@ -685,13 +740,13 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                         50  # Distance from text box to search for lines
                     )
                     lines = cv2.HoughLinesP(
-                    edges,
-                    1,
-                    np.pi / 180,
-                    threshold=100,
-                    minLineLength=50,
-                    maxLineGap=5,
-                )
+                        edges,
+                        1,
+                        np.pi / 180,
+                        threshold=100,
+                        minLineLength=50,
+                        maxLineGap=5,
+                    )
 
                 longest_line = None
                 max_length = 0
@@ -701,8 +756,8 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                         x1, y1, x2, y2 = points[0]
                         line_center = ((x1 + x2) // 2, (y1 + y2) // 2)
                         dist_to_text = sqrt(
-                            (line_center[0] - text_box_center[0]) ** 2 +
-                            (line_center[1] - text_box_center[1]) ** 2
+                            (line_center[0] - text_box_center[0]) ** 2
+                            + (line_center[1] - text_box_center[1]) ** 2
                         )
                         if dist_to_text < proximity_threshold:
                             length = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
