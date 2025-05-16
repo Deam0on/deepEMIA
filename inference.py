@@ -613,135 +613,135 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                 # Use canny edge detection
                 edges = cv2.Canny(gray, 50, 150, apertureSize=3)
 
-                # reader = easyocr.Reader(['en'])
-                # result = reader.readtext(gray, detail=0, paragraph=False, contrast_ths=0.85, adjust_contrast=0.85, add_margin=0.25, width_ths=0.25, decoder='beamsearch')
-                # if result:
-                #     pxum_r = result[0]
-                #     psum = re.sub("[^0-9]", "", pxum_r)
-                # else:
-                #     pxum_r = ''
-                #     psum = '0'
+                reader = easyocr.Reader(['en'])
+                result = reader.readtext(gray, detail=0, paragraph=False, contrast_ths=0.85, adjust_contrast=0.85, add_margin=0.25, width_ths=0.25, decoder='beamsearch')
+                if result:
+                    pxum_r = result[0]
+                    psum = re.sub("[^0-9]", "", pxum_r)
+                else:
+                    pxum_r = ''
+                    psum = '0'
 
-                # lines_list = []
-                # lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=100, minLineLength=100, maxLineGap=1)
+                lines_list = []
+                lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=100, minLineLength=100, maxLineGap=1)
 
-                # psum = '0'
+                psum = '0'
 
-                # if lines is not None:
-                #     for points in lines:
-                #         x1, y1, x2, y2 = points[0]
-                #         cv2.line(im, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                #         lines_list.append([(x1, y1), (x2, y2)])
-                #         scale_len = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-                #         um_pix = float(psum) / scale_len
-                # else:
-                #     um_pix = 1
-                #     psum = '0'
+                if lines is not None:
+                    for points in lines:
+                        x1, y1, x2, y2 = points[0]
+                        cv2.line(im, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                        lines_list.append([(x1, y1), (x2, y2)])
+                        scale_len = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+                        um_pix = float(psum) / scale_len
+                else:
+                    um_pix = 1
+                    psum = '0'
 
-                # # Detect text in the image
-                # reader = easyocr.Reader(["en"])
-                # result = reader.readtext(
-                #     gray,
-                #     detail=1,  # Get bounding boxes
-                #     paragraph=False,
-                #     contrast_ths=0.85,
-                #     adjust_contrast=0.85,
-                #     add_margin=0.25,
-                #     width_ths=0.25,
-                #     decoder="beamsearch",
-                # )
+                # Detect text in the image
+                reader = easyocr.Reader(["en"])
+                result = reader.readtext(
+                    gray,
+                    detail=1,  # Get bounding boxes
+                    paragraph=False,
+                    contrast_ths=0.85,
+                    adjust_contrast=0.85,
+                    add_margin=0.25,
+                    width_ths=0.25,
+                    decoder="beamsearch",
+                )
 
-                # if result:
-                #     # Extract the first recognized text that looks like a scale (e.g., "500nm")
-                #     for detection in result:
-                #         bbox, text, _ = detection
-                #         text_clean = re.sub("[^0-9]", "", text)  # Extract numeric part
-                #         if text_clean:
-                #             pxum_r = text
-                #             psum = text_clean
-                #             x_min = int(
-                #                 min(bbox[0][0], bbox[1][0], bbox[2][0], bbox[3][0])
-                #             )
-                #             y_min = int(
-                #                 min(bbox[0][1], bbox[1][1], bbox[2][1], bbox[3][1])
-                #             )
-                #             x_max = int(
-                #                 max(bbox[0][0], bbox[1][0], bbox[2][0], bbox[3][0])
-                #             )
-                #             y_max = int(
-                #                 max(bbox[0][1], bbox[1][1], bbox[2][1], bbox[3][1])
-                #             )
-                #             text_box_center = (
-                #                 (x_min + x_max) // 2,
-                #                 (y_min + y_max) // 2,
-                #             )
-                #             break
-                #     else:
-                #         pxum_r = ""
-                #         psum = "0"
-                #         text_box_center = None
-                # else:
-                #     pxum_r = ""
-                #     psum = "0"
-                #     text_box_center = None
+                if result:
+                    # Extract the first recognized text that looks like a scale (e.g., "500nm")
+                    for detection in result:
+                        bbox, text, _ = detection
+                        text_clean = re.sub("[^0-9]", "", text)  # Extract numeric part
+                        if text_clean:
+                            pxum_r = text
+                            psum = text_clean
+                            x_min = int(
+                                min(bbox[0][0], bbox[1][0], bbox[2][0], bbox[3][0])
+                            )
+                            y_min = int(
+                                min(bbox[0][1], bbox[1][1], bbox[2][1], bbox[3][1])
+                            )
+                            x_max = int(
+                                max(bbox[0][0], bbox[1][0], bbox[2][0], bbox[3][0])
+                            )
+                            y_max = int(
+                                max(bbox[0][1], bbox[1][1], bbox[2][1], bbox[3][1])
+                            )
+                            text_box_center = (
+                                (x_min + x_max) // 2,
+                                (y_min + y_max) // 2,
+                            )
+                            break
+                    else:
+                        pxum_r = ""
+                        psum = "0"
+                        text_box_center = None
+                else:
+                    pxum_r = ""
+                    psum = "0"
+                    text_box_center = None
 
-                # # Use Canny edge detection
-                # edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+                # Use Canny edge detection
+                edges = cv2.Canny(gray, 50, 150, apertureSize=3)
 
-                # lines_list = []
-                # scale_len = 0
-                # um_pix = 1
+                lines_list = []
+                scale_len = 0
+                um_pix = 1
 
-                # if text_box_center:
-                #     # Focus on lines near the detected text box
-                #     proximity_threshold = (
-                #         50  # Distance from text box to search for lines
-                #     )
-                #     lines = cv2.HoughLinesP(
-                #         edges,
-                #         1,
-                #         np.pi / 180,
-                #         threshold=100,
-                #         minLineLength=50,
-                #         maxLineGap=5,
-                #     )
+                if text_box_center:
+                    # Focus on lines near the detected text box
+                    proximity_threshold = (
+                        50  # Distance from text box to search for lines
+                    )
+                    lines = cv2.HoughLinesP(
+                        edges,
+                        1,
+                        np.pi / 180,
+                        threshold=100,
+                        minLineLength=50,
+                        maxLineGap=5,
+                    )
 
-                #     if lines is not None:
-                #         for points in lines:
-                #             x1, y1, x2, y2 = points[0]
+                    if lines is not None:
+                        for points in lines:
+                            x1, y1, x2, y2 = points[0]
 
-                #             # Check proximity to the text box center
-                #             line_center = ((x1 + x2) // 2, (y1 + y2) // 2)
-                #             dist_to_text = sqrt(
-                #                 (line_center[0] - text_box_center[0]) ** 2
-                #                 + (line_center[1] - text_box_center[1]) ** 2
-                #             )
+                            # Check proximity to the text box center
+                            line_center = ((x1 + x2) // 2, (y1 + y2) // 2)
+                            dist_to_text = sqrt(
+                                (line_center[0] - text_box_center[0]) ** 2
+                                + (line_center[1] - text_box_center[1]) ** 2
+                            )
 
-                #             if dist_to_text < proximity_threshold:
-                #                 # Draw the line
-                #                 cv2.line(im, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                #                 lines_list.append([(x1, y1), (x2, y2)])
+                            if dist_to_text < proximity_threshold:
+                                # Draw the line
+                                cv2.line(im, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                lines_list.append([(x1, y1), (x2, y2)])
 
-                #                 # Calculate scale length (assume horizontal or vertical line)
-                #                 line_length = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-                #                 if (
-                #                     line_length > scale_len
-                #                 ):  # Use the longest line as the scale bar
-                #                     scale_len = line_length
+                                # Calculate scale length (assume horizontal or vertical line)
+                                line_length = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+                                if (
+                                    line_length > scale_len
+                                ):  # Use the longest line as the scale bar
+                                    scale_len = line_length
 
-                #         if scale_len > 0:
-                #             um_pix = float(psum) / scale_len
-                # else:
-                #     um_pix = 1
-                #     psum = "0"
+                        if scale_len > 0:
+                            um_pix = float(psum) / scale_len
+                else:
+                    um_pix = 1
+                    psum = "0"
 
-                # # um_per_pixel, real_um = detect_scale_bar(im)
-                # # um_pix = um_per_pixel
-                # # psum = real_um
+                # um_per_pixel, real_um = detect_scale_bar(im)
+                # um_pix = um_per_pixel
+                # psum = real_um
 
-                # # end new here #######################
+                # end new here #######################
 
-                um_pix, psum, bar_px_len, im = detect_scale_bar_sem(im)
+                # um_pix, psum, bar_px_len, im = detect_scale_bar_sem(im)
 
                 GetInference(predictor, im, x_pred, metadata, test_img)
                 GetCounts(predictor, im, TList, PList)
