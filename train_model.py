@@ -216,6 +216,7 @@ def train_on_dataset(dataset_name, output_dir):
     # Update config for QAT fine-tuning
     cfg.SOLVER.MAX_ITER = 500  # short fine-tuning
     cfg.SOLVER.BASE_LR = cfg.SOLVER.BASE_LR * 0.1  # smaller LR
+    cfg.SOLVER.WARMUP_ITERS = 0
 
     trainer.model = model_qat
     trainer.resume_or_load(resume=False)

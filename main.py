@@ -20,7 +20,7 @@ ETA_FILE = Path.home() / "uw-com-vision" / "eta_data.json"
 local_dataset_path = Path.home()
 
 # Load bucket name from config.yaml
-with open("config.yaml", "r") as f:
+with open(Path.home() / "uw-com-vision" / "config.yaml", "r") as f:
     config = yaml.safe_load(f)
 bucket = config["bucket"]
 
