@@ -612,27 +612,30 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                 # Define proportional region where the scale bar and text are located
                 x_start = int(w * 0.667)
                 y_start = int(h * 0.866)
-                x_end = int(x_start + w * 0.293)
-                y_end = h
+                x_end = w
+                y_end = int(y_start + h * 0.067)
 
                 # Draw detection ROI border in bright red
                 cv2.rectangle(im, (x_start, y_start), (x_end, y_end), (0, 0, 255), 2)
 
+
                 roi = im[y_start:y_end, x_start:x_end].copy()
                 gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-
-                # Detect text in the image
-                reader = easyocr.Reader(["en"])
-                result = reader.readtext(
-                    gray_roi,
-                    detail=1,  # Get bounding boxes
-                    paragraph=False,
-                    contrast_ths=0.85,
-                    adjust_contrast=0.85,
-                    add_margin=0.25,
-                    width_ths=0.25,
-                    decoder="beamsearch",
-                )
+                
+                # # Detect text in the image
+                # reader = easyocr.Reader(["en"])
+                # result = reader.readtext(
+                #     gray_roi,
+                #     detail=1,  # Get bounding boxes
+                #     paragraph=False,
+                #     contrast_ths=0.85,
+                #     adjust_contrast=0.85,
+                #     add_margin=0.25,
+                #     width_ths=0.25,
+                #     decoder="beamsearch",
+                # )
+                reader = easyocr.Reader(["en"], verbose=False)
+                result = reader.readtext(gray_roi, detail=1, paragraph=False)
 
                 if result:
                     # Extract the first recognized text that looks like a scale (e.g., "500nm")
