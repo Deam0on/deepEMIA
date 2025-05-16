@@ -8,9 +8,7 @@ from math import sqrt
 from pathlib import Path
 import cv2
 import detectron2.data.transforms as T
-# import easyocr
-import pytesseract
-from pytesseract import Output
+import easyocr
 import imutils
 import numpy as np
 import pandas as pd
@@ -455,59 +453,72 @@ def detect_arrows(image):
 
     return flow_vectors
 
-def detect_scale_bar(image):
+
+def detect_scale_bar_sem(image):
+    """
+    Detects the scale bar in an SEM image using EasyOCR and contour analysis.
+
+    Parameters:
+    - image: Input image (BGR, numpy array).
+
+    Returns:
+    - um_per_pixel: Micrometers per pixel (float).
+    - real_um: Real-world scale bar length in micrometers (float as string).
+    - bar_px_length: Length of detected scale bar in pixels (int).
+    - annotated_image: Copy of input image with OCR box and scale bar drawn (BGR, numpy array).
+    """
     h, w = image.shape[:2]
-    roi = image[h//2:h, w//2:w]  # Bottom-right quadrant
+    roi = image[h//2:h, w//2:w].copy()
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
 
-    # OCR: Extract scale bar text
-    data = pytesseract.image_to_data(gray, output_type=Output.DICT)
-    psum = "0"
-    text_center = None
-    scale_unit = "um"
+    reader = easyocr.Reader(["en"], verbose=False)
+    result = reader.readtext(gray, detail=1, paragraph=False)
 
-    for i in range(len(data['text'])):
-        raw_text = data['text'][i].strip()
-        match = re.match(r"(\d+)\s*(nm|µm|um|mm)", raw_text, re.IGNORECASE)
+    unit_pattern = re.compile(r"(\d+)\s*(nm|µm|um|mm)", re.IGNORECASE)
+    scale_value = "0"
+    unit = "um"
+    scale_center = None
+
+    for bbox, text, _ in result:
+        match = unit_pattern.search(text)
         if match:
-            psum = match.group(1)
-            scale_unit = match.group(2).lower()
-            x = data['left'][i]
-            y = data['top'][i]
-            w_box = data['width'][i]
-            h_box = data['height'][i]
-            text_center = (x + w_box // 2, y + h_box // 2)
-            cv2.rectangle(roi, (x, y), (x + w_box, y + h_box), (255, 0, 0), 2)
+            scale_value = match.group(1)
+            unit = match.group(2).lower()
+            x_coords = [int(p[0]) for p in bbox]
+            y_coords = [int(p[1]) for p in bbox]
+            center_x = sum(x_coords) // len(x_coords)
+            center_y = sum(y_coords) // len(y_coords)
+            scale_center = (center_x, center_y)
+            cv2.rectangle(roi, (min(x_coords), min(y_coords)), (max(x_coords), max(y_coords)), (255, 0, 0), 2)
             break
 
-    # Convert units to micrometers
-    unit_multipliers = {"nm": 0.001, "um": 1.0, "µm": 1.0, "mm": 1000.0}
-    real_um = float(psum) * unit_multipliers.get(scale_unit, 1.0)
-
-    # Detect scale bar: look for thick white horizontal line with vertical end ticks
     bin_img = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY)[1]
     contours, _ = cv2.findContours(bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    bar_len_px = 0
-    bar_coords = None
+    bar_px_length = 0
+    bar_found = False
 
-    for c in contours:
-        x, y, w_c, h_c = cv2.boundingRect(c)
-        aspect_ratio = w_c / float(h_c)
-        area = cv2.contourArea(c)
+    if scale_center:
+        for c in contours:
+            x, y, w_c, h_c = cv2.boundingRect(c)
+            aspect_ratio = w_c / float(h_c)
+            if aspect_ratio > 10 and 2 <= h_c <= 15 and y > scale_center[1]:
+                left_tick = bin_img[y:y+h_c, max(x-5, 0):x+5]
+                right_tick = bin_img[y:y+h_c, x+w_c-5:min(x+w_c+5, roi.shape[1])]
+                if np.count_nonzero(left_tick) > 10 and np.count_nonzero(right_tick) > 10:
+                    bar_px_length = w_c
+                    cv2.line(roi, (x, y + h_c // 2), (x + w_c, y + h_c // 2), (0, 255, 0), 2)
+                    bar_found = True
+                    break
 
-        if 10 < w_c < roi.shape[1] and 1 < h_c < 15 and aspect_ratio > 5 and area > 100:
-            # Check for vertical ticks at ends
-            left_patch = bin_img[y:y+h_c, x-5:x+5]
-            right_patch = bin_img[y:y+h_c, x+w_c-5:x+w_c+5]
-            if np.count_nonzero(left_patch) > 10 and np.count_nonzero(right_patch) > 10:
-                bar_len_px = w_c
-                bar_coords = (x, y, w_c, h_c)
-                cv2.line(roi, (x, y + h_c // 2), (x + w_c, y + h_c // 2), (0, 255, 0), 2)
-                break
+    unit_multipliers = {"nm": 0.001, "um": 1.0, "µm": 1.0, "mm": 1000.0}
+    real_um = float(scale_value) * unit_multipliers.get(unit, 1.0)
+    um_per_pixel = real_um / bar_px_length if bar_found else 1.0
 
-    um_per_pixel = real_um / bar_len_px if bar_len_px > 0 else 1.0
-    return um_per_pixel, real_um
+    annotated_image = image.copy()
+    annotated_image[h//2:h, w//2:w] = roi
+
+    return um_per_pixel, str(real_um), bar_px_length, annotated_image
 
 def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
     """
@@ -724,11 +735,13 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                 #     um_pix = 1
                 #     psum = "0"
 
-                um_per_pixel, real_um = detect_scale_bar(im)
-                um_pix = um_per_pixel
-                psum = real_um
+                # # um_per_pixel, real_um = detect_scale_bar(im)
+                # # um_pix = um_per_pixel
+                # # psum = real_um
 
-                # end new here #######################
+                # # end new here #######################
+
+                um_pix, psum, bar_px_len, im = detect_scale_bar_sem(im)
 
                 GetInference(predictor, im, x_pred, metadata, test_img)
                 GetCounts(predictor, im, TList, PList)
