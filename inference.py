@@ -603,7 +603,8 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                 ]
             )
 
-            for test_img in os.listdir(test_img_path):
+            for idx, test_img in enumerate(os.listdir(test_img_path), 1):
+                print(f"Inferencing image {idx} out of {len(os.listdir(test_img_path))}")
                 input_path = os.path.join(test_img_path, test_img)
                 im = cv2.imread(input_path)
 
@@ -742,17 +743,17 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                 mask_array = np.moveaxis(mask_array, 0, -1)
                 output = np.zeros_like(im)
 
-                global_min_wavelength = float("inf")
-                global_max_wavelength = float("-inf")
+                # global_min_wavelength = float("inf")
+                # global_max_wavelength = float("-inf")
 
-                for i in range(im.shape[0]):
-                    for j in range(im.shape[1]):
-                        b, g, r = im[i, j]
-                        wavelength = rgb_to_wavelength(b, g, r)
-                        if wavelength < global_min_wavelength:
-                            global_min_wavelength = wavelength
-                        if wavelength > global_max_wavelength:
-                            global_max_wavelength = wavelength
+                # for i in range(im.shape[0]):
+                #     for j in range(im.shape[1]):
+                #         b, g, r = im[i, j]
+                #         wavelength = rgb_to_wavelength(b, g, r)
+                #         if wavelength < global_min_wavelength:
+                #             global_min_wavelength = wavelength
+                #         if wavelength > global_max_wavelength:
+                #             global_max_wavelength = wavelength
 
                 for i in range(num_instances):
                     single_output = np.zeros_like(output)
