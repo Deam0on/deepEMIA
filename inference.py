@@ -468,7 +468,7 @@ def detect_scale_bar_sem(image):
     - annotated_image: Copy of input image with OCR box and scale bar drawn (BGR, numpy array).
     """
     h, w = image.shape[:2]
-    roi = image[h//2:h, w//2:w].copy()
+    roi = image[h//3:h, w//3:w].copy()
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
 
     reader = easyocr.Reader(["en"], verbose=False)
