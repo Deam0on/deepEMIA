@@ -8,7 +8,7 @@ from math import sqrt
 from pathlib import Path
 import cv2
 import detectron2.data.transforms as T
-import easyocr
+# import easyocr
 import pytesseract
 from pytesseract import Output
 import imutils
@@ -455,48 +455,59 @@ def detect_arrows(image):
 
     return flow_vectors
 
-def detect_scale_bar(gray, image):
-    d = pytesseract.image_to_data(gray, output_type=Output.DICT)
-    n_boxes = len(d['level'])
+def detect_scale_bar(image):
+    h, w = image.shape[:2]
+    roi = image[h//2:h, w//2:w]  # Bottom-right quadrant
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
 
-    psum = '0'
-    text_box_center = None
-    um_pix = 1
-    scale_len = 0
+    # OCR: Extract scale bar text
+    data = pytesseract.image_to_data(gray, output_type=Output.DICT)
+    psum = "0"
+    text_center = None
+    scale_unit = "um"
 
-    for i in range(n_boxes):
-        text = d['text'][i]
-        text_clean = re.sub(r"[^0-9]", "", text)
-        if text_clean:
-            psum = text_clean
-            (x, y, w, h) = (d['left'][i], d['top'][i], d['width'][i], d['height'][i])
-            text_box_center = (x + w // 2, y + h // 2)
+    for i in range(len(data['text'])):
+        raw_text = data['text'][i].strip()
+        match = re.match(r"(\d+)\s*(nm|µm|um|mm)", raw_text, re.IGNORECASE)
+        if match:
+            psum = match.group(1)
+            scale_unit = match.group(2).lower()
+            x = data['left'][i]
+            y = data['top'][i]
+            w_box = data['width'][i]
+            h_box = data['height'][i]
+            text_center = (x + w_box // 2, y + h_box // 2)
+            cv2.rectangle(roi, (x, y), (x + w_box, y + h_box), (255, 0, 0), 2)
             break
 
-    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
-    lines = cv2.HoughLinesP(
-        edges, 1, np.pi / 180, threshold=100, minLineLength=50, maxLineGap=5
-    )
+    # Convert units to micrometers
+    unit_multipliers = {"nm": 0.001, "um": 1.0, "µm": 1.0, "mm": 1000.0}
+    real_um = float(psum) * unit_multipliers.get(scale_unit, 1.0)
 
-    if lines is not None and text_box_center:
-        proximity_threshold = 50
-        for points in lines:
-            x1, y1, x2, y2 = points[0]
-            line_center = ((x1 + x2) // 2, (y1 + y2) // 2)
-            dist_to_text = sqrt(
-                (line_center[0] - text_box_center[0]) ** 2 +
-                (line_center[1] - text_box_center[1]) ** 2
-            )
-            if dist_to_text < proximity_threshold:
-                cv2.line(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                length = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-                if length > scale_len:
-                    scale_len = length
+    # Detect scale bar: look for thick white horizontal line with vertical end ticks
+    bin_img = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY)[1]
+    contours, _ = cv2.findContours(bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    if scale_len > 0 and psum != '0':
-        um_pix = float(psum) / scale_len
+    bar_len_px = 0
+    bar_coords = None
 
-    return um_pix, psum, text_box_center
+    for c in contours:
+        x, y, w_c, h_c = cv2.boundingRect(c)
+        aspect_ratio = w_c / float(h_c)
+        area = cv2.contourArea(c)
+
+        if 10 < w_c < roi.shape[1] and 1 < h_c < 15 and aspect_ratio > 5 and area > 100:
+            # Check for vertical ticks at ends
+            left_patch = bin_img[y:y+h_c, x-5:x+5]
+            right_patch = bin_img[y:y+h_c, x+w_c-5:x+w_c+5]
+            if np.count_nonzero(left_patch) > 10 and np.count_nonzero(right_patch) > 10:
+                bar_len_px = w_c
+                bar_coords = (x, y, w_c, h_c)
+                cv2.line(roi, (x, y + h_c // 2), (x + w_c, y + h_c // 2), (0, 255, 0), 2)
+                break
+
+    um_per_pixel = real_um / bar_len_px if bar_len_px > 0 else 1.0
+    return um_per_pixel, real_um, bar_len_px, roi, psum
 
 
 def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
@@ -714,8 +725,9 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                 #     um_pix = 1
                 #     psum = "0"
 
-                gray = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
-                um_pix, psum, text_box_center = detect_scale_bar(gray, im)
+                um_per_pixel, psum, marked_image = detect_scale_bar(im)
+                um_pix = um_per_pixel
+                cv2.imwrite("detected_scale_bar_{test_img}.png", marked_image)
 
                 # end new here #######################
 
