@@ -669,7 +669,7 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                     text_box_center = None
 
                 # Use Canny edge detection
-                edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+                edges = cv2.Canny(gray_roi, 50, 150, apertureSize=3)
 
                 lines_list = []
                 scale_len = 0
