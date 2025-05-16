@@ -29,7 +29,7 @@ from detectron2.structures import BoxMode
 from sklearn.model_selection import train_test_split
 
 # Load config once at the start of your program
-with open("config.yaml", "r") as f:
+with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
 # Constant paths

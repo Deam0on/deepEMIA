@@ -41,7 +41,7 @@ from torch.utils.data import DataLoader
 from data.data_preparation import read_dataset_info, register_datasets
 
 # Load config once at the start of your program
-with open("config.yaml", "r") as f:
+with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
 # Resolve paths

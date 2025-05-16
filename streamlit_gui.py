@@ -33,7 +33,7 @@ ADMIN_PASSWORD = "admin"
 
 
 # Load config once at the start of your program
-with open("config.yaml", "r") as f:
+with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
 # Absolute path to main.py
