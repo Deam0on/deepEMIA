@@ -20,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-from data.data_preparation import split_dataset
+from src.data.data_preparation import split_dataset
 from models.evaluate_model import evaluate_model
 from models.inference import run_inference
 from models.train_model import train_on_dataset
