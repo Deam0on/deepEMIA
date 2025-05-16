@@ -474,7 +474,7 @@ def detect_scale_bar_sem(image):
     reader = easyocr.Reader(["en"], verbose=False)
     result = reader.readtext(gray, detail=1, paragraph=False)
 
-    unit_pattern = re.compile(r"(\d+)\s*(µm|um)", re.IGNORECASE)
+    unit_pattern = re.compile(r"(\d+)\s*(nm|µm|um)", re.IGNORECASE)
     scale_value = "0"
     unit = "um"
     scale_center = None
