@@ -607,6 +607,16 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                 input_path = os.path.join(test_img_path, test_img)
                 im = cv2.imread(input_path)
 
+                h, w = im.shape[:2]
+
+                # Define proportional region where the scale bar and text are located
+                x_start = int(w * 0.667)
+                y_start = int(h * 0.866)
+                x_end = int(x_start + w * 0.293)
+                y_end = int(y_start + h * 0.067)
+                roi = im[y_start:y_end, x_start:x_end].copy()
+                gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+
                 # Convert image to grayscale
                 gray = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
 
@@ -641,7 +651,7 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                 # Detect text in the image
                 reader = easyocr.Reader(["en"])
                 result = reader.readtext(
-                    gray,
+                    gray_roi,
                     detail=1,  # Get bounding boxes
                     paragraph=False,
                     contrast_ths=0.85,
