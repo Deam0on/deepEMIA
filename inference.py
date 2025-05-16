@@ -508,7 +508,8 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
     df = pd.DataFrame({"ImageId": Img_ID, "EncodedPixels": EncodedPixels})
     df.to_csv(os.path.join(path, "R50_flip_results.csv"), index=False, sep=",")
 
-    for x_pred in [0, 1]:
+    num_classes = len(MetadataCatalog.get(f"{dataset_name}_train").thing_classes)
+    for x_pred in range(num_classes):
         TList = []
         PList = []
         csv_filename = f"results_x_pred_{x_pred}.csv"
