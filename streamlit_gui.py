@@ -36,12 +36,17 @@ ADMIN_PASSWORD = "admin"
 with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
+# Load bucket name from config.yaml
+with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
+    config = yaml.safe_load(f)
+bucket = config["bucket"]
+
 # Absolute path to main.py
 MAIN_SCRIPT_PATH = Path(config["paths"]["main_script"]).expanduser().resolve()
 ETA_FILE = Path(config["paths"]["eta_file"]).expanduser().resolve()
 
 # GCS bucket details
-GCS_BUCKET_NAME = "nn-uct"
+GCS_BUCKET_NAME = bucket
 GCS_DATASET_FOLDER = "DATASET"
 GCS_INFERENCE_FOLDER = "DATASET/INFERENCE"
 GCS_ARCHIVE_FOLDER = "Archive"
