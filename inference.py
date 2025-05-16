@@ -684,39 +684,45 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                         50  # Distance from text box to search for lines
                     )
                     lines = cv2.HoughLinesP(
-                        edges,
-                        1,
-                        np.pi / 180,
-                        threshold=100,
-                        minLineLength=50,
-                        maxLineGap=5,
-                    )
+                    edges,
+                    1,
+                    np.pi / 180,
+                    threshold=100,
+                    minLineLength=50,
+                    maxLineGap=5,
+                )
 
-                    if lines is not None:
-                        for points in lines:
-                            x1, y1, x2, y2 = points[0]
+                longest_line = None
+                max_length = 0
 
-                            # Check proximity to the text box center
-                            line_center = ((x1 + x2) // 2, (y1 + y2) // 2)
-                            dist_to_text = sqrt(
-                                (line_center[0] - text_box_center[0]) ** 2
-                                + (line_center[1] - text_box_center[1]) ** 2
-                            )
+                if lines is not None and text_box_center:
+                    for points in lines:
+                        x1, y1, x2, y2 = points[0]
+                        line_center = ((x1 + x2) // 2, (y1 + y2) // 2)
+                        dist_to_text = sqrt(
+                            (line_center[0] - text_box_center[0]) ** 2 +
+                            (line_center[1] - text_box_center[1]) ** 2
+                        )
+                        if dist_to_text < proximity_threshold:
+                            length = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+                            if length > max_length:
+                                max_length = length
+                                longest_line = (x1, y1, x2, y2)
 
-                            if dist_to_text < proximity_threshold:
-                                # Draw the line
-                                cv2.line(im, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                                lines_list.append([(x1, y1), (x2, y2)])
+                if longest_line:
+                    x1, y1, x2, y2 = longest_line
 
-                                # Calculate scale length (assume horizontal or vertical line)
-                                line_length = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-                                if (
-                                    line_length > scale_len
-                                ):  # Use the longest line as the scale bar
-                                    scale_len = line_length
+                    # Offset from ROI to original image
+                    x1_full = x1 + x_start
+                    x2_full = x2 + x_start
+                    y1_full = y1 + y_start
+                    y2_full = y2 + y_start
 
-                        if scale_len > 0:
-                            um_pix = float(psum) / scale_len
+                    # Draw longest detected line in green
+                    cv2.line(im, (x1_full, y1_full), (x2_full, y2_full), (0, 255, 0), 2)
+
+                    scale_len = max_length
+                    um_pix = float(psum) / scale_len if scale_len > 0 else 1.0
                 else:
                     um_pix = 1
                     psum = "0"
