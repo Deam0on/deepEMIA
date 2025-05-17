@@ -1,10 +1,11 @@
 ## IMPORTS
 import itertools
-import numpy as np
 
+import numpy as np
 from scipy.ndimage import binary_fill_holes
 from skimage.measure import label
 from skimage.morphology import dilation, erosion
+
 
 def binary_mask_to_rle(binary_mask):
     """
@@ -26,6 +27,7 @@ def binary_mask_to_rle(binary_mask):
         counts.append(len(list(elements)))
     return rle
 
+
 def rle_encode(img):
     """
     Encodes a binary image into Run-Length Encoding (RLE).
@@ -41,6 +43,7 @@ def rle_encode(img):
     runs = np.where(pixels[1:] != pixels[:-1])[0] + 1
     runs[1::2] -= runs[::2]
     return " ".join(str(x) for x in runs)
+
 
 def rle_decode(mask_rle, shape):
     """

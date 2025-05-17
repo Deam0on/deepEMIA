@@ -14,8 +14,8 @@ utilities for visualizing and saving model predictions.
 import csv
 import os
 from pathlib import Path
-import cv2
 
+import cv2
 import yaml
 from detectron2.config import get_cfg
 from detectron2.data import DatasetCatalog, MetadataCatalog, build_detection_test_loader
@@ -26,7 +26,6 @@ from src.data.datasets import (
     read_dataset_info,
     register_datasets,
 )
-
 from src.data.models import (
     choose_and_use_model,
     get_trained_model_paths,

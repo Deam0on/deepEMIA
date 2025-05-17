@@ -1,6 +1,8 @@
 import cv2
 import torch
+
 from src.utils.mask_utils import rle_encode
+
 
 def get_masks(fn, predictor):
     """

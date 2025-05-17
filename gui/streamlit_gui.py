@@ -18,23 +18,22 @@ import time
 from io import BytesIO
 from pathlib import Path
 
-
 import streamlit as st
 import yaml
 from PIL import Image
 
 from gui.streamlit_functions import (
-    create_zip_from_gcs,
     check_password,
+    contains_errors,
+    create_zip_from_gcs,
+    estimate_eta,
+    format_and_sort_folders,
     list_directories,
     list_png_files_in_gcs_folder,
     list_specific_csv_files_in_gcs_folder,
-    contains_errors,
     load_dataset_names_from_gcs,
     save_dataset_names_to_gcs,
     upload_files_to_gcs,
-    format_and_sort_folders,
-    estimate_eta,
 )
 
 # Add these lines at the beginning of the script
@@ -81,6 +80,8 @@ st.title("DL-IA Control Panel")
 # Task selection
 st.header("Script controls")
 use_new_data = st.checkbox("Use new data from bucket", value=False)
+
+dataset_name = st.selectbox("Dataset Name", list(st.session_state.datasets.keys()))
 
 # Wrap the dataset creation and deletion sections with password check
 if check_password():
@@ -137,8 +138,6 @@ reverse_task_mapping = {v: k for k, v in task_mapping.items()}
 task_display_names = [task_mapping[task] for task in tasks_order]
 selected_task_display = st.selectbox("Select Task", task_display_names)
 task = reverse_task_mapping[selected_task_display]
-
-dataset_name = st.selectbox("Dataset Name", list(st.session_state.datasets.keys()))
 
 threshold = st.slider(
     "Select Detection Threshold",

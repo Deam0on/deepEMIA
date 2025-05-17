@@ -23,13 +23,13 @@ import csv
 import os
 import time
 from pathlib import Path
-import torch
 
 import cv2
 import detectron2.data.transforms as T
 import imutils
 import numpy as np
 import pandas as pd
+import torch
 import yaml
 from detectron2.data import MetadataCatalog, build_detection_train_loader
 from detectron2.data import detection_utils as utils
@@ -46,12 +46,10 @@ from src.data.models import (
     choose_and_use_model,
     get_trained_model_paths,
 )
-
 from src.utils.mask_utils import (
-    rle_encoding,
     postprocess_masks,
+    rle_encoding,
 )
-
 from src.utils.measurements import midpoint
 from src.utils.scalebar_ocr import detect_scale_bar
 
@@ -160,6 +158,7 @@ def get_image_folder_path(base_path=Path.home() / "DATASET" / "INFERENCE"):
             "No images found in INFERENCE or INFERENCE/UPLOAD folders."
         )
 
+
 def GetInference(predictor, im, x_pred, metadata, test_img):
     """
     Performs inference on an image and processes the results.
@@ -211,6 +210,7 @@ def GetCounts(predictor, im, TList, PList):
     PCount = sum(classes == 1)
     TList.append(TCount)
     PList.append(PCount)
+
 
 def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
     """

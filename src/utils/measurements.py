@@ -1,5 +1,6 @@
 import cv2
 
+
 def midpoint(ptA, ptB):
     """
     Calculates the midpoint between two points.
@@ -12,6 +13,7 @@ def midpoint(ptA, ptB):
     - tuple: Midpoint coordinates (x, y)
     """
     return ((ptA[0] + ptB[0]) * 0.5, (ptA[1] + ptB[1]) * 0.5)
+
 
 def rgb_to_hsv(r, g, b):
     """
@@ -127,4 +129,3 @@ def detect_arrows(image):
         flow_vectors.append(direction)
 
     return flow_vectors
-

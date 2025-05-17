@@ -1,8 +1,10 @@
+import re
+from math import sqrt
+
 import cv2
 import easyocr
-import re
 import numpy as np
-from math import sqrt
+
 
 def detect_scale_bar(image):
     """
@@ -38,18 +40,10 @@ def detect_scale_bar(image):
             if text_clean:
                 pxum_r = text
                 psum = text_clean
-                x_min = int(
-                    min(bbox[0][0], bbox[1][0], bbox[2][0], bbox[3][0])
-                )
-                y_min = int(
-                    min(bbox[0][1], bbox[1][1], bbox[2][1], bbox[3][1])
-                )
-                x_max = int(
-                    max(bbox[0][0], bbox[1][0], bbox[2][0], bbox[3][0])
-                )
-                y_max = int(
-                    max(bbox[0][1], bbox[1][1], bbox[2][1], bbox[3][1])
-                )
+                x_min = int(min(bbox[0][0], bbox[1][0], bbox[2][0], bbox[3][0]))
+                y_min = int(min(bbox[0][1], bbox[1][1], bbox[2][1], bbox[3][1]))
+                x_max = int(max(bbox[0][0], bbox[1][0], bbox[2][0], bbox[3][0]))
+                y_max = int(max(bbox[0][1], bbox[1][1], bbox[2][1], bbox[3][1]))
                 text_box_center = (
                     (x_min + x_max) // 2,
                     (y_min + y_max) // 2,
@@ -73,9 +67,7 @@ def detect_scale_bar(image):
 
     if text_box_center:
         # Focus on lines near the detected text box
-        proximity_threshold = (
-            50  # Distance from text box to search for lines
-        )
+        proximity_threshold = 50  # Distance from text box to search for lines
         lines = cv2.HoughLinesP(
             edges,
             1,
