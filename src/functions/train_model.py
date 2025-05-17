@@ -17,28 +17,26 @@ The module provides a complete training pipeline with support for:
 ## IMPORTS
 import copy
 import os
-from datetime import datetime, timedelta
 from pathlib import Path
 
 import albumentations as A
 import cv2
-import detectron2.data.transforms as T
-import numpy as np
-import pandas as pd
 import torch
-import torch.nn as nn
 import yaml
 from albumentations.pytorch import ToTensorV2
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
-from detectron2.data import (DatasetCatalog, MetadataCatalog,
-                             build_detection_train_loader)
+from detectron2.data import (
+    DatasetCatalog,
+    MetadataCatalog,
+    build_detection_train_loader,
+)
 from detectron2.data import detection_utils as utils
 from detectron2.engine import DefaultTrainer
 from detectron2.evaluation import COCOEvaluator
 from torch.utils.data import DataLoader
 
-from src.data.data_preparation import read_dataset_info, register_datasets
+from src.data.datasets import read_dataset_info, register_datasets
 
 # Load config once at the start of your program
 with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:

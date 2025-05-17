@@ -14,17 +14,23 @@ utilities for visualizing and saving model predictions.
 import csv
 import os
 from pathlib import Path
+import cv2
 
 import yaml
 from detectron2.config import get_cfg
-from detectron2.data import (DatasetCatalog, MetadataCatalog,
-                             build_detection_test_loader)
+from detectron2.data import DatasetCatalog, MetadataCatalog, build_detection_test_loader
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
 from detectron2.utils.visualizer import Visualizer
 
-from src.data.data_preparation import (choose_and_use_model,
-                                   get_trained_model_paths, read_dataset_info,
-                                   register_datasets)
+from src.data.datasets import (
+    read_dataset_info,
+    register_datasets,
+)
+
+from src.data.models import (
+    choose_and_use_model,
+    get_trained_model_paths,
+)
 
 # Load config once at the start of your program
 with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:

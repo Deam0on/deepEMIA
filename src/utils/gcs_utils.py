@@ -16,6 +16,7 @@ import os
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
+
 import yaml
 
 # Load bucket name from config.yaml
@@ -29,6 +30,7 @@ with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
 
 # Resolve paths
 local_dataset_path = Path(config["paths"]["local_dataset_root"]).expanduser().resolve()
+
 
 def download_data_from_bucket():
     """

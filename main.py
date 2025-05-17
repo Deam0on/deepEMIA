@@ -12,21 +12,18 @@ progress tracking and ETA estimation for long-running tasks.
 """
 
 import argparse
-import json
 import os
-import shutil
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import yaml
 
-from src.data.data_preparation import split_dataset
-from src.models.evaluate_model import evaluate_model
-from src.models.inference import run_inference
-from src.models.train_model import train_on_dataset
+from src.data.datasets import split_dataset
+from src.functions.evaluate_model import evaluate_model
+from src.functions.inference import run_inference
+from src.functions.train_model import train_on_dataset
 from src.utils.eta_utils import update_eta_data
-from src.utils.gcs_utils import (download_data_from_bucket,
-                                 upload_data_to_bucket)
+from src.utils.gcs_utils import download_data_from_bucket, upload_data_to_bucket
 
 # Load config once at the start of your program
 with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
