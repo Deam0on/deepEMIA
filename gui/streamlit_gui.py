@@ -22,7 +22,7 @@ import streamlit as st
 import yaml
 from PIL import Image
 
-from gui.streamlit_functions import (
+from streamlit_functions import (
     check_password,
     contains_errors,
     create_zip_from_gcs,
