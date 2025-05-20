@@ -189,6 +189,7 @@ def train_on_dataset(dataset_name, output_dir):
     cfg.DATASETS.TRAIN = (f"{dataset_name}_train",)
     cfg.DATASETS.TEST = (f"{dataset_name}_test",)
     cpu_count = os.cpu_count() or 2
+    cfg.DATALOADER.FILTER_EMPTY_ANNOTATIONS = True
     cfg.DATALOADER.NUM_WORKERS = max(1, cpu_count // 2)
     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
         "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
@@ -224,6 +225,7 @@ def train_on_dataset(dataset_name, output_dir):
     cfg.OUTPUT_DIR = dataset_output_dir
 
     # Phase 1: standard training
+    print("Classes:", MetadataCatalog.get(cfg.DATASETS.TRAIN[0]).thing_classes)
     # Initialize and start the trainer
     # trainer = DefaultTrainer(cfg)
     trainer = CustomTrainer(cfg)
