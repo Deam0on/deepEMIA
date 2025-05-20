@@ -243,16 +243,29 @@ if use_new_data:
             )
         st.success("Files uploaded successfully.")
 
-# Show errors and warnings
-if st.session_state.show_errors:
-    with st.expander("Show errors and warnings", expanded=False):
-        if contains_errors(st.session_state.stderr):
+# # Show errors and warnings
+# if st.session_state.show_errors:
+#     with st.expander("Show errors and warnings", expanded=False):
+#         if contains_errors(st.session_state.stderr):
+#             st.error(st.session_state.stderr)
+#         else:
+#             st.warning(st.session_state.stderr)
+# else:
+#     if st.session_state.stderr and st.button("Show Errors and Warnings"):
+#         st.session_state.show_errors = True
+
+has_errors = contains_errors(st.session_state.stderr)
+has_stderr = bool(st.session_state.stderr)
+
+# Auto-expand if actual errors are present
+expand_expander = has_errors
+
+if has_stderr:
+    with st.expander("Show errors and warnings", expanded=expand_expander):
+        if has_errors:
             st.error(st.session_state.stderr)
         else:
             st.warning(st.session_state.stderr)
-else:
-    if st.session_state.stderr and st.button("Show Errors and Warnings"):
-        st.session_state.show_errors = True
 
 # List folders in the GCS bucket
 st.header("Google Cloud Storage")

@@ -159,19 +159,47 @@ def get_image_folder_path(base_path=Path.home() / "DATASET" / "INFERENCE"):
         )
 
 
+# def GetInference(predictor, im, x_pred, metadata, test_img):
+#     """
+#     Performs inference on an image and processes the results.
+
+#     Parameters:
+#     - predictor (object): Model predictor
+#     - im (numpy.ndarray): Input image
+#     - x_pred (numpy.ndarray): Previous predictions
+#     - metadata (object): Dataset metadata
+#     - test_img (bool): Whether this is a test image
+
+#     Returns:
+#     - tuple: (predictions, visualizations)
+#     """
+#     outputs = predictor(im)
+
+#     # Get all instances
+#     inst_out = outputs["instances"]
+
+#     # Filter instances by predicted class
+#     filtered_instances = inst_out[inst_out.pred_classes == x_pred]
+
+#     v = Visualizer(
+#         im[:, :, ::-1], metadata=metadata, scale=1, instance_mode=ColorMode.SEGMENTATION
+#     )
+#     out = v.draw_instance_predictions(filtered_instances.to("cpu"))
+#     cv2.imwrite(
+#         test_img + "_" + str(x_pred) + "__pred.png", out.get_image()[:, :, ::-1]
+#     )
+
 def GetInference(predictor, im, x_pred, metadata, test_img):
     """
-    Performs inference on an image and processes the results.
+    Performs inference on an image, annotates each detected instance with class, confidence, and ID, 
+    and saves the annotated image.
 
     Parameters:
     - predictor (object): Model predictor
     - im (numpy.ndarray): Input image
-    - x_pred (numpy.ndarray): Previous predictions
+    - x_pred (int): Target class index to filter predictions
     - metadata (object): Dataset metadata
-    - test_img (bool): Whether this is a test image
-
-    Returns:
-    - tuple: (predictions, visualizations)
+    - test_img (str): File name prefix for saving output
     """
     outputs = predictor(im)
 
@@ -179,15 +207,44 @@ def GetInference(predictor, im, x_pred, metadata, test_img):
     inst_out = outputs["instances"]
 
     # Filter instances by predicted class
-    filtered_instances = inst_out[inst_out.pred_classes == x_pred]
+    filtered_instances = inst_out[inst_out.pred_classes == x_pred].to("cpu")
 
     v = Visualizer(
-        im[:, :, ::-1], metadata=metadata, scale=1, instance_mode=ColorMode.SEGMENTATION
+        im[:, :, ::-1],  # BGR to RGB
+        metadata=metadata,
+        scale=1.0,
+        instance_mode=ColorMode.SEGMENTATION
     )
-    out = v.draw_instance_predictions(filtered_instances.to("cpu"))
-    cv2.imwrite(
-        test_img + "_" + str(x_pred) + "__pred.png", out.get_image()[:, :, ::-1]
-    )
+
+    # Draw predictions without labels first
+    out = v.draw_instance_predictions(filtered_instances)
+
+    # Generate labels with instance ID and confidence
+    labels = [
+        f"{metadata.get('thing_classes')[cls]} {i+1}: {score:.0%}"
+        for i, (cls, score) in enumerate(
+            zip(filtered_instances.pred_classes, filtered_instances.scores)
+        )
+    ]
+
+    # Overlay labels manually at top-left of each bounding box
+    for i, box in enumerate(filtered_instances.pred_boxes):
+        x, y = int(box.tensor[0][0]), int(box.tensor[0][1])
+        cv2.putText(
+            out.get_image(),
+            labels[i],
+            (x, max(y - 10, 10)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.4,
+            (0, 0, 0),
+            1,
+            cv2.LINE_AA,
+        )
+
+    # Save the annotated image
+    save_path = f"{test_img}_class_{x_pred}_pred.png"
+    cv2.imwrite(save_path, out.get_image()[:, :, ::-1])  # RGB to BGR
+
 
 
 def GetCounts(predictor, im, TList, PList):
@@ -257,6 +314,7 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
     conv = lambda l: " ".join(map(str, l))
 
     for name in images_name:
+        print(f"Preparing masks for image {name}")
         image = cv2.imread(os.path.join(inpath, name))
         outputs = predictor(image)
         masks = postprocess_masks(
@@ -285,6 +343,7 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
 
             csvwriter.writerow(
                 [
+                    "Instance_ID",
                     "Major axis length",
                     "Minor axis length",
                     "Eccentricity",
@@ -327,11 +386,12 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                 output = np.zeros_like(im)
 
                 for i in range(num_instances):
+                    instance_id = i + 1
                     single_output = np.zeros_like(output)
                     mask = mask_array[:, :, i : (i + 1)]
                     single_output = np.where(mask == True, 255, single_output)
 
-                    mask_filename = os.path.join(output_dir, f"mask_{i}.jpg")
+                    mask_filename = os.path.join(output_dir, f"mask_{instance_id}.jpg")
                     cv2.imwrite(mask_filename, single_output)
 
                     single_im_mask = cv2.cvtColor(single_output, cv2.COLOR_BGR2GRAY)
@@ -408,6 +468,7 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
 
                         csvwriter.writerow(
                             [
+                                instance_id,
                                 major_axis_length,
                                 minor_axis_length,
                                 eccentricity,
