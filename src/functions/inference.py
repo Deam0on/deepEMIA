@@ -160,7 +160,8 @@ def get_image_folder_path(base_path=Path.home() / "DATASET" / "INFERENCE"):
 
 def GetInference(im, filtered_instances, metadata, test_img, x_pred):
     """
-    Annotates each instance with class, confidence, and ID and saves the annotated image.
+    Annotates each instance with its ID at the center of the bounding box 
+    and saves the annotated image.
 
     Parameters:
     - im (np.ndarray): Original image
@@ -183,32 +184,13 @@ def GetInference(im, filtered_instances, metadata, test_img, x_pred):
             (x, y),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
-            (255, 0, 0),
-            0.5,
-            cv2.LINE_AA,
-        )
-
-    labels = [
-        f"{metadata.get('thing_classes')[cls]} {i+1}: {score:.0%}"
-        for i, (cls, score) in enumerate(
-            zip(filtered_instances.pred_classes, filtered_instances.scores)
-        )
-    ]
-
-    for i, box in enumerate(filtered_instances.pred_boxes.tensor):
-        x, y = int(box[0]), int(box[1])
-        cv2.putText(
-            out.get_image(),
-            labels[i],
-            (x, max(y - 10, 10)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.4,
-            (0, 0, 0),
+            (255, 0, 0),  # Bright red
             1,
             cv2.LINE_AA,
         )
 
-    cv2.imwrite(f"{test_img}_class_{x_pred}_pred.png", img_with_boxes[:, :, ::-1])
+    save_path = f"{test_img}_class_{x_pred}_pred.png"
+    cv2.imwrite(save_path, img_with_boxes[:, :, ::-1])
 
 def GetInferenceNoID(predictor, im, x_pred, metadata, test_img):
     """
