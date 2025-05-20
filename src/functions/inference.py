@@ -158,68 +158,20 @@ def get_image_folder_path(base_path=Path.home() / "DATASET" / "INFERENCE"):
             "No images found in INFERENCE or INFERENCE/UPLOAD folders."
         )
 
-
-# def GetInference(predictor, im, x_pred, metadata, test_img):
-#     """
-#     Performs inference on an image and processes the results.
-
-#     Parameters:
-#     - predictor (object): Model predictor
-#     - im (numpy.ndarray): Input image
-#     - x_pred (numpy.ndarray): Previous predictions
-#     - metadata (object): Dataset metadata
-#     - test_img (bool): Whether this is a test image
-
-#     Returns:
-#     - tuple: (predictions, visualizations)
-#     """
-#     outputs = predictor(im)
-
-#     # Get all instances
-#     inst_out = outputs["instances"]
-
-#     # Filter instances by predicted class
-#     filtered_instances = inst_out[inst_out.pred_classes == x_pred]
-
-#     v = Visualizer(
-#         im[:, :, ::-1], metadata=metadata, scale=1, instance_mode=ColorMode.SEGMENTATION
-#     )
-#     out = v.draw_instance_predictions(filtered_instances.to("cpu"))
-#     cv2.imwrite(
-#         test_img + "_" + str(x_pred) + "__pred.png", out.get_image()[:, :, ::-1]
-#     )
-
-def GetInference(predictor, im, x_pred, metadata, test_img):
+def GetInference(im, filtered_instances, metadata, test_img, x_pred):
     """
-    Performs inference on an image, annotates each detected instance with class, confidence, and ID, 
-    and saves the annotated image.
+    Annotates each instance with class, confidence, and ID and saves the annotated image.
 
     Parameters:
-    - predictor (object): Model predictor
-    - im (numpy.ndarray): Input image
-    - x_pred (int): Target class index to filter predictions
-    - metadata (object): Dataset metadata
-    - test_img (str): File name prefix for saving output
+    - im (np.ndarray): Original image
+    - filtered_instances (Instances): Instances filtered by class
+    - metadata (Metadata): Metadata for label mapping
+    - test_img (str): Image name
+    - x_pred (int): Class index
     """
-    outputs = predictor(im)
-
-    # Get all instances
-    inst_out = outputs["instances"]
-
-    # Filter instances by predicted class
-    filtered_instances = inst_out[inst_out.pred_classes == x_pred].to("cpu")
-
-    v = Visualizer(
-        im[:, :, ::-1],  # BGR to RGB
-        metadata=metadata,
-        scale=1.0,
-        instance_mode=ColorMode.SEGMENTATION
-    )
-
-    # Draw predictions without labels first
+    v = Visualizer(im[:, :, ::-1], metadata=metadata, scale=1.0, instance_mode=ColorMode.SEGMENTATION)
     out = v.draw_instance_predictions(filtered_instances)
 
-    # Generate labels with instance ID and confidence
     labels = [
         f"{metadata.get('thing_classes')[cls]} {i+1}: {score:.0%}"
         for i, (cls, score) in enumerate(
@@ -227,9 +179,8 @@ def GetInference(predictor, im, x_pred, metadata, test_img):
         )
     ]
 
-    # Overlay labels manually at top-left of each bounding box
-    for i, box in enumerate(filtered_instances.pred_boxes):
-        x, y = int(box.tensor[0][0]), int(box.tensor[0][1])
+    for i, box in enumerate(filtered_instances.pred_boxes.tensor):
+        x, y = int(box[0]), int(box[1])
         cv2.putText(
             out.get_image(),
             labels[i],
@@ -241,11 +192,8 @@ def GetInference(predictor, im, x_pred, metadata, test_img):
             cv2.LINE_AA,
         )
 
-    # Save the annotated image
     save_path = f"{test_img}_class_{x_pred}_pred.png"
-    cv2.imwrite(save_path, out.get_image()[:, :, ::-1])  # RGB to BGR
-
-
+    cv2.imwrite(save_path, out.get_image()[:, :, ::-1])
 
 def GetCounts(predictor, im, TList, PList):
     """
@@ -374,12 +322,15 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
 
                 psum, um_pix = detect_scale_bar(im)
 
-                GetInference(predictor, im, x_pred, metadata, test_img)
-                GetCounts(predictor, im, TList, PList)
-
                 outputs = predictor(im)
                 inst_out = outputs["instances"]
-                filtered_instances = inst_out[inst_out.pred_classes == x_pred]
+                filtered_instances = inst_out[inst_out.pred_classes == x_pred].to("cpu")
+                GetInference(im, filtered_instances, metadata, test_img, x_pred)
+                GetCounts(predictor, im, TList, PList)
+
+                # outputs = predictor(im)
+                # inst_out = outputs["instances"]
+                # filtered_instances = inst_out[inst_out.pred_classes == x_pred]
                 mask_array = filtered_instances.pred_masks.to("cpu").numpy()
                 num_instances = mask_array.shape[0]
                 mask_array = np.moveaxis(mask_array, 0, -1)
