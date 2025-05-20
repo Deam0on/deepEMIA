@@ -171,6 +171,25 @@ def GetInference(im, filtered_instances, metadata, test_img, x_pred):
     """
     v = Visualizer(im[:, :, ::-1], metadata=metadata, scale=1.0, instance_mode=ColorMode.SEGMENTATION)
     out = v.draw_instance_predictions(filtered_instances)
+    img_with_boxes = out.get_image()
+
+    # Manually overwrite labels
+    for i, (box, cls, score) in enumerate(zip(filtered_instances.pred_boxes.tensor, 
+                                            filtered_instances.pred_classes, 
+                                            filtered_instances.scores)):
+        x, y = int(box[0]), int(box[1])
+        class_name = metadata.get("thing_classes")[cls]
+        label = f"{class_name} {i+1}: {score:.0%}"
+        cv2.putText(
+            img_with_boxes,
+            label,
+            (x, max(y - 10, 10)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.4,
+            (0, 0, 0),
+            1,
+            cv2.LINE_AA,
+        )
 
     labels = [
         f"{metadata.get('thing_classes')[cls]} {i+1}: {score:.0%}"
@@ -192,8 +211,8 @@ def GetInference(im, filtered_instances, metadata, test_img, x_pred):
             cv2.LINE_AA,
         )
 
-    save_path = f"{test_img}_class_{x_pred}_pred.png"
-    cv2.imwrite(save_path, out.get_image()[:, :, ::-1])
+    cv2.imwrite(f"{test_img}_class_{x_pred}_pred.png", img_with_boxes[:, :, ::-1])
+
 
 def GetCounts(predictor, im, TList, PList):
     """
