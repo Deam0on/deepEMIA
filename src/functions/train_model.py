@@ -78,77 +78,77 @@ def get_albumentations_transform():
     )
 
 
-def custom_mapper(dataset_dicts):
-    """
-    Custom data mapper function using Albumentations for faster CPU transforms.
+# def custom_mapper(dataset_dicts):
+#     """
+#     Custom data mapper function using Albumentations for faster CPU transforms.
 
-    Parameters:
-    - dataset_dicts (dict): Dictionary containing image and annotation data
+#     Parameters:
+#     - dataset_dicts (dict): Dictionary containing image and annotation data
 
-    Returns:
-    - dict: Transformed dataset dictionary with augmented image and annotations
-    """
-    dataset_dicts = copy.deepcopy(dataset_dicts)
-    image = cv2.imread(dataset_dicts["file_name"])
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+#     Returns:
+#     - dict: Transformed dataset dictionary with augmented image and annotations
+#     """
+#     dataset_dicts = copy.deepcopy(dataset_dicts)
+#     image = cv2.imread(dataset_dicts["file_name"])
+#     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    transform = get_albumentations_transform()
-    augmented = transform(image=image)
-    image = augmented["image"]
+#     transform = get_albumentations_transform()
+#     augmented = transform(image=image)
+#     image = augmented["image"]
 
-    dataset_dicts["image"] = image
+#     dataset_dicts["image"] = image
 
-    annos = [
-        utils.transform_instance_annotations(obj, None, image.shape[1:])
-        for obj in dataset_dicts.pop("annotations")
-        if obj.get("iscrowd", 0) == 0
-    ]
+#     annos = [
+#         utils.transform_instance_annotations(obj, None, image.shape[1:])
+#         for obj in dataset_dicts.pop("annotations")
+#         if obj.get("iscrowd", 0) == 0
+#     ]
 
-    instances = utils.annotations_to_instances(annos, image.shape[1:])
-    dataset_dicts["instances"] = utils.filter_empty_instances(instances)
+#     instances = utils.annotations_to_instances(annos, image.shape[1:])
+#     dataset_dicts["instances"] = utils.filter_empty_instances(instances)
 
-    return dataset_dicts
+#     return dataset_dicts
 
 
-class CustomTrainer(DefaultTrainer):
-    """
-    Custom trainer class that extends DefaultTrainer with optimized data loading.
+# class CustomTrainer(DefaultTrainer):
+#     """
+#     Custom trainer class that extends DefaultTrainer with optimized data loading.
 
-    This trainer implements:
-    - CPU-optimized data loading
-    - Dynamic worker count based on CPU cores
-    - Prefetching for better performance
-    """
+#     This trainer implements:
+#     - CPU-optimized data loading
+#     - Dynamic worker count based on CPU cores
+#     - Prefetching for better performance
+#     """
 
-    @classmethod
-    def build_train_loader(cls, cfg):
-        """
-        Builds a custom training data loader with optimized settings.
+#     @classmethod
+#     def build_train_loader(cls, cfg):
+#         """
+#         Builds a custom training data loader with optimized settings.
 
-        Parameters:
-        - cfg (CfgNode): Detectron2 configuration object
+#         Parameters:
+#         - cfg (CfgNode): Detectron2 configuration object
 
-        Returns:
-        - DataLoader: PyTorch DataLoader with optimized settings
-        """
-        dataset = build_detection_train_loader(
-            cfg,
-            mapper=custom_mapper,
-            sampler=None,
-            total_batch_size=cfg.SOLVER.IMS_PER_BATCH,
-        ).dataset  # Extract the dataset only
+#         Returns:
+#         - DataLoader: PyTorch DataLoader with optimized settings
+#         """
+#         dataset = build_detection_train_loader(
+#             cfg,
+#             mapper=custom_mapper,
+#             sampler=None,
+#             total_batch_size=cfg.SOLVER.IMS_PER_BATCH,
+#         ).dataset  # Extract the dataset only
 
-        cpu_count = os.cpu_count() or 2
-        num_workers = max(1, cpu_count // 2)
+#         cpu_count = os.cpu_count() or 2
+#         num_workers = max(1, cpu_count // 2)
 
-        return DataLoader(
-            dataset,
-            batch_size=cfg.SOLVER.IMS_PER_BATCH,
-            shuffle=True,
-            num_workers=num_workers,
-            prefetch_factor=2,
-            pin_memory=False,
-        )
+#         return DataLoader(
+#             dataset,
+#             batch_size=cfg.SOLVER.IMS_PER_BATCH,
+#             shuffle=True,
+#             num_workers=num_workers,
+#             prefetch_factor=2,
+#             pin_memory=False,
+#         )
 
 
 def train_on_dataset(dataset_name, output_dir):
