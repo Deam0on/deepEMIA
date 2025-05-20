@@ -380,7 +380,7 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65, dra
                     mask_filename = os.path.join(output_dir, f"mask_{instance_id}.jpg")
                     cv2.imwrite(mask_filename, mask_3ch)
 
-                    single_cnts = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    single_cnts = cv2.findContours(single_im_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                     single_cnts = imutils.grab_contours(single_cnts)
 
                     for c in single_cnts:
