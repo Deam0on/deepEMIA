@@ -101,6 +101,10 @@ def main():
         default=True,
         help="Flag to upload results to Google Cloud Storage after executing the task. Default is True.",
     )
+    parser.add_argument(
+        "--id", dest="draw_id", action="store_true", help="Draw instance ID on inference overlays"
+    )
+    parser.set_defaults(draw_id=False)
 
     args = parser.parse_args()
 
@@ -150,7 +154,8 @@ def main():
         )
 
         task_start_time = datetime.now()
-        run_inference(args.dataset_name, output_dir, args.visualize)
+        run_inference(args.dataset_name, output_dir, args.visualize, draw_id=args.draw_id)
+
         task_end_time = datetime.now()
 
         inference_time_taken = (task_end_time - task_start_time).total_seconds()

@@ -173,20 +173,18 @@ def GetInference(im, filtered_instances, metadata, test_img, x_pred):
     out = v.draw_instance_predictions(filtered_instances)
     img_with_boxes = out.get_image()
 
-    # Manually overwrite labels
-    for i, (box, cls, score) in enumerate(zip(filtered_instances.pred_boxes.tensor, 
-                                            filtered_instances.pred_classes, 
-                                            filtered_instances.scores)):
-        x, y = int(box[0]), int(box[1])
+    for i, box in enumerate(filtered_instances.pred_boxes.tensor):
+        x = int((box[0] + box[2]) / 2)
+        y = int((box[1] + box[3]) / 2)
         label = f"{i+1}"
         cv2.putText(
             img_with_boxes,
             label,
-            (x, max(y - 10, 10)),
+            (x, y),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
-            (0, 0, 255),  # bright red
-            2,
+            (255, 0, 0),
+            0.5,
             cv2.LINE_AA,
         )
 
@@ -212,6 +210,36 @@ def GetInference(im, filtered_instances, metadata, test_img, x_pred):
 
     cv2.imwrite(f"{test_img}_class_{x_pred}_pred.png", img_with_boxes[:, :, ::-1])
 
+def GetInferenceNoID(predictor, im, x_pred, metadata, test_img):
+    """
+    Performs inference on an image and saves the predicted instances.
+
+    Parameters:
+    - predictor: The predictor object used for inference.
+    - im: The image to perform inference on.
+    - x_pred: The class to filter predicted instances by.
+    - metadata: Metadata for visualization.
+    - test_img: Path to save the test image.
+
+    Returns:
+    - None
+    """
+    outputs = predictor(im)
+
+    # Get all instances
+    inst_out = outputs["instances"]
+
+    # Filter instances by predicted class
+    filtered_instances = inst_out[inst_out.pred_classes == x_pred]
+
+    v = Visualizer(
+        im[:, :, ::-1], metadata=metadata, scale=1, instance_mode=ColorMode.SEGMENTATION
+    )
+    out = v.draw_instance_predictions(filtered_instances.to("cpu"))
+    cv2.imwrite(
+        test_img + "_" + str(x_pred) + "__pred.png", out.get_image()[:, :, ::-1]
+    )
+
 
 def GetCounts(predictor, im, TList, PList):
     """
@@ -235,7 +263,8 @@ def GetCounts(predictor, im, TList, PList):
     PList.append(PCount)
 
 
-def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
+def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65, draw_id=False):
+
     """
     Runs inference on a dataset and saves the results.
 
@@ -343,7 +372,10 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65):
                 outputs = predictor(im)
                 inst_out = outputs["instances"]
                 filtered_instances = inst_out[inst_out.pred_classes == x_pred].to("cpu")
-                GetInference(im, filtered_instances, metadata, test_img, x_pred)
+                if draw_id:
+                    GetInference(im, filtered_instances, metadata, test_img, x_pred)
+                else:
+                    GetInferenceNoID(predictor, im, x_pred, metadata, test_img)
                 GetCounts(predictor, im, TList, PList)
 
                 # outputs = predictor(im)
