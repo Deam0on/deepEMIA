@@ -37,6 +37,7 @@ from detectron2.evaluation import COCOEvaluator
 from torch.utils.data import DataLoader
 
 from src.data.datasets import read_dataset_info, register_datasets
+from src.functions.inference import CustomTrainer
 
 # Load config once at the start of your program
 with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
@@ -224,7 +225,8 @@ def train_on_dataset(dataset_name, output_dir):
 
     # Phase 1: standard training
     # Initialize and start the trainer
-    trainer = DefaultTrainer(cfg)
+    # trainer = DefaultTrainer(cfg)
+    trainer = CustomTrainer(cfg)
     trainer.resume_or_load(resume=False)
     trainer.train()
 
