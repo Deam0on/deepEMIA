@@ -178,16 +178,15 @@ def GetInference(im, filtered_instances, metadata, test_img, x_pred):
                                             filtered_instances.pred_classes, 
                                             filtered_instances.scores)):
         x, y = int(box[0]), int(box[1])
-        class_name = metadata.get("thing_classes")[cls]
-        label = f"{class_name} {i+1}: {score:.0%}"
+        label = f"{i+1}"
         cv2.putText(
             img_with_boxes,
             label,
             (x, max(y - 10, 10)),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.4,
-            (0, 0, 0),
-            1,
+            0.6,
+            (0, 0, 255),  # bright red
+            2,
             cv2.LINE_AA,
         )
 
