@@ -154,7 +154,7 @@ def main():
         )
 
         task_start_time = datetime.now()
-        run_inference(args.dataset_name, output_dir, args.visualize, draw_id=args.draw_id)
+        run_inference(args.dataset_name, output_dir, args.visualize, threshold=args.threshold, draw_id=args.draw_id)
 
         task_end_time = datetime.now()
 
