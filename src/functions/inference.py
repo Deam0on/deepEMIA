@@ -354,35 +354,33 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65, dra
                 outputs = predictor(im)
                 inst_out = outputs["instances"]
                 filtered_instances = inst_out[inst_out.pred_classes == x_pred].to("cpu")
+
                 if draw_id:
                     GetInference(im, filtered_instances, metadata, test_img, x_pred)
                 else:
                     GetInferenceNoID(predictor, im, x_pred, metadata, test_img)
                 GetCounts(predictor, im, TList, PList)
 
-                # outputs = predictor(im)
-                # inst_out = outputs["instances"]
-                # filtered_instances = inst_out[inst_out.pred_classes == x_pred]
-                mask_array = filtered_instances.pred_masks.to("cpu").numpy()
-                num_instances = mask_array.shape[0]
-                mask_array = np.moveaxis(mask_array, 0, -1)
+                # mask_array = filtered_instances.pred_masks.to("cpu").numpy()
+                # num_instances = mask_array.shape[0]
+                # mask_array = np.moveaxis(mask_array, 0, -1)
+
+                pred_masks = filtered_instances.pred_masks.numpy()
+                pred_boxes = filtered_instances.pred_boxes.tensor.numpy()
+                scores = filtered_instances.scores.numpy()
+                num_instances = len(filtered_instances)
+
                 output = np.zeros_like(im)
 
                 for i in range(num_instances):
                     instance_id = i + 1
-                    single_output = np.zeros_like(output)
-                    mask = mask_array[:, :, i : (i + 1)]
-                    single_output = np.where(mask == True, 255, single_output)
-
+                    binary_mask = (pred_masks[i] > 0).astype(np.uint8) * 255  # ensure binary uint8
+                    single_im_mask = binary_mask.copy()
+                    mask_3ch = np.stack([single_im_mask] * 3, axis=-1)
                     mask_filename = os.path.join(output_dir, f"mask_{instance_id}.jpg")
-                    cv2.imwrite(mask_filename, single_output)
+                    cv2.imwrite(mask_filename, mask_3ch)
 
-                    single_im_mask = cv2.cvtColor(single_output, cv2.COLOR_BGR2GRAY)
-                    single_cnts = cv2.findContours(
-                        single_im_mask.copy(),
-                        cv2.RETR_EXTERNAL,
-                        cv2.CHAIN_APPROX_SIMPLE,
-                    )
+                    single_cnts = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                     single_cnts = imutils.grab_contours(single_cnts)
 
                     for c in single_cnts:
