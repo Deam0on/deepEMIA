@@ -105,7 +105,7 @@ def load_model(cfg, model_path, dataset_name, is_quantized=False):
     return DefaultPredictor(cfg)
 
 
-def choose_and_use_model(model_paths, dataset_name, threshold):
+def choose_and_use_model(model_paths, dataset_name, threshold, metadata):
     """
     Chooses and loads the appropriate model for a given dataset.
 
@@ -136,7 +136,8 @@ def choose_and_use_model(model_paths, dataset_name, threshold):
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = threshold
 
     # Get the metadata here, after registration is complete.
-    metadata = MetadataCatalog.get(f"{dataset_name}_train")
+    # metadata = MetadataCatalog.get(f"{dataset_name}_train")
+    cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(metadata.thing_classes)
 
     predictor = None
     if not torch.cuda.is_available() and os.path.exists(quantized_model_path):
@@ -152,5 +153,4 @@ def choose_and_use_model(model_paths, dataset_name, threshold):
         print(f"Using standard model for {dataset_name}")
         predictor = load_model(cfg, base_model_path, dataset_name, is_quantized=False)
 
-    # Return both the predictor and the metadata
     return predictor, metadata
