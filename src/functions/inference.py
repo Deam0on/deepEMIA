@@ -282,10 +282,18 @@ def run_inference(
     dataset_info = read_dataset_info(CATEGORY_JSON)
     register_datasets(dataset_info, dataset_name, dataset_format=dataset_format)
 
+    # This forces the dataset to be loaded and the metadata to be populated.
+    # It's a robust way to ensure the catalog is ready.
+    print("Forcing metadata population from DatasetCatalog...")
+    d = DatasetCatalog.get(f"{dataset_name}_train")
+    metadata = MetadataCatalog.get(f"{dataset_name}_train")
+    print("Metadata populated successfully.")
+
     trained_model_paths = get_trained_model_paths(SPLIT_DIR)
-    selected_model_dataset = dataset_name  # User-selected model
-    predictor, metadata = choose_and_use_model(
-        trained_model_paths, selected_model_dataset, threshold
+    selected_model_dataset = dataset_name
+    
+    predictor, _ = choose_and_use_model(
+        trained_model_paths, selected_model_dataset, threshold, metadata
     )
 
     # metadata = MetadataCatalog.get(f"{dataset_name}_train")
