@@ -99,8 +99,9 @@ def load_model(cfg, model_path, dataset_name, is_quantized=False):
 
     # fallback or standard model
     cfg.MODEL.WEIGHTS = model_path
-    thing_classes = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(thing_classes)
+    metadata = MetadataCatalog.get(f"{dataset_name}_train")
+    cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(metadata.thing_classes)
+    
     return DefaultPredictor(cfg)
 
 
@@ -118,7 +119,7 @@ def choose_and_use_model(model_paths, dataset_name, threshold):
     """
     if dataset_name not in model_paths:
         print(f"No model found for dataset {dataset_name}")
-        return None
+        return None, None
 
     base_model_path = model_paths[dataset_name]
     quantized_model_path = base_model_path.replace(
@@ -134,15 +135,22 @@ def choose_and_use_model(model_paths, dataset_name, threshold):
     cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = threshold
 
-    # try quantized if no CUDA and file exists
+    # Get the metadata here, after registration is complete.
+    metadata = MetadataCatalog.get(f"{dataset_name}_train")
+
+    predictor = None
     if not torch.cuda.is_available() and os.path.exists(quantized_model_path):
         try:
             print(f"Trying quantized model for {dataset_name}")
-            return load_model(
+            predictor = load_model(
                 cfg, quantized_model_path, dataset_name, is_quantized=True
             )
         except RuntimeError:
             print(f"Falling back to standard model for {dataset_name}")
+            predictor = load_model(cfg, base_model_path, dataset_name, is_quantized=False)
+    else:
+        print(f"Using standard model for {dataset_name}")
+        predictor = load_model(cfg, base_model_path, dataset_name, is_quantized=False)
 
-    print(f"Using standard model for {dataset_name}")
-    return load_model(cfg, base_model_path, dataset_name, is_quantized=False)
+    # Return both the predictor and the metadata
+    return predictor, metadata
