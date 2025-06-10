@@ -151,7 +151,7 @@ def get_albumentations_transform():
 #         )
 
 
-def train_on_dataset(dataset_name, output_dir):
+def train_on_dataset(dataset_name, output_dir, dataset_format="json"):
     """
     Trains a model on the specified dataset with both standard and quantized training.
 
@@ -169,7 +169,7 @@ def train_on_dataset(dataset_name, output_dir):
     dataset_info = read_dataset_info(CATEGORY_JSON)
 
     # Register datasets
-    register_datasets(dataset_info, dataset_name)
+    register_datasets(dataset_info, dataset_name, dataset_format=dataset_format)
 
     # Debug prints for verification
     print(DatasetCatalog.get(f"{dataset_name}_train"))

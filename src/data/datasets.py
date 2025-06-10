@@ -22,6 +22,7 @@ import shapely.geometry
 import yaml
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
+from detectron2.data.datasets import register_coco_instances
 from sklearn.model_selection import train_test_split
 
 # Load config once at the start of your program
@@ -73,7 +74,7 @@ def split_dataset(img_dir, dataset_name, test_size=0.2, seed=42):
     return train_files, test_files
 
 
-def register_datasets(dataset_info, dataset_name, test_size=0.2):
+def register_datasets(dataset_info, dataset_name, test_size=0.2, dataset_format="json"):
     """
     Registers the selected dataset in the Detectron2 framework.
 
@@ -82,53 +83,93 @@ def register_datasets(dataset_info, dataset_name, test_size=0.2):
     - dataset_name (str): Name of the dataset to register
     - test_size (float): Proportion of the dataset to include in the test split
 
+
+    For COCO, DATASET needs to be in the format:
+
+    DATASET/
+    └── my_crystal_dataset_coco/      <-- Your new dataset_name
+        ├── annotations/
+        │   ├── instances_train.json  <-- COCO JSON for the training set
+        │   └── instances_test.json   <-- COCO JSON for the testing set
+        ├── train/                    <-- Directory with training images
+        │   ├── image1.jpg
+        │   └── image2.jpg
+        └── test/                     <-- Directory with testing images
+            ├── image3.jpg
+            └── image4.jpg
+
     Raises:
     - ValueError: If the dataset name is not found in dataset_info
     """
-    if dataset_name not in dataset_info:
-        raise ValueError(f"Dataset '{dataset_name}' not found in dataset_info.")
 
-    img_dir, label_dir, thing_classes = dataset_info[dataset_name]
+    if dataset_format == "coco":
+        print(f"Registering COCO dataset: {dataset_name}")
 
-    print(f"Processing dataset: {dataset_name}, Info: {dataset_info[dataset_name]}")
+        # Define paths based on the standard COCO directory structure
+        base_path = os.path.join(os.path.expanduser("~"), "DATASET", dataset_name)
+        train_json_path = os.path.join(base_path, "annotations", "instances_train.json")
+        train_images_path = os.path.join(base_path, "train")
+        test_json_path = os.path.join(base_path, "annotations", "instances_test.json")
+        test_images_path = os.path.join(base_path, "test")
 
-    # Load or split the dataset
-    split_file = os.path.join(SPLIT_DIR, f"{dataset_name}_split.json")
-    category_key = dataset_name
-
-    if os.path.exists(split_file):
-        with open(split_file, "r") as f:
-            split_data = json.load(f)
-        train_files = split_data["train"]
-        test_files = split_data["test"]
-    else:
-        # Create split data if it doesn't exist
-        train_files, test_files = split_dataset(
-            img_dir, dataset_name, test_size=test_size
+        # Register the training and testing sets using Detectron2's built-in function
+        register_coco_instances(
+            f"{dataset_name}_train", {}, train_json_path, train_images_path
         )
-        split_data = {"train": train_files, "test": test_files}
-        os.makedirs(SPLIT_DIR, exist_ok=True)
-        with open(split_file, "w") as f:
-            json.dump(split_data, f)
-        print(f"Split created and saved at {split_file}")
+        register_coco_instances(
+            f"{dataset_name}_test", {}, test_json_path, test_images_path
+        )
 
-    # Register training dataset
-    DatasetCatalog.register(
-        f"{dataset_name}_train",
-        lambda img_dir=img_dir, label_dir=label_dir, files=train_files: get_split_dicts(
-            img_dir, label_dir, files, CATEGORY_JSON, category_key
-        ),
-    )
-    MetadataCatalog.get(f"{dataset_name}_train").set(thing_classes=thing_classes)
+        print("COCO dataset registration complete.")
 
-    # Register testing dataset
-    DatasetCatalog.register(
-        f"{dataset_name}_test",
-        lambda img_dir=img_dir, label_dir=label_dir, files=test_files: get_split_dicts(
-            img_dir, label_dir, files, CATEGORY_JSON, category_key
-        ),
-    )
-    MetadataCatalog.get(f"{dataset_name}_test").set(thing_classes=thing_classes)
+    elif dataset_format == "json":
+        print(f"Registering custom JSON dataset: {dataset_name}")
+
+        # This is your OLD logic, which you keep for backwards compatibility
+        if dataset_name not in dataset_info:
+            raise ValueError(f"Dataset '{dataset_name}' not found in dataset_info.")
+
+        img_dir, label_dir, thing_classes = dataset_info[dataset_name]
+
+        print(f"Processing dataset: {dataset_name}, Info: {dataset_info[dataset_name]}")
+
+        split_file = os.path.join(SPLIT_DIR, f"{dataset_name}_split.json")
+        category_key = dataset_name
+
+        if os.path.exists(split_file):
+            with open(split_file, "r") as f:
+                split_data = json.load(f)
+            train_files = split_data["train"]
+            test_files = split_data["test"]
+        else:
+            train_files, test_files = split_dataset(
+                img_dir, dataset_name, test_size=test_size
+            )
+            split_data = {"train": train_files, "test": test_files}
+            os.makedirs(SPLIT_DIR, exist_ok=True)
+            with open(split_file, "w") as f:
+                json.dump(split_data, f)
+            print(f"Split created and saved at {split_file}")
+
+        DatasetCatalog.register(
+            f"{dataset_name}_train",
+            lambda d="train": get_split_dicts(
+                img_dir, label_dir, split_data[d], CATEGORY_JSON, category_key
+            ),
+        )
+        MetadataCatalog.get(f"{dataset_name}_train").set(thing_classes=thing_classes)
+
+        DatasetCatalog.register(
+            f"{dataset_name}_test",
+            lambda d="test": get_split_dicts(
+                img_dir, label_dir, split_data[d], CATEGORY_JSON, category_key
+            ),
+        )
+        MetadataCatalog.get(f"{dataset_name}_test").set(thing_classes=thing_classes)
+        print("Custom JSON dataset registration complete.")
+
+    else:
+        raise ValueError(f"Unknown dataset_format: {dataset_format}")
 
 
 def get_split_dicts(img_dir, label_dir, files, category_json, category_key):

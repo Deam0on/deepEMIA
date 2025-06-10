@@ -84,6 +84,13 @@ def main():
         help="Threshold for inference. Default is 0.65.",
     )
     parser.add_argument(
+        "--dataset_format",
+        type=str,
+        default="json",
+        choices=["json", "coco"],
+        help="The format of the dataset annotations. 'json' for the custom one-JSON-per-image format, 'coco' for the standard COCO format.",
+    )
+    parser.add_argument(
         "--visualize",
         action="store_true",
         default=False,
@@ -102,7 +109,10 @@ def main():
         help="Flag to upload results to Google Cloud Storage after executing the task. Default is True.",
     )
     parser.add_argument(
-        "--id", dest="draw_id", action="store_true", help="Draw instance ID on inference overlays"
+        "--id",
+        dest="draw_id",
+        action="store_true",
+        help="Draw instance ID on inference overlays",
     )
     parser.set_defaults(draw_id=False)
 
@@ -118,9 +128,7 @@ def main():
     download_time_taken = 0
     upload_time_taken = 0
 
-    print(
-        f"Running task: {args.task} on dataset: {args.dataset_name}"
-    )  # Debug: print task and dataset
+    print(f"Running task: {args.task} on dataset: {args.dataset_name}")
 
     if args.download:
         print(f"Downloading data for dataset {args.dataset_name} from bucket...")
@@ -133,17 +141,30 @@ def main():
         task_end_time = datetime.now()
 
     elif args.task == "train":
-        print(f"Training model on dataset {args.dataset_name}...")
-        train_on_dataset(args.dataset_name, output_dir)
+        print(
+            f"Training model on dataset {args.dataset_name} using '{args.dataset_format}' format..."
+        )
+        train_on_dataset(
+            args.dataset_name, output_dir, dataset_format=args.dataset_format
+        )
 
     elif args.task == "evaluate":
-        print(f"Evaluating model on dataset {args.dataset_name}...")
+        print(
+            f"Evaluating model on dataset {args.dataset_name} using '{args.dataset_format}' format..."
+        )
         task_start_time = datetime.now()
-        evaluate_model(args.dataset_name, output_dir, args.visualize)
+        evaluate_model(
+            args.dataset_name,
+            output_dir,
+            args.visualize,
+            dataset_format=args.dataset_format,
+        )
         task_end_time = datetime.now()
 
     elif args.task == "inference":
-        print(f"Running inference on dataset {args.dataset_name}...")
+        print(
+            f"Running inference on dataset {args.dataset_name} using '{args.dataset_format}' format..."
+        )
 
         os.system("rm -f *.png")
         os.system("rm -f *.csv")
@@ -154,7 +175,14 @@ def main():
         )
 
         task_start_time = datetime.now()
-        run_inference(args.dataset_name, output_dir, args.visualize, threshold=args.threshold, draw_id=args.draw_id)
+        run_inference(
+            args.dataset_name,
+            output_dir,
+            args.visualize,
+            threshold=args.threshold,
+            draw_id=args.draw_id,
+            dataset_format=args.dataset_format,
+        )
 
         task_end_time = datetime.now()
 

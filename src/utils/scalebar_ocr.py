@@ -6,7 +6,7 @@ import easyocr
 import numpy as np
 
 
-def detect_scale_bar(image):
+def detect_scale_bar(image, roi_config):
     """
     Detects scale bars in SEM images.
 
@@ -18,10 +18,15 @@ def detect_scale_bar(image):
     """
     h, w = image.shape[:2]
     # Define proportional region where the scale bar and text are located
-    x_start = int(w * 0.667)
-    y_start = int(h * 0.866)
-    x_end = w
-    y_end = int(y_start + h * 0.067)
+    # x_start = int(w * 0.667)
+    # y_start = int(h * 0.866)
+    # x_end = w
+    # y_end = int(y_start + h * 0.067)
+
+    x_start = int(w * roi_config["x_start_factor"])
+    y_start = int(h * roi_config["y_start_factor"])
+    x_end = int(x_start + w * roi_config["width_factor"])
+    y_end = int(y_start + h * roi_config["height_factor"])
 
     # Draw detection ROI border in bright red
     cv2.rectangle(image, (x_start, y_start), (x_end, y_end), (0, 0, 255), 2)
@@ -31,6 +36,9 @@ def detect_scale_bar(image):
 
     reader = easyocr.Reader(["en"], verbose=False)
     result = reader.readtext(gray_roi, detail=1, paragraph=False)
+
+    text_box_center = None
+    psum = "0"
 
     if result:
         # Extract the first recognized text that looks like a scale (e.g., "500nm")

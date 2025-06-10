@@ -40,7 +40,7 @@ SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
 CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
 
 
-def evaluate_model(dataset_name, output_dir, visualize=False):
+def evaluate_model(dataset_name, output_dir, visualize=False, dataset_format="json"):
     """
     Evaluates the model on the specified dataset and optionally visualizes predictions.
 
@@ -62,7 +62,7 @@ def evaluate_model(dataset_name, output_dir, visualize=False):
     dataset_info = read_dataset_info(CATEGORY_JSON)
 
     # Register the datasets
-    register_datasets(dataset_info, dataset_name)
+    register_datasets(dataset_info, dataset_name, dataset_format=dataset_format)
 
     # Get paths to trained models
     trained_model_paths = get_trained_model_paths(SPLIT_DIR)

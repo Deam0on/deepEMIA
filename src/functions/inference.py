@@ -158,9 +158,10 @@ def get_image_folder_path(base_path=Path.home() / "DATASET" / "INFERENCE"):
             "No images found in INFERENCE or INFERENCE/UPLOAD folders."
         )
 
+
 def GetInference(im, filtered_instances, metadata, test_img, x_pred):
     """
-    Annotates each instance with its ID at the center of the bounding box 
+    Annotates each instance with its ID at the center of the bounding box
     and saves the annotated image.
 
     Parameters:
@@ -170,7 +171,12 @@ def GetInference(im, filtered_instances, metadata, test_img, x_pred):
     - test_img (str): Image name
     - x_pred (int): Class index
     """
-    v = Visualizer(im[:, :, ::-1], metadata=metadata, scale=1.0, instance_mode=ColorMode.SEGMENTATION)
+    v = Visualizer(
+        im[:, :, ::-1],
+        metadata=metadata,
+        scale=1.0,
+        instance_mode=ColorMode.SEGMENTATION,
+    )
     out = v.draw_instance_predictions(filtered_instances)
     img_with_boxes = out.get_image()
 
@@ -191,6 +197,7 @@ def GetInference(im, filtered_instances, metadata, test_img, x_pred):
 
     save_path = f"{test_img}_class_{x_pred}_pred.png"
     cv2.imwrite(save_path, img_with_boxes[:, :, ::-1])
+
 
 def GetInferenceNoID(predictor, im, x_pred, metadata, test_img):
     """
@@ -245,8 +252,14 @@ def GetCounts(predictor, im, TList, PList):
     PList.append(PCount)
 
 
-def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65, draw_id=False):
-
+def run_inference(
+    dataset_name,
+    output_dir,
+    visualize=False,
+    threshold=0.65,
+    draw_id=False,
+    dataset_format="json",
+):
     """
     Runs inference on a dataset and saves the results.
 
@@ -267,7 +280,7 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65, dra
     - None
     """
     dataset_info = read_dataset_info(CATEGORY_JSON)
-    register_datasets(dataset_info, dataset_name)
+    register_datasets(dataset_info, dataset_name, dataset_format=dataset_format)
 
     trained_model_paths = get_trained_model_paths(SPLIT_DIR)
     selected_model_dataset = dataset_name  # User-selected model
@@ -287,6 +300,14 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65, dra
 
     Img_ID = []
     EncodedPixels = []
+
+    with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
+        full_config = yaml.safe_load(f)
+
+    # Get the specific ROI config for this dataset, or fall back to the default
+    roi_profiles = full_config.get("scale_bar_rois", {})
+    roi_config = roi_profiles.get(dataset_name, roi_profiles["default"])
+    print(f"Using scale bar ROI profile for '{dataset_name}': {roi_config}")
 
     conv = lambda l: " ".join(map(str, l))
 
@@ -349,7 +370,7 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65, dra
                 input_path = os.path.join(test_img_path, test_img)
                 im = cv2.imread(input_path)
 
-                psum, um_pix = detect_scale_bar(im)
+                psum, um_pix = detect_scale_bar(im, roi_config)
 
                 outputs = predictor(im)
                 inst_out = outputs["instances"]
@@ -374,13 +395,17 @@ def run_inference(dataset_name, output_dir, visualize=False, threshold=0.65, dra
 
                 for i in range(num_instances):
                     instance_id = i + 1
-                    binary_mask = (pred_masks[i] > 0).astype(np.uint8) * 255  # ensure binary uint8
+                    binary_mask = (pred_masks[i] > 0).astype(
+                        np.uint8
+                    ) * 255  # ensure binary uint8
                     single_im_mask = binary_mask.copy()
                     mask_3ch = np.stack([single_im_mask] * 3, axis=-1)
                     mask_filename = os.path.join(output_dir, f"mask_{instance_id}.jpg")
                     cv2.imwrite(mask_filename, mask_3ch)
 
-                    single_cnts = cv2.findContours(single_im_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    single_cnts = cv2.findContours(
+                        single_im_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                    )
                     single_cnts = imutils.grab_contours(single_cnts)
 
                     for c in single_cnts:

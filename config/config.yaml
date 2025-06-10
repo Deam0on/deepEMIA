@@ -5,3 +5,9 @@ paths:
   category_json: "~/uw-com-vision/dataset_info.json"
   eta_file: "~/uw-com-vision/config/eta_data.json"
   local_dataset_root: "~"
+scale_bar_rois:
+  default:
+    x_start_factor: 0.667
+    y_start_factor: 0.866
+    width_factor: 1
+    height_factor: 0.067
