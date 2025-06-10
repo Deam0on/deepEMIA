@@ -31,7 +31,7 @@ import numpy as np
 import pandas as pd
 import torch
 import yaml
-from detectron2.data import MetadataCatalog, build_detection_train_loader
+from detectron2.data import MetadataCatalog, build_detection_train_loader, DatasetCatalog
 from detectron2.data import detection_utils as utils
 from detectron2.engine import DefaultTrainer
 from detectron2.utils.visualizer import ColorMode, Visualizer
