@@ -284,11 +284,11 @@ def run_inference(
 
     trained_model_paths = get_trained_model_paths(SPLIT_DIR)
     selected_model_dataset = dataset_name  # User-selected model
-    predictor = choose_and_use_model(
+    predictor, metadata = choose_and_use_model(
         trained_model_paths, selected_model_dataset, threshold
     )
 
-    metadata = MetadataCatalog.get(f"{dataset_name}_train")
+    # metadata = MetadataCatalog.get(f"{dataset_name}_train")
 
     image_folder_path = get_image_folder_path()
 
