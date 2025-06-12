@@ -308,6 +308,53 @@ def merge_instances_with_nms(instances_list, iou_threshold=0.5):
     return merged
 
 
+def deduplicate_instances(instances_list, iou_threshold=0.5):
+    """
+    Combine two Detectron2 Instances objects, removing duplicates by mask IoU.
+    """
+    if not instances_list or all(len(inst) == 0 for inst in instances_list):
+        return Instances(image_size=(0, 0))
+
+    # Concatenate all predictions
+    all_boxes = []
+    all_scores = []
+    all_classes = []
+    all_masks = []
+    image_size = None
+    for instances in instances_list:
+        if len(instances) == 0:
+            continue
+        if image_size is None:
+            image_size = instances.image_size
+        all_boxes.append(instances.pred_boxes.tensor)
+        all_scores.append(instances.scores)
+        all_classes.append(instances.pred_classes)
+        if hasattr(instances, "pred_masks"):
+            all_masks.append(instances.pred_masks)
+
+    boxes = torch.cat(all_boxes)
+    scores = torch.cat(all_scores)
+    classes = torch.cat(all_classes)
+    masks = torch.cat(all_masks) if all_masks else None
+
+    # NMS per class (by box)
+    keep = []
+    for cls in classes.unique():
+        inds = (classes == cls).nonzero(as_tuple=True)[0]
+        cls_boxes = boxes[inds]
+        cls_scores = scores[inds]
+        nms_inds = torchvision.ops.nms(cls_boxes, cls_scores, iou_threshold)
+        keep.extend(inds[nms_inds].tolist())
+
+    merged = Instances(image_size)
+    merged.pred_boxes = Boxes(boxes[keep])
+    merged.scores = scores[keep]
+    merged.pred_classes = classes[keep]
+    if masks is not None:
+        merged.pred_masks = masks[keep]
+    return merged
+
+
 def load_predictor(config_file, model_suffix, output_dir, dataset_name, threshold):
     from detectron2.config import get_cfg
     from detectron2 import model_zoo
@@ -329,7 +376,7 @@ def run_inference(
     threshold: float = 0.65,
     draw_id: bool = False,
     dataset_format: str = "json",
-    rcnn: str = "101",
+    rcnn: str = "combo",
 ) -> None:
     """
     Runs inference on a dataset and saves the results.
@@ -354,21 +401,9 @@ def run_inference(
     metadata = MetadataCatalog.get(f"{dataset_name}_train")
     logging.info("Metadata populated successfully.")
 
-    # Prepare predictors based on rcnn flag
-    predictors = []
-    predictor_names = []
-    if rcnn == "50":
-        predictors.append(load_predictor("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml", "r50", output_dir, dataset_name, threshold))
-        predictor_names.append("r50")
-    elif rcnn == "101":
-        predictors.append(load_predictor("COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml", "r101", output_dir, dataset_name, threshold))
-        predictor_names.append("r101")
-    elif rcnn == "combo":
-        predictors.append(load_predictor("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml", "r50", output_dir, dataset_name, threshold))
-        predictors.append(load_predictor("COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml", "r101", output_dir, dataset_name, threshold))
-        predictor_names.extend(["r50", "r101"])
-    else:
-        raise ValueError("Invalid value for rcnn. Choose from '50', '101', or 'combo'.")
+    # Prepare both predictors
+    predictor_r101 = load_predictor("COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml", "r101", output_dir, dataset_name, threshold)
+    predictor_r50 = load_predictor("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml", "r50", output_dir, dataset_name, threshold)
 
     image_folder_path = get_image_folder_path()
     path = output_dir
@@ -391,18 +426,16 @@ def run_inference(
     for name in images_name:
         logging.info(f"Preparing masks for image {name}")
         image = cv2.imread(os.path.join(inpath, name))
-        all_instances = []
-        for predictor in predictors:
-            outputs = predictor(image)
-            all_instances.append(outputs["instances"].to("cpu"))
 
-        # Merge predictions if combo, else just use the single output
-        if rcnn == "combo":
-            merged_instances = merge_instances_with_nms(all_instances)
-        else:
-            merged_instances = all_instances[0]
+        # Run both predictors
+        outputs_r101 = predictor_r101(image)
+        outputs_r50 = predictor_r50(image)
+        instances_r101 = outputs_r101["instances"].to("cpu")
+        instances_r50 = outputs_r50["instances"].to("cpu")
 
-        # Robust check for masks
+        # Combine and deduplicate
+        merged_instances = deduplicate_instances([instances_r101, instances_r50], iou_threshold=0.5)
+
         if not hasattr(merged_instances, "pred_masks") or len(merged_instances) == 0:
             logging.warning(f"No masks predicted for image {name}. Skipping.")
             continue
@@ -419,7 +452,7 @@ def run_inference(
                 EncodedPixels.append(conv(rle_encoding(masks[i])))
 
     df = pd.DataFrame({"ImageId": Img_ID, "EncodedPixels": EncodedPixels})
-    df.to_csv(os.path.join(path, f"results_{rcnn}.csv"), index=False, sep=",")
+    df.to_csv(os.path.join(path, "results_combo.csv"), index=False, sep=",")
 
     num_classes = len(MetadataCatalog.get(f"{dataset_name}_train").thing_classes)
     for x_pred in range(num_classes):
