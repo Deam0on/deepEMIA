@@ -95,7 +95,7 @@ def train_on_dataset(dataset_name, output_dir, dataset_format="json", rcnn="101"
     - dataset_format (str): Annotation format
     - rcnn (str): Backbone to use: "50", "101", or "combo"
     """
-    check_disk_space(output_dir, min_gb=5)
+    check_disk_space(output_dir, min_gb=1)
 
     # Read dataset information
     dataset_info = read_dataset_info(CATEGORY_JSON)
