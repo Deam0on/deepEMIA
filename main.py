@@ -189,7 +189,7 @@ def main():
     elif args.task == "train":
         # Download data
         logging.info(f"Downloading training data for {args.dataset_name}...")
-        download_time_taken = download_data_from_bucket(dataset_name=args.dataset_name)
+        download_time_taken = download_data_from_bucket()
         
         # Train
         logging.info(
@@ -235,7 +235,7 @@ def main():
         # Download inference data
         inference_path = local_dataset_path / "DATASET" / "INFERENCE"
         logging.info("Downloading inference data...")
-        download_time_taken = download_data_from_bucket(dataset_name=args.dataset_name)
+        download_time_taken = download_data_from_bucket()
         
         num_images = len(
             [f for f in os.listdir(img_dir) if f.endswith((".tif", ".png", ".jpg"))]
