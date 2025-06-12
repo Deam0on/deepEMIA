@@ -24,7 +24,6 @@ import streamlit as st
 import yaml
 from google.api_core import page_iterator
 from google.cloud import storage
-from PIL import Image
 
 # Add these lines at the beginning of the script
 ADMIN_PASSWORD = "admin"

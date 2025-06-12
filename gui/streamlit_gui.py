@@ -36,9 +36,7 @@ from streamlit_functions import (
     upload_files_to_gcs,
 )
 
-# Add these lines at the beginning of the script
 ADMIN_PASSWORD = "admin"
-
 
 # Load config once at the start of your program
 with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
@@ -242,17 +240,6 @@ if use_new_data:
                 GCS_BUCKET_NAME, upload_folder, uploaded_files, overwrite
             )
         st.success("Files uploaded successfully.")
-
-# # Show errors and warnings
-# if st.session_state.show_errors:
-#     with st.expander("Show errors and warnings", expanded=False):
-#         if contains_errors(st.session_state.stderr):
-#             st.error(st.session_state.stderr)
-#         else:
-#             st.warning(st.session_state.stderr)
-# else:
-#     if st.session_state.stderr and st.button("Show Errors and Warnings"):
-#         st.session_state.show_errors = True
 
 has_errors = contains_errors(st.session_state.stderr)
 has_stderr = bool(st.session_state.stderr)

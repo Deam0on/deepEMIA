@@ -30,6 +30,7 @@ import imutils
 import numpy as np
 import pandas as pd
 import torch
+import torchvision
 import yaml
 from detectron2.data import MetadataCatalog, build_detection_train_loader, DatasetCatalog
 from detectron2.data import detection_utils as utils
@@ -252,6 +253,74 @@ def GetCounts(predictor, im, TList, PList):
     PList.append(PCount)
 
 
+def merge_instances_with_nms(instances_list, iou_threshold=0.5):
+    """
+    Merge multiple Detectron2 Instances objects using NMS to remove duplicates.
+    """
+    from detectron2.structures import Instances, Boxes
+    import torch
+
+    # Concatenate all predictions
+    all_boxes = []
+    all_scores = []
+    all_classes = []
+    all_masks = []
+    image_size = None
+    for instances in instances_list:
+        if len(instances) == 0:
+            continue
+        if image_size is None:
+            image_size = instances.image_size
+        all_boxes.append(instances.pred_boxes.tensor)
+        all_scores.append(instances.scores)
+        all_classes.append(instances.pred_classes)
+        if hasattr(instances, "pred_masks"):
+            all_masks.append(instances.pred_masks)
+
+    if not all_boxes:
+        return Instances(image_size=(0, 0))
+
+    boxes = torch.cat(all_boxes)
+    scores = torch.cat(all_scores)
+    classes = torch.cat(all_classes)
+    if all_masks:
+        masks = torch.cat(all_masks)
+    else:
+        masks = None
+
+    # NMS per class
+    keep = []
+    for cls in classes.unique():
+        inds = (classes == cls).nonzero(as_tuple=True)[0]
+        cls_boxes = boxes[inds]
+        cls_scores = scores[inds]
+        nms_inds = torchvision.ops.nms(cls_boxes, cls_scores, iou_threshold)
+        keep.extend(inds[nms_inds].tolist())
+
+    # Build merged Instances
+    merged = Instances(image_size if image_size else (0, 0))
+    merged.pred_boxes = Boxes(boxes[keep])
+    merged.scores = scores[keep]
+    merged.pred_classes = classes[keep]
+    if masks is not None:
+        merged.pred_masks = masks[keep]
+    return merged
+
+
+def load_predictor(config_file, model_suffix, output_dir, dataset_name, threshold):
+    from detectron2.config import get_cfg
+    from detectron2 import model_zoo
+    from detectron2.engine import DefaultPredictor
+
+    cfg = get_cfg()
+    cfg.merge_from_file(model_zoo.get_config_file(config_file))
+    cfg.MODEL.WEIGHTS = os.path.join(output_dir, dataset_name, f"rcnn_{model_suffix}", f"model_final_{model_suffix}.pth")
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = threshold
+    cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+    predictor = DefaultPredictor(cfg)
+    return predictor
+
+
 def run_inference(
     dataset_name,
     output_dir,
@@ -259,6 +328,7 @@ def run_inference(
     threshold=0.65,
     draw_id=False,
     dataset_format="json",
+    rcnn="101",  # <--- add this argument
 ):
     """
     Runs inference on a dataset and saves the results.
@@ -268,6 +338,7 @@ def run_inference(
     - output_dir (str): Directory to save results
     - visualize (bool): Whether to generate visualizations
     - threshold (float): Confidence threshold for predictions
+    - rcnn (str): Backbone to use: "50", "101", or "combo"
 
     The function:
     1. Loads the model and dataset
@@ -282,25 +353,28 @@ def run_inference(
     dataset_info = read_dataset_info(CATEGORY_JSON)
     register_datasets(dataset_info, dataset_name, dataset_format=dataset_format)
 
-    # This forces the dataset to be loaded and the metadata to be populated.
-    # It's a robust way to ensure the catalog is ready.
     print("Forcing metadata population from DatasetCatalog...")
     d = DatasetCatalog.get(f"{dataset_name}_train")
     metadata = MetadataCatalog.get(f"{dataset_name}_train")
     print("Metadata populated successfully.")
 
-    trained_model_paths = get_trained_model_paths(SPLIT_DIR)
-    selected_model_dataset = dataset_name
-    
-    predictor, _ = choose_and_use_model(
-        trained_model_paths, selected_model_dataset, threshold, metadata
-    )
-
-    # metadata = MetadataCatalog.get(f"{dataset_name}_train")
+    # Prepare predictors based on rcnn flag
+    predictors = []
+    predictor_names = []
+    if rcnn == "50":
+        predictors.append(load_predictor("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml", "r50", output_dir, dataset_name, threshold))
+        predictor_names.append("r50")
+    elif rcnn == "101":
+        predictors.append(load_predictor("COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml", "r101", output_dir, dataset_name, threshold))
+        predictor_names.append("r101")
+    elif rcnn == "combo":
+        predictors.append(load_predictor("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml", "r50", output_dir, dataset_name, threshold))
+        predictors.append(load_predictor("COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml", "r101", output_dir, dataset_name, threshold))
+        predictor_names.extend(["r50", "r101"])
+    else:
+        raise ValueError("Invalid value for rcnn. Choose from '50', '101', or 'combo'.")
 
     image_folder_path = get_image_folder_path()
-
-    # Path to save outputs
     path = output_dir
     os.makedirs(path, exist_ok=True)
     inpath = image_folder_path
@@ -312,7 +386,6 @@ def run_inference(
     with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
         full_config = yaml.safe_load(f)
 
-    # Get the specific ROI config for this dataset, or fall back to the default
     roi_profiles = full_config.get("scale_bar_rois", {})
     roi_config = roi_profiles.get(dataset_name, roi_profiles["default"])
     print(f"Using scale bar ROI profile for '{dataset_name}': {roi_config}")
@@ -322,10 +395,20 @@ def run_inference(
     for name in images_name:
         print(f"Preparing masks for image {name}")
         image = cv2.imread(os.path.join(inpath, name))
-        outputs = predictor(image)
+        all_instances = []
+        for predictor in predictors:
+            outputs = predictor(image)
+            all_instances.append(outputs["instances"].to("cpu"))
+
+        # Merge predictions if combo, else just use the single output
+        if rcnn == "combo":
+            merged_instances = merge_instances_with_nms(all_instances)
+        else:
+            merged_instances = all_instances[0]
+
         masks = postprocess_masks(
-            np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
-            outputs["instances"].to("cpu")._fields["scores"].numpy(),
+            np.asarray(merged_instances._fields["pred_masks"]),
+            merged_instances._fields["scores"].numpy(),
             image,
         )
 
@@ -335,13 +418,13 @@ def run_inference(
                 EncodedPixels.append(conv(rle_encoding(masks[i])))
 
     df = pd.DataFrame({"ImageId": Img_ID, "EncodedPixels": EncodedPixels})
-    df.to_csv(os.path.join(path, "R50_flip_results.csv"), index=False, sep=",")
+    df.to_csv(os.path.join(path, f"results_{rcnn}.csv"), index=False, sep=",")
 
     num_classes = len(MetadataCatalog.get(f"{dataset_name}_train").thing_classes)
     for x_pred in range(num_classes):
         TList = []
         PList = []
-        csv_filename = f"results_x_pred_{x_pred}.csv"
+        csv_filename = f"results_x_pred_{x_pred}_{rcnn}.csv"
         test_img_path = image_folder_path
 
         with open(csv_filename, "w", newline="") as csvfile:
@@ -380,19 +463,24 @@ def run_inference(
 
                 psum, um_pix = detect_scale_bar(im, roi_config)
 
-                outputs = predictor(im)
-                inst_out = outputs["instances"]
-                filtered_instances = inst_out[inst_out.pred_classes == x_pred].to("cpu")
+                all_instances = []
+                for predictor in predictors:
+                    outputs = predictor(im)
+                    all_instances.append(outputs["instances"].to("cpu"))
+
+                if rcnn == "combo":
+                    merged_instances = merge_instances_with_nms(all_instances)
+                else:
+                    merged_instances = all_instances[0]
+
+                filtered_instances = merged_instances[merged_instances.pred_classes == x_pred]
 
                 if draw_id:
                     GetInference(im, filtered_instances, metadata, test_img, x_pred)
                 else:
-                    GetInferenceNoID(predictor, im, x_pred, metadata, test_img)
-                GetCounts(predictor, im, TList, PList)
-
-                # mask_array = filtered_instances.pred_masks.to("cpu").numpy()
-                # num_instances = mask_array.shape[0]
-                # mask_array = np.moveaxis(mask_array, 0, -1)
+                    # Use the first predictor for visualization if needed
+                    GetInferenceNoID(predictors[0], im, x_pred, metadata, test_img)
+                GetCounts(predictors[0], im, TList, PList)
 
                 pred_masks = filtered_instances.pred_masks.numpy()
                 pred_boxes = filtered_instances.pred_boxes.tensor.numpy()

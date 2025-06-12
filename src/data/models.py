@@ -136,7 +136,6 @@ def choose_and_use_model(model_paths, dataset_name, threshold, metadata):
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = threshold
 
     # Get the metadata here, after registration is complete.
-    # metadata = MetadataCatalog.get(f"{dataset_name}_train")
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(metadata.thing_classes)
 
     predictor = None

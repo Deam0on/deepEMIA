@@ -17,11 +17,6 @@ def detect_scale_bar(image, roi_config):
     - tuple: (scale_bar_length, scale_bar_unit)
     """
     h, w = image.shape[:2]
-    # Define proportional region where the scale bar and text are located
-    # x_start = int(w * 0.667)
-    # y_start = int(h * 0.866)
-    # x_end = w
-    # y_end = int(y_start + h * 0.067)
 
     x_start = int(w * roi_config["x_start_factor"])
     y_start = int(h * roi_config["y_start_factor"])

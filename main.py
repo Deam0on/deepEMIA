@@ -41,6 +41,53 @@ with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
 bucket = config["bucket"]
 
 
+def setup_config():
+    """
+    Interactive setup for first-time configuration.
+    Prompts the user for bucket name and scale_bar_rois settings,
+    then writes them to config/config.yaml.
+    """
+    print("=== UW Computer Vision Project Setup ===")
+    config_path = Path.home() / "uw-com-vision" / "config" / "config.yaml"
+    if config_path.exists():
+        overwrite = input(f"Config file already exists at {config_path}. Overwrite? (y/n): ").strip().lower()
+        if overwrite != "y":
+            print("Setup cancelled.")
+            return
+
+    bucket = input("Enter your Google Cloud Storage bucket name: ").strip()
+
+    print("\nConfigure scale_bar_rois (press Enter to use defaults):")
+    x_start = input("  x_start_factor [default 0.667]: ").strip() or "0.667"
+    y_start = input("  y_start_factor [default 0.866]: ").strip() or "0.866"
+    width = input("  width_factor [default 1]: ").strip() or "1"
+    height = input("  height_factor [default 0.067]: ").strip() or "0.067"
+
+    config = {
+        "bucket": bucket,
+        "paths": {
+            "main_script": "~/uw-com-vision/main.py",
+            "split_dir": "~/split_dir",
+            "category_json": "~/uw-com-vision/dataset_info.json",
+            "eta_file": "~/uw-com-vision/config/eta_data.json",
+            "local_dataset_root": "~",
+        },
+        "scale_bar_rois": {
+            "default": {
+                "x_start_factor": float(x_start),
+                "y_start_factor": float(y_start),
+                "width_factor": float(width),
+                "height_factor": float(height),
+            }
+        }
+    }
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_path, "w") as f:
+        yaml.dump(config, f)
+    print(f"Configuration saved to {config_path}.")
+
+
 def main():
     """
     Main function that parses command line arguments and executes the requested task.
@@ -64,12 +111,13 @@ def main():
         "--task",
         type=str,
         required=True,
-        choices=["prepare", "train", "evaluate", "inference"],
+        choices=["prepare", "train", "evaluate", "inference", "setup"],
         help="Task to perform:\n"
         "- 'prepare': Prepare the dataset by splitting into train and test sets.\n"
         "- 'train': Train a model on the dataset.\n"
         "- 'evaluate': Evaluate the trained model on the test set.\n"
-        "- 'inference': Run inference on new data using the trained model.",
+        "- 'inference': Run inference on new data using the trained model.\n"
+        "- 'setup': Run first-time configuration setup.",
     )
     parser.add_argument(
         "--dataset_name",
@@ -115,8 +163,19 @@ def main():
         help="Draw instance ID on inference overlays",
     )
     parser.set_defaults(draw_id=False)
+    parser.add_argument(
+        "--rcnn",
+        type=str,
+        default="101",
+        choices=["50", "101", "combo"],
+        help="RCNN backbone to use: '50', '101', or 'combo' (both). Default is '101'."
+    )
 
     args = parser.parse_args()
+
+    if args.task == "setup":
+        setup_config()
+        return
 
     local_path = Path.home() / "uw-com-vision"
     os.system(f"gsutil -m cp -r gs://{bucket}/dataset_info.json {local_path}")
@@ -142,10 +201,10 @@ def main():
 
     elif args.task == "train":
         print(
-            f"Training model on dataset {args.dataset_name} using '{args.dataset_format}' format..."
+            f"Training model on dataset {args.dataset_name} using '{args.dataset_format}' format and RCNN {args.rcnn}..."
         )
         train_on_dataset(
-            args.dataset_name, output_dir, dataset_format=args.dataset_format
+            args.dataset_name, output_dir, dataset_format=args.dataset_format, rcnn=args.rcnn
         )
 
     elif args.task == "evaluate":
@@ -163,7 +222,7 @@ def main():
 
     elif args.task == "inference":
         print(
-            f"Running inference on dataset {args.dataset_name} using '{args.dataset_format}' format..."
+            f"Running inference on dataset {args.dataset_name} using '{args.dataset_format}' format and RCNN {args.rcnn}..."
         )
 
         os.system("rm -f *.png")
@@ -178,10 +237,11 @@ def main():
         run_inference(
             args.dataset_name,
             output_dir,
-            args.visualize,
+            visualize=args.visualize,
             threshold=args.threshold,
             draw_id=args.draw_id,
             dataset_format=args.dataset_format,
+            rcnn=args.rcnn,  # <-- pass the rcnn argument
         )
 
         task_end_time = datetime.now()
