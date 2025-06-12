@@ -252,6 +252,11 @@ def GetCounts(predictor, im, TList, PList):
     PList.append(PCount)
 
 
+def iou(mask1, mask2):
+    intersection = np.logical_and(mask1, mask2).sum()
+    union = np.logical_or(mask1, mask2).sum()
+    return intersection / union if union > 0 else 0
+
 def run_inference(
     dataset_name,
     output_dir,
@@ -259,7 +264,7 @@ def run_inference(
     threshold=0.65,
     draw_id=False,
     dataset_format="json",
-    rcnn=50,  # <-- Add this parameter
+    rcnn=50,  # can be 50, 101, or "both"
 ):
     """
     Runs inference on a dataset and saves the results.
@@ -291,14 +296,20 @@ def run_inference(
     metadata = MetadataCatalog.get(f"{dataset_name}_train")
     print("Metadata populated successfully.")
 
-    trained_model_paths = get_trained_model_paths(SPLIT_DIR, rcnn)  # <-- Pass rcnn
-    selected_model_dataset = dataset_name
-    
-    predictor, _ = choose_and_use_model(
-        trained_model_paths, selected_model_dataset, threshold, metadata, rcnn
-    )
-
-    # metadata = MetadataCatalog.get(f"{dataset_name}_train")
+    if rcnn == "combo":
+        predictors = []
+        for r in [50, 101]:
+            trained_model_paths = get_trained_model_paths(SPLIT_DIR, r)
+            predictor, _ = choose_and_use_model(
+                trained_model_paths, dataset_name, threshold, metadata, r
+            )
+            predictors.append(predictor)
+    else:
+        trained_model_paths = get_trained_model_paths(SPLIT_DIR, rcnn)
+        predictor, _ = choose_and_use_model(
+            trained_model_paths, dataset_name, threshold, metadata, rcnn
+        )
+        predictors = [predictor]
 
     image_folder_path = get_image_folder_path()
 
@@ -324,17 +335,34 @@ def run_inference(
     for name in images_name:
         print(f"Preparing masks for image {name}")
         image = cv2.imread(os.path.join(inpath, name))
-        outputs = predictor(image)
-        masks = postprocess_masks(
-            np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
-            outputs["instances"].to("cpu")._fields["scores"].numpy(),
-            image,
-        )
+        all_masks = []
+        all_scores = []
 
-        if masks:
-            for i in range(len(masks)):
-                Img_ID.append(name.replace(".tif", ""))
-                EncodedPixels.append(conv(rle_encoding(masks[i])))
+        for predictor in predictors:
+            outputs = predictor(image)
+            masks = postprocess_masks(
+                np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
+                outputs["instances"].to("cpu")._fields["scores"].numpy(),
+                image,
+            )
+            scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
+            if masks:
+                for i, mask in enumerate(masks):
+                    all_masks.append(mask)
+                    all_scores.append(scores[i])
+
+        # Deduplicate masks if using both
+        unique_masks = []
+        unique_scores = []
+        for i, mask in enumerate(all_masks):
+            if not any(iou(mask, um) > 0.5 for um in unique_masks):
+                unique_masks.append(mask)
+                unique_scores.append(all_scores[i])
+
+        conv = lambda l: " ".join(map(str, l))
+        for i, mask in enumerate(unique_masks):
+            Img_ID.append(name.replace(".tif", ""))
+            EncodedPixels.append(conv(rle_encoding(mask)))
 
     df = pd.DataFrame({"ImageId": Img_ID, "EncodedPixels": EncodedPixels})
     df.to_csv(os.path.join(path, "R50_flip_results.csv"), index=False, sep=",")
