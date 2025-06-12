@@ -31,20 +31,22 @@ SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
 CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
 
 
-def get_trained_model_paths(base_dir: str) -> dict:
+def get_trained_model_paths(base_dir: str, rcnn: int = 50) -> dict:
     """
     Retrieves paths to trained models in a given base directory.
 
     Parameters:
     - base_dir (str): Directory containing trained models
+    - rcnn (int): RCNN backbone, 50 or 101
 
     Returns:
     - dict: Dictionary with dataset names as keys and model paths as values
     """
     model_paths = {}
+    suffix = f"r{rcnn}"
     for dataset_name in os.listdir(base_dir):
-        model_dir = os.path.join(base_dir, dataset_name)
-        model_path = os.path.join(model_dir, "model_final.pth")
+        model_dir = os.path.join(base_dir, dataset_name, f"rcnn_r{rcnn}")
+        model_path = os.path.join(model_dir, f"model_final_{suffix}.pth")
         if os.path.exists(model_path):
             model_paths[dataset_name] = model_path
     return model_paths
