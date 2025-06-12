@@ -1,7 +1,17 @@
+"""
+Measurement Utilities
+
+This module provides utility functions for geometric and color measurements,
+including midpoint calculation, color conversions, wavelength estimation, and
+arrow detection in images.
+"""
+
 import cv2
+import numpy as np
+import logging
 
 
-def midpoint(ptA, ptB):
+def midpoint(ptA: tuple, ptB: tuple) -> tuple:
     """
     Calculates the midpoint between two points.
 
@@ -15,7 +25,7 @@ def midpoint(ptA, ptB):
     return ((ptA[0] + ptB[0]) * 0.5, (ptA[1] + ptB[1]) * 0.5)
 
 
-def rgb_to_hsv(r, g, b):
+def rgb_to_hsv(r: int, g: int, b: int) -> tuple:
     """
     Converts RGB color to HSV.
 
@@ -63,7 +73,7 @@ def rgb_to_hsv(r, g, b):
     return h, s, v
 
 
-def hue_to_wavelength(hue):
+def hue_to_wavelength(hue: float) -> float:
     """
     Converts hue to wavelength in nanometers.
 
@@ -80,7 +90,7 @@ def hue_to_wavelength(hue):
     return wavelength
 
 
-def rgb_to_wavelength(r, g, b):
+def rgb_to_wavelength(r: int, g: int, b: int) -> float:
     """
     Converts RGB color to wavelength.
 
@@ -97,7 +107,7 @@ def rgb_to_wavelength(r, g, b):
     return wavelength
 
 
-def detect_arrows(image):
+def detect_arrows(image: np.ndarray) -> list:
     """
     Detects arrows in the image.
 

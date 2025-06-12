@@ -1,22 +1,19 @@
 """
-Main pipeline script for the UW Computer Vision project.
+UW Computer Vision Project - Main Pipeline Script
 
-This script provides a command-line interface for running various computer vision tasks:
-- Dataset preparation
-- Model training
-- Model evaluation
-- Inference on new images
-
-The script integrates with Google Cloud Storage for data management and provides
-progress tracking and ETA estimation for long-running tasks.
+This script provides a command-line interface for running dataset preparation, model training,
+evaluation, and inference tasks. It integrates with Google Cloud Storage and tracks progress/ETA.
+Logging is configured to print simplified logs to the terminal and full logs to logs/full.log.
 """
 
 import argparse
 import os
+import subprocess
 from datetime import datetime
 from pathlib import Path
-
 import yaml
+import logging
+import glob
 
 from src.data.datasets import split_dataset
 from src.functions.evaluate_model import evaluate_model
@@ -24,22 +21,14 @@ from src.functions.inference import run_inference
 from src.functions.train_model import train_on_dataset
 from src.utils.eta_utils import update_eta_data
 from src.utils.gcs_utils import download_data_from_bucket, upload_data_to_bucket
+from src.utils.config import get_config
 
-# Load config once at the start of your program
-with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
-    config = yaml.safe_load(f)
-
-# Resolve paths
+config = get_config()
+bucket = config["bucket"]
 SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
 CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
 ETA_FILE = Path(config["paths"]["eta_file"]).expanduser().resolve()
 local_dataset_path = Path(config["paths"]["local_dataset_root"]).expanduser().resolve()
-
-# Load bucket name from config.yaml
-with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
-    config = yaml.safe_load(f)
-bucket = config["bucket"]
-
 
 def setup_config():
     """
@@ -92,13 +81,7 @@ def main():
     """
     Main function that parses command line arguments and executes the requested task.
 
-    Tasks include:
-    - prepare: Split dataset into train and test sets
-    - train: Train a model on the dataset
-    - evaluate: Evaluate the trained model
-    - inference: Run inference on new data
-
-    The function handles:
+    Handles:
     - Data download/upload from/to Google Cloud Storage
     - Progress tracking and ETA estimation
     - Task execution with appropriate parameters
@@ -106,7 +89,6 @@ def main():
     parser = argparse.ArgumentParser(
         description="Pipeline for preparing data, training, evaluating, and running inference on models."
     )
-
     parser.add_argument(
         "--task",
         type=str,
@@ -178,29 +160,37 @@ def main():
         return
 
     local_path = Path.home() / "uw-com-vision"
-    os.system(f"gsutil -m cp -r gs://{bucket}/dataset_info.json {local_path}")
+    try:
+        subprocess.run(
+            ["gsutil", "-m", "cp", "-r", f"gs://{bucket}/dataset_info.json", str(local_path)],
+            check=True
+        )
+        logging.info("Successfully copied dataset_info.json from GCS.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to copy dataset_info.json from GCS: {e}")
+        raise
 
-    img_dir = os.path.join(local_dataset_path / "DATASET", args.dataset_name)
+    img_dir = local_dataset_path / "DATASET" / args.dataset_name
     output_dir = SPLIT_DIR
 
     total_start_time = datetime.now()
     download_time_taken = 0
     upload_time_taken = 0
 
-    print(f"Running task: {args.task} on dataset: {args.dataset_name}")
+    logging.info(f"Running task: {args.task} on dataset: {args.dataset_name}")
 
     if args.download:
-        print(f"Downloading data for dataset {args.dataset_name} from bucket...")
+        logging.info(f"Downloading data for dataset {args.dataset_name} from bucket...")
         download_time_taken = download_data_from_bucket()
 
     if args.task == "prepare":
-        print(f"Preparing dataset {args.dataset_name}...")
+        logging.info(f"Preparing dataset {args.dataset_name}...")
         task_start_time = datetime.now()
         split_dataset(img_dir, args.dataset_name)
         task_end_time = datetime.now()
 
     elif args.task == "train":
-        print(
+        logging.info(
             f"Training model on dataset {args.dataset_name} using '{args.dataset_format}' format and RCNN {args.rcnn}..."
         )
         train_on_dataset(
@@ -208,7 +198,7 @@ def main():
         )
 
     elif args.task == "evaluate":
-        print(
+        logging.info(
             f"Evaluating model on dataset {args.dataset_name} using '{args.dataset_format}' format..."
         )
         task_start_time = datetime.now()
@@ -221,13 +211,18 @@ def main():
         task_end_time = datetime.now()
 
     elif args.task == "inference":
-        print(
+        logging.info(
             f"Running inference on dataset {args.dataset_name} using '{args.dataset_format}' format and RCNN {args.rcnn}..."
         )
 
-        os.system("rm -f *.png")
-        os.system("rm -f *.csv")
-        os.system("rm -f *.jpg")
+        # Remove .png, .csv, .jpg files in the current directory
+        for pattern in ("*.png", "*.csv", "*.jpg"):
+            for file_path in glob.glob(pattern):
+                try:
+                    os.remove(file_path)
+                    logging.info(f"Removed file: {file_path}")
+                except Exception as e:
+                    logging.warning(f"Could not remove file {file_path}: {e}")
 
         num_images = len(
             [f for f in os.listdir(img_dir) if f.endswith((".tif", ".png", ".jpg"))]
@@ -241,11 +236,10 @@ def main():
             threshold=args.threshold,
             draw_id=args.draw_id,
             dataset_format=args.dataset_format,
-            rcnn=args.rcnn,  # <-- pass the rcnn argument
+            rcnn=args.rcnn,
         )
 
         task_end_time = datetime.now()
-
         inference_time_taken = (task_end_time - task_start_time).total_seconds()
         update_eta_data("inference", inference_time_taken, num_images)
 
@@ -253,7 +247,7 @@ def main():
     total_time_taken = (total_end_time - total_start_time).total_seconds()
 
     if args.upload:
-        print(f"Uploading results for dataset {args.dataset_name} to bucket...")
+        logging.info(f"Uploading results for dataset {args.dataset_name} to bucket...")
         upload_time_taken = upload_data_to_bucket()
 
     if args.task != "inference":
@@ -264,6 +258,16 @@ def main():
     if args.upload:
         update_eta_data("upload", upload_time_taken)
 
-
 if __name__ == "__main__":
+    # Logging setup (already present)
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler(log_dir / "full.log", mode="a", encoding="utf-8"),
+        ]
+    )
     main()

@@ -1,10 +1,20 @@
+"""
+Deprecated Backup Utilities
+
+This module contains backup or deprecated functions for mask extraction and encoding.
+"""
+
 import cv2
 import torch
+import numpy as np
+import logging
 
 from src.utils.mask_utils import rle_encode
 
+# Ensure these are defined or imported from the correct module
+# from src.utils.constants import THRESHOLDS, MIN_PIXELS
 
-def get_masks(fn, predictor):
+def get_masks(fn: str, predictor) -> list:
     """
     Gets predicted masks for an image using a trained model.
 
@@ -16,6 +26,9 @@ def get_masks(fn, predictor):
     - list: List of RLE encoded masks
     """
     im = cv2.imread(fn)
+    if im is None:
+        logging.error(f"Failed to read image: {fn}")
+        return []
     pred = predictor(im)
     pred_class = torch.mode(pred["instances"].pred_classes)[0]
     take = pred["instances"].scores >= THRESHOLDS[pred_class]

@@ -25,9 +25,9 @@ from detectron2.structures import BoxMode
 from detectron2.data.datasets import register_coco_instances
 from sklearn.model_selection import train_test_split
 
-# Load config once at the start of your program
-with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+from src.utils.config import get_config
+
+config = get_config()
 
 # Constant paths
 SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()

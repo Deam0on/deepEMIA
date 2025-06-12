@@ -1,13 +1,19 @@
-## IMPORTS
-import itertools
+"""
+Mask Utilities
 
+This module provides utility functions for mask encoding, decoding, and post-processing,
+including Run-Length Encoding (RLE) and mask cleaning for segmentation tasks.
+"""
+
+import itertools
 import numpy as np
 from scipy.ndimage import binary_fill_holes
 from skimage.measure import label
 from skimage.morphology import dilation, erosion
+import logging
 
 
-def binary_mask_to_rle(binary_mask):
+def binary_mask_to_rle(binary_mask: np.ndarray) -> dict:
     """
     Converts a binary mask to Run-Length Encoding (RLE).
 

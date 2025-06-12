@@ -38,13 +38,9 @@ from streamlit_functions import (
 
 ADMIN_PASSWORD = "admin"
 
-# Load config once at the start of your program
-with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+from src.utils.config import get_config
 
-# Load bucket name from config.yaml
-with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+config = get_config()
 bucket = config["bucket"]
 
 # Absolute path to main.py

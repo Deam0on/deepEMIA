@@ -54,9 +54,9 @@ from src.utils.mask_utils import (
 from src.utils.measurements import midpoint
 from src.utils.scalebar_ocr import detect_scale_bar
 
-# Load config once at the start of your program
-with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+from src.utils.config import get_config
+
+config = get_config()
 
 # Resolve paths
 SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()

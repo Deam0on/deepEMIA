@@ -10,29 +10,30 @@ The module handles:
 - File transfers between local and cloud storage
 - Automatic archiving of results
 - Timestamp-based organization of uploaded data
+
+Note:
+    Requires gsutil to be installed and configured with appropriate permissions.
 """
 
 import os
 import shutil
+import subprocess
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import yaml
 
-# Load bucket name from config.yaml
-with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
-    config = yaml.safe_load(f)
-bucket = config["bucket"]
+from src.utils.config import get_config
 
-# Load config once at the start of your program
-with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+config = get_config()
+bucket = config["bucket"]
 
 # Resolve paths
 local_dataset_path = Path(config["paths"]["local_dataset_root"]).expanduser().resolve()
 
 
-def download_data_from_bucket():
+def download_data_from_bucket() -> float:
     """
     Download data from a Google Cloud Storage bucket to a local directory.
 
@@ -43,22 +44,26 @@ def download_data_from_bucket():
 
     Returns:
         float: Time taken to download data in seconds
-
-    Note:
-        Requires gsutil to be installed and configured with appropriate permissions
     """
     download_start_time = datetime.now()
     dirpath = Path.home() / "DATASET"
     if dirpath.exists() and dirpath.is_dir():
+        logging.info(f"Removing existing dataset directory: {dirpath}")
         shutil.rmtree(dirpath)
 
-    os.system(f"gsutil -m cp -r gs://{bucket}/DATASET {local_dataset_path}")
-    download_end_time = datetime.now()
+    cmd = ["gsutil", "-m", "cp", "-r", f"gs://{bucket}/DATASET", str(local_dataset_path)]
+    logging.info(f"Running command: {' '.join(cmd)}")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        logging.error(f"gsutil download failed: {result.stderr}")
+    else:
+        logging.info("gsutil download completed successfully.")
 
+    download_end_time = datetime.now()
     return (download_end_time - download_start_time).total_seconds()
 
 
-def upload_data_to_bucket():
+def upload_data_to_bucket() -> float:
     """
     Upload data from local directories to a Google Cloud Storage bucket.
 
@@ -69,39 +74,40 @@ def upload_data_to_bucket():
     4. Uploads output directory contents if present
     5. Tracks and returns the upload duration
 
-    The upload process:
-    - Uses parallel uploads for better performance
-    - Only uploads files that exist locally
-    - Organizes uploads in timestamped directories
-    - Handles different file types separately
-
     Returns:
         float: Time taken to upload data in seconds
-
-    Note:
-        Requires gsutil to be installed and configured with appropriate permissions
     """
     upload_start_time = datetime.now()
     time_offset = timedelta(hours=2)
     timestamp = (datetime.now() + time_offset).strftime("%Y%m%d_%H%M%S")
     archive_path = f"gs://{bucket}/Archive/{timestamp}/"
 
-    # Check and upload .png files
-    if any(fname.endswith(".png") for fname in os.listdir(local_dataset_path)):
-        local_path = Path.home() / "*.png"
-        os.system(f"gsutil -m cp -r {local_path} {archive_path}")
+    # Upload .png files
+    png_files = list(Path.home().glob("*.png"))
+    if png_files:
+        logging.info(f"Uploading {len(png_files)} PNG files to {archive_path}")
+        cmd = ["gsutil", "-m", "cp", "-r"] + [str(f) for f in png_files] + [archive_path]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            logging.error(f"PNG upload failed: {result.stderr}")
 
-    # Check and upload .csv files
-    if any(fname.endswith(".csv") for fname in os.listdir(local_dataset_path)):
-        local_path = Path.home() / "*.csv"
-        os.system(f"gsutil -m cp -r {local_path} {archive_path}")
+    # Upload .csv files
+    csv_files = list(Path.home().glob("*.csv"))
+    if csv_files:
+        logging.info(f"Uploading {len(csv_files)} CSV files to {archive_path}")
+        cmd = ["gsutil", "-m", "cp", "-r"] + [str(f) for f in csv_files] + [archive_path]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            logging.error(f"CSV upload failed: {result.stderr}")
 
-    # Check and upload files in the output directory
-    if os.path.exists(local_dataset_path / "output") and os.listdir(
-        local_dataset_path / "output"
-    ):
-        local_path = Path.home() / "output/*"
-        os.system(f"gsutil -m cp -r {local_path} {archive_path}")
+    # Upload output directory contents
+    output_dir = Path.home() / "output"
+    if output_dir.exists() and any(output_dir.iterdir()):
+        logging.info(f"Uploading output directory contents to {archive_path}")
+        cmd = ["gsutil", "-m", "cp", "-r", str(output_dir) + "/*", archive_path]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            logging.error(f"Output directory upload failed: {result.stderr}")
 
     upload_end_time = datetime.now()
     return (upload_end_time - upload_start_time).total_seconds()

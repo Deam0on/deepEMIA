@@ -17,6 +17,8 @@ The module provides a complete training pipeline with support for:
 ## IMPORTS
 import os
 from pathlib import Path
+import shutil
+import logging
 
 import albumentations as A
 import cv2
@@ -35,9 +37,9 @@ from detectron2.evaluation import COCOEvaluator
 from src.data.datasets import read_dataset_info, register_datasets
 from src.functions.inference import CustomTrainer
 
-# Load config once at the start of your program
-with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+from src.utils.config import get_config
+
+config = get_config()
 
 # Resolve paths
 SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
@@ -73,6 +75,16 @@ def get_albumentations_transform():
         ]
     )
 
+def check_disk_space(path, min_gb=5):
+    """Check if there is at least min_gb GB free at the given path."""
+    total, used, free = shutil.disk_usage(path)
+    free_gb = free / (1024 ** 3)
+    if free_gb < min_gb:
+        logging.error(f"Not enough disk space: only {free_gb:.2f} GB free at {path}. Minimum required: {min_gb} GB.")
+        raise RuntimeError("Insufficient disk space for training.")
+    else:
+        logging.info(f"Disk space check passed: {free_gb:.2f} GB free at {path}.")
+
 def train_on_dataset(dataset_name, output_dir, dataset_format="json", rcnn="101"):
     """
     Trains a model on the specified dataset with the selected backbone(s).
@@ -83,19 +95,24 @@ def train_on_dataset(dataset_name, output_dir, dataset_format="json", rcnn="101"
     - dataset_format (str): Annotation format
     - rcnn (str): Backbone to use: "50", "101", or "combo"
     """
+    check_disk_space(output_dir, min_gb=5)
+
     # Read dataset information
     dataset_info = read_dataset_info(CATEGORY_JSON)
 
     # Register datasets
     register_datasets(dataset_info, dataset_name, dataset_format=dataset_format)
 
-    # Debug prints for verification
-    print(DatasetCatalog.get(f"{dataset_name}_train"))
-    print(DatasetCatalog.get(f"{dataset_name}_test"))
-
     # Path for the split file
     split_file = os.path.join(SPLIT_DIR, f"{dataset_name}_split.json")
     print(f"Split file for {dataset_name}: {split_file}")
+
+    train_data = DatasetCatalog.get(f"{dataset_name}_train")
+    test_data = DatasetCatalog.get(f"{dataset_name}_test")
+    print(f"Training images: {len(train_data)}")
+    print(f"Test images: {len(test_data)}")
+    categories = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
+    print(f"Categories: {categories}")
 
     # Helper function to train with a given backbone
     def train_with_backbone(backbone_name, config_file, model_suffix):

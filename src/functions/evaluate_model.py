@@ -31,9 +31,9 @@ from src.data.models import (
     get_trained_model_paths,
 )
 
-# Load config once at the start of your program
-with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+from src.utils.config import get_config
+
+config = get_config()
 
 # Constant paths
 SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
