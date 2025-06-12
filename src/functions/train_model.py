@@ -143,22 +143,22 @@ def train_on_dataset(dataset_name, output_dir, dataset_format="json", rcnn="101"
         print(f"Model trained on {dataset_name} with {backbone_name} saved to {model_path}")
 
         # Quantize the trained model
-        trainer.model.qconfig = torch.quantization.get_default_qat_qconfig("qnnpack")
-        model_qat = torch.quantization.prepare_qat(trainer.model)
-        model_qat.train()
+    #    trainer.model.qconfig = torch.quantization.get_default_qat_qconfig("qnnpack")
+    #    model_qat = torch.quantization.prepare_qat(trainer.model)
+    #    model_qat.train()
 
-        cfg.SOLVER.MAX_ITER = 500  # short fine-tuning
-        cfg.SOLVER.BASE_LR = cfg.SOLVER.BASE_LR * 0.1  # smaller LR
-        cfg.SOLVER.WARMUP_ITERS = 0
+    #    cfg.SOLVER.MAX_ITER = 500  # short fine-tuning
+    #    cfg.SOLVER.BASE_LR = cfg.SOLVER.BASE_LR * 0.1  # smaller LR
+    #    cfg.SOLVER.WARMUP_ITERS = 0
 
-        trainer.model = model_qat
-        trainer.resume_or_load(resume=False)
-        trainer.train()
+    #    trainer.model = model_qat
+    #    trainer.resume_or_load(resume=False)
+    #    trainer.train()
 
-        quantized_model_path = os.path.join(dataset_output_dir, f"model_final_quantized_{model_suffix}.pth")
-        model_quantized = torch.quantization.convert(model_qat.eval())
-        torch.save(model_quantized, quantized_model_path)
-        print(f"Quantized model saved to {quantized_model_path}")
+    #    quantized_model_path = os.path.join(dataset_output_dir, f"model_final_quantized_{model_suffix}.pth")
+    #    model_quantized = torch.quantization.convert(model_qat.eval())
+    #    torch.save(model_quantized, quantized_model_path)
+    #    print(f"Quantized model saved to {quantized_model_path}")
 
     # Decide which backbone(s) to train
     if rcnn == "50":
