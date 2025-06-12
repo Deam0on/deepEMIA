@@ -235,7 +235,7 @@ def main():
         # Download inference data
         inference_path = local_dataset_path / "DATASET" / "INFERENCE"
         logging.info("Downloading inference data...")
-        download_time_taken = download_data_from_bucket(dataset_name="INFERENCE")
+        download_time_taken = download_data_from_bucket(dataset_name=args.dataset_name)
         
         num_images = len(
             [f for f in os.listdir(img_dir) if f.endswith((".tif", ".png", ".jpg"))]
