@@ -23,6 +23,7 @@ import csv
 import os
 import time
 from pathlib import Path
+import logging
 
 import cv2
 import detectron2.data.transforms as T
@@ -322,14 +323,14 @@ def load_predictor(config_file, model_suffix, output_dir, dataset_name, threshol
 
 
 def run_inference(
-    dataset_name,
-    output_dir,
-    visualize=False,
-    threshold=0.65,
-    draw_id=False,
-    dataset_format="json",
-    rcnn="101",  # <--- add this argument
-):
+    dataset_name: str,
+    output_dir: str,
+    visualize: bool = False,
+    threshold: float = 0.65,
+    draw_id: bool = False,
+    dataset_format: str = "json",
+    rcnn: str = "101",
+) -> None:
     """
     Runs inference on a dataset and saves the results.
 
@@ -338,14 +339,9 @@ def run_inference(
     - output_dir (str): Directory to save results
     - visualize (bool): Whether to generate visualizations
     - threshold (float): Confidence threshold for predictions
+    - draw_id (bool): Whether to draw instance IDs
+    - dataset_format (str): Dataset annotation format
     - rcnn (str): Backbone to use: "50", "101", or "combo"
-
-    The function:
-    1. Loads the model and dataset
-    2. Processes each image
-    3. Generates predictions
-    4. Saves results and visualizations
-    5. Performs post-processing and analysis
 
     Returns:
     - None
@@ -353,10 +349,10 @@ def run_inference(
     dataset_info = read_dataset_info(CATEGORY_JSON)
     register_datasets(dataset_info, dataset_name, dataset_format=dataset_format)
 
-    print("Forcing metadata population from DatasetCatalog...")
+    logging.info("Forcing metadata population from DatasetCatalog...")
     d = DatasetCatalog.get(f"{dataset_name}_train")
     metadata = MetadataCatalog.get(f"{dataset_name}_train")
-    print("Metadata populated successfully.")
+    logging.info("Metadata populated successfully.")
 
     # Prepare predictors based on rcnn flag
     predictors = []
@@ -388,12 +384,12 @@ def run_inference(
 
     roi_profiles = full_config.get("scale_bar_rois", {})
     roi_config = roi_profiles.get(dataset_name, roi_profiles["default"])
-    print(f"Using scale bar ROI profile for '{dataset_name}': {roi_config}")
+    logging.info(f"Using scale bar ROI profile for '{dataset_name}': {roi_config}")
 
     conv = lambda l: " ".join(map(str, l))
 
     for name in images_name:
-        print(f"Preparing masks for image {name}")
+        logging.info(f"Preparing masks for image {name}")
         image = cv2.imread(os.path.join(inpath, name))
         all_instances = []
         for predictor in predictors:
@@ -406,9 +402,14 @@ def run_inference(
         else:
             merged_instances = all_instances[0]
 
+        # Robust check for masks
+        if not hasattr(merged_instances, "pred_masks") or len(merged_instances) == 0:
+            logging.warning(f"No masks predicted for image {name}. Skipping.")
+            continue
+
         masks = postprocess_masks(
-            np.asarray(merged_instances._fields["pred_masks"]),
-            merged_instances._fields["scores"].numpy(),
+            merged_instances.pred_masks.numpy(),
+            merged_instances.scores.numpy(),
             image,
         )
 
@@ -456,7 +457,7 @@ def run_inference(
 
             for idx, test_img in enumerate(image_list, 1):
                 start_time = time.perf_counter()
-                print(f"Inferencing image {idx} out of {num_images}")
+                logging.info(f"Inferencing image {idx} out of {num_images}")
 
                 input_path = os.path.join(test_img_path, test_img)
                 im = cv2.imread(input_path)
@@ -589,7 +590,7 @@ def run_inference(
                         )
                 elapsed = time.perf_counter() - start_time
                 total_time += elapsed
-                print(f"Time taken for image {idx}: {elapsed:.3f} seconds")
+                logging.info(f"Time taken for image {idx}: {elapsed:.3f} seconds")
 
     average_time = total_time / num_images if num_images else 0
-    print(f"Average inference time per image: {average_time:.3f} seconds")
+    logging.info(f"Average inference time per image: {average_time:.3f} seconds")

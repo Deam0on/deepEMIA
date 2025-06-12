@@ -14,6 +14,7 @@ from pathlib import Path
 import yaml
 import logging
 import glob
+import shutil
 
 from src.data.datasets import split_dataset
 from src.functions.evaluate_model import evaluate_model
@@ -179,10 +180,6 @@ def main():
 
     logging.info(f"Running task: {args.task} on dataset: {args.dataset_name}")
 
-    if args.download:
-        logging.info(f"Downloading data for dataset {args.dataset_name} from bucket...")
-        download_time_taken = download_data_from_bucket()
-
     if args.task == "prepare":
         logging.info(f"Preparing dataset {args.dataset_name}...")
         task_start_time = datetime.now()
@@ -190,12 +187,23 @@ def main():
         task_end_time = datetime.now()
 
     elif args.task == "train":
+        # Download data
+        logging.info(f"Downloading training data for {args.dataset_name}...")
+        download_time_taken = download_data_from_bucket(dataset_name=args.dataset_name)
+        
+        # Train
         logging.info(
             f"Training model on dataset {args.dataset_name} using '{args.dataset_format}' format and RCNN {args.rcnn}..."
         )
         train_on_dataset(
             args.dataset_name, output_dir, dataset_format=args.dataset_format, rcnn=args.rcnn
         )
+        
+        # Delete dataset after training
+        dataset_path = local_dataset_path / "DATASET" / args.dataset_name
+        if dataset_path.exists():
+            shutil.rmtree(dataset_path)
+            logging.info(f"Deleted training data at {dataset_path} after training.")
 
     elif args.task == "evaluate":
         logging.info(
@@ -224,6 +232,11 @@ def main():
                 except Exception as e:
                     logging.warning(f"Could not remove file {file_path}: {e}")
 
+        # Download inference data
+        inference_path = local_dataset_path / "DATASET" / "INFERENCE"
+        logging.info("Downloading inference data...")
+        download_time_taken = download_data_from_bucket(dataset_name="INFERENCE")
+        
         num_images = len(
             [f for f in os.listdir(img_dir) if f.endswith((".tif", ".png", ".jpg"))]
         )
@@ -243,12 +256,49 @@ def main():
         inference_time_taken = (task_end_time - task_start_time).total_seconds()
         update_eta_data("inference", inference_time_taken, num_images)
 
+        # Delete inference data after inference
+        if inference_path.exists():
+            shutil.rmtree(inference_path)
+            logging.info(f"Deleted inference data at {inference_path} after inference.")
+
     total_end_time = datetime.now()
     total_time_taken = (total_end_time - total_start_time).total_seconds()
 
     if args.upload:
         logging.info(f"Uploading results for dataset {args.dataset_name} to bucket...")
         upload_time_taken = upload_data_to_bucket()
+        
+        # Upload logs directory to the bucket
+        logs_dir = Path("logs")
+        if logs_dir.exists():
+            try:
+                subprocess.run(
+                    ["gsutil", "-m", "cp", "-r", str(logs_dir), f"gs://{bucket}/logs/"],
+                    check=True
+                )
+                logging.info(f"Uploaded logs directory to gs://{bucket}/logs/")
+            except subprocess.CalledProcessError as e:
+                logging.warning(f"Failed to upload logs directory: {e}")
+
+            # Delete logs directory after upload
+            try:
+                shutil.rmtree(logs_dir)
+                logging.info(f"Deleted local logs directory: {logs_dir}")
+            except Exception as e:
+                logging.warning(f"Could not delete local logs directory {logs_dir}: {e}")
+
+        # Delete result files after upload
+        for pattern in ("*.png", "*.csv"):
+            for file_path in Path.home().glob(pattern):
+                try:
+                    file_path.unlink()
+                    logging.info(f"Deleted result file: {file_path}")
+                except Exception as e:
+                    logging.warning(f"Could not delete result file {file_path}: {e}")
+        output_dir = Path.home() / "output"
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
+            logging.info(f"Deleted output directory: {output_dir}")
 
     if args.task != "inference":
         update_eta_data(args.task, total_time_taken)

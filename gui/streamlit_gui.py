@@ -68,51 +68,63 @@ if "datasets" not in st.session_state:
 if "confirm_delete" not in st.session_state:
     st.session_state.confirm_delete = False
 
-# Streamlit interface
 st.title("DL-IA Control Panel")
-
-# Task selection
 st.header("Script controls")
 use_new_data = st.checkbox("Use new data from bucket", value=False)
 
 dataset_name = st.selectbox("Dataset Name", list(st.session_state.datasets.keys()))
 
-# Wrap the dataset creation and deletion sections with password check
+def add_new_dataset(new_dataset_name: str, new_classes: str):
+    """
+    Adds a new dataset to the session state and saves it to GCS.
+
+    Parameters:
+    - new_dataset_name (str): Name of the new dataset
+    - new_classes (str): Comma-separated string of class names
+
+    Returns:
+    - None
+    """
+    path1 = f"/home//DATASET/{new_dataset_name}/"
+    path2 = path1
+    classes = [cls.strip() for cls in new_classes.split(",")] if new_classes else []
+    if new_dataset_name and classes:
+        st.session_state.datasets[new_dataset_name] = [path1, path2, classes]
+        save_dataset_names_to_gcs(st.session_state.datasets)
+        st.success(f"Dataset '{new_dataset_name}' added.")
+    else:
+        st.warning("Please enter a valid dataset name and classes.")
+
+def remove_dataset(dataset_name: str):
+    """
+    Removes a dataset from the session state and GCS.
+
+    Parameters:
+    - dataset_name (str): Name of the dataset to remove
+
+    Returns:
+    - None
+    """
+    del st.session_state.datasets[dataset_name]
+    save_dataset_names_to_gcs(st.session_state.datasets)
+    st.success(f"Dataset '{dataset_name}' deleted.")
+    st.session_state.confirm_delete = False
+    st.experimental_rerun()
+
+# Dataset creation and deletion (admin only)
 if check_password():
     new_dataset = st.checkbox("New dataset")
     if new_dataset:
         new_dataset_name = st.text_input("Enter new dataset name")
         if new_dataset_name:
-            path1 = f"/home//DATASET/{new_dataset_name}/"
-            path2 = path1
             new_classes = st.text_input("Enter classes (comma separated)")
             if st.button("Add Dataset"):
-                classes = (
-                    [cls.strip() for cls in new_classes.split(",")]
-                    if new_classes
-                    else []
-                )
-                if new_dataset_name and classes:
-                    st.session_state.datasets[new_dataset_name] = [
-                        path1,
-                        path2,
-                        classes,
-                    ]
-                    save_dataset_names_to_gcs(st.session_state.datasets)
-                    st.success(f"Dataset '{new_dataset_name}' added.")
-                else:
-                    st.warning("Please enter a valid dataset name and classes.")
+                add_new_dataset(new_dataset_name, new_classes)
 
     confirm_deletion = st.checkbox("Confirm Deletion")
     if st.button("Remove Dataset"):
         if confirm_deletion:
-            del st.session_state.datasets[dataset_name]
-            save_dataset_names_to_gcs(st.session_state.datasets)
-            st.success(f"Dataset '{dataset_name}' deleted.")
-            st.session_state.confirm_delete = (
-                False  # Automatically uncheck after deletion
-            )
-            st.experimental_rerun()  # Refresh to reflect deletion
+            remove_dataset(dataset_name)
         else:
             st.warning("Please check the confirmation box to delete the dataset.")
 
@@ -142,34 +154,47 @@ threshold = st.slider(
     help="Adjust the detection threshold for the model.",
 )
 
-# Update the task execution button code to handle the combined ETA
+def update_progress_bar_and_countdown(start_time, eta, phase, progress_bar, countdown_placeholder, total_eta, process=None):
+    """
+    Updates the progress bar and countdown timer during task execution.
+
+    Parameters:
+    - start_time (float): Start time of the phase
+    - eta (float): Estimated time for the phase
+    - phase (str): Current phase name
+    - progress_bar (st.progress): Streamlit progress bar object
+    - countdown_placeholder (st.empty): Streamlit placeholder for countdown
+    - total_eta (float): Total estimated time for all phases
+    - process (subprocess.Popen, optional): Process to monitor for completion
+
+    Returns:
+    - None
+    """
+    end_time = start_time + eta
+    while time.time() < end_time:
+        elapsed_time = time.time() - start_time
+        remaining_time = end_time - time.time()
+        hours, remainder = divmod(remaining_time, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        countdown_str = f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
+        countdown_placeholder.text(f"{phase} - Time Remaining: {countdown_str}")
+        progress_percentage = min(elapsed_time / total_eta, 1.0)
+        progress_bar.progress(progress_percentage)
+        time.sleep(1)
+        if phase == "Task in progress" and process is not None and process.poll() is not None:
+            break
+
+# Task execution
 if st.button("Run Task"):
-    visualize_flag = "--visualize"  # Always true
-    upload_flag = "--upload"  # Always true
+    visualize_flag = "--visualize"
+    upload_flag = "--upload"
     download_flag = "--download"
 
-    # Calculate ETAs
     download_eta, task_eta, upload_eta = estimate_eta(task)
     total_eta = download_eta + task_eta + upload_eta
 
     command = f"python3 {MAIN_SCRIPT_PATH} --task {task} --dataset_name {dataset_name} --threshold {threshold} {visualize_flag} {download_flag} {upload_flag}"
     st.info(f"Running: {command}")
-
-    def update_progress_bar_and_countdown(start_time, eta, phase):
-        end_time = start_time + eta
-        while time.time() < end_time:
-            elapsed_time = time.time() - start_time
-            remaining_time = end_time - time.time()
-            hours, remainder = divmod(remaining_time, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            countdown_str = f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
-            countdown_placeholder.text(f"{phase} - Time Remaining: {countdown_str}")
-            progress_percentage = min(elapsed_time / total_eta, 1.0)
-            progress_bar.progress(progress_percentage)
-            time.sleep(1)
-            if phase == "Task in progress" and not process.poll() is None:
-                # If task phase and the command finished, exit the loop
-                break
 
     with st.spinner("Running task..."):
         progress_bar = st.progress(0)
@@ -177,10 +202,10 @@ if st.button("Run Task"):
         start_time = time.time()
 
         # Download Phase
-        update_progress_bar_and_countdown(start_time, download_eta, "Downloading")
+        update_progress_bar_and_countdown(start_time, download_eta, "Downloading", progress_bar, countdown_placeholder, total_eta)
 
         # Task Phase
-        task_start_time = time.time()  # Reset start time for task phase
+        task_start_time = time.time()
         process = subprocess.Popen(
             command,
             shell=True,
@@ -188,28 +213,26 @@ if st.button("Run Task"):
             stderr=subprocess.PIPE,
             text=True,
         )
-        update_progress_bar_and_countdown(task_start_time, task_eta, "Task in progress")
+        update_progress_bar_and_countdown(task_start_time, task_eta, "Task in progress", progress_bar, countdown_placeholder, total_eta, process)
 
         stdout, stderr = process.communicate()
 
         # Upload Phase
-        start_time = time.time()  # Reset start time for upload phase
-        update_progress_bar_and_countdown(start_time, upload_eta, "Uploading")
+        start_time = time.time()
+        update_progress_bar_and_countdown(start_time, upload_eta, "Uploading", progress_bar, countdown_placeholder, total_eta)
 
-        # Ensure the progress bar is full at the end
         progress_bar.progress(100)
         countdown_placeholder.text("Task Completed")
 
     st.text(stdout)
-    st.session_state.stderr = stderr  # Store stderr in session state
+    st.session_state.stderr = stderr
 
-    # Reset the show_errors state if there are new errors
     if stderr:
         st.session_state.show_errors = True
     else:
         st.success(f"{task.capitalize()} task completed successfully!")
 
-# Conditionally show the upload section
+# File upload section
 upload_folder_mapping = {
     f"{GCS_DATASET_FOLDER}/{dataset_name}": "TRAINING DATA",
     GCS_INFERENCE_FOLDER: "MEASUREMENT DATA",
@@ -237,10 +260,9 @@ if use_new_data:
             )
         st.success("Files uploaded successfully.")
 
+# Error and warning display
 has_errors = contains_errors(st.session_state.stderr)
 has_stderr = bool(st.session_state.stderr)
-
-# Auto-expand if actual errors are present
 expand_expander = has_errors
 
 if has_stderr:
@@ -255,32 +277,26 @@ st.header("Google Cloud Storage")
 if "folders" not in st.session_state or not st.session_state.folders:
     st.session_state.folders = list_directories(GCS_BUCKET_NAME, GCS_ARCHIVE_FOLDER)
 
-# Apply formatting and sorting
 formatted_folders = format_and_sort_folders(st.session_state.folders)
 
 if formatted_folders:
     folder_dropdown = st.selectbox(
         "Select Folder",
         formatted_folders,
-        format_func=lambda x: x[1],  # Display the formatted name
+        format_func=lambda x: x[1],
     )
 else:
     st.write("No folders found in the GCS bucket.")
 
 selected_folder = folder_dropdown[0]
 
-# Button to show inference images
+# Show inference images
 if st.button("Show Inference Images") and st.session_state.folders:
     st.session_state.show_images = True
 
-# Display images if available
 if st.session_state.show_images:
-    st.write(
-        f"Displaying images from folder: {folder_dropdown[1]}"
-    )  # Use formatted name for display
-    image_files = list_png_files_in_gcs_folder(
-        GCS_BUCKET_NAME, selected_folder
-    )  # Use original name for operations
+    st.write(f"Displaying images from folder: {folder_dropdown[1]}")
+    image_files = list_png_files_in_gcs_folder(GCS_BUCKET_NAME, selected_folder)
     if image_files:
         for blob in image_files:
             img_bytes = blob.download_as_bytes()
@@ -289,26 +305,18 @@ if st.session_state.show_images:
     else:
         st.write("No images found in the selected folder.")
 
-    # Button to download specific CSV files
-    csv_files = list_specific_csv_files_in_gcs_folder(
-        GCS_BUCKET_NAME, selected_folder
-    )  # Use original name for operations
+    # Download specific CSV files
+    csv_files = list_specific_csv_files_in_gcs_folder(GCS_BUCKET_NAME, selected_folder)
     if csv_files:
         for blob in csv_files:
             csv_bytes = blob.download_as_bytes()
             csv_name = os.path.basename(blob.name)
             if csv_name == "results_x_pred_1.csv":
-                if dataset_name != "hw_patterns":
-                    download_name = "results_pores.csv"
-                else:
-                    download_name = "results_cyclones.csv"
+                download_name = "results_pores.csv" if dataset_name != "hw_patterns" else "results_cyclones.csv"
             elif csv_name == "results_x_pred_0.csv":
-                if dataset_name != "hw_patterns":
-                    download_name = "results_throats.csv"
-                else:
-                    download_name = "results_flows.csv"
+                download_name = "results_throats.csv" if dataset_name != "hw_patterns" else "results_flows.csv"
             else:
-                continue  # Skip files that don't match the specific names
+                continue
             st.download_button(
                 label=f"Download {download_name}",
                 data=csv_bytes,
@@ -318,7 +326,7 @@ if st.session_state.show_images:
     else:
         st.write("No specific CSV files found in the selected folder.")
 
-    # Add "Download All" button
+    # Download all as zip
     if st.button("Download All as Zip"):
         zip_bytes = create_zip_from_gcs(GCS_BUCKET_NAME, selected_folder)
         st.download_button(
@@ -330,7 +338,6 @@ if st.session_state.show_images:
 
 # Help and Tips Section
 st.sidebar.title("Help & Tips")
-
 st.sidebar.subheader("Tips")
 st.sidebar.write(
     """

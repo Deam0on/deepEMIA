@@ -50,18 +50,12 @@ torch.set_num_threads(os.cpu_count() // 2)
 torch.backends.quantized.engine = "qnnpack"
 
 
-def get_albumentations_transform():
+def get_albumentations_transform() -> A.Compose:
     """
     Creates an Albumentations transform pipeline for data augmentation.
 
     Returns:
-    - A.Compose: Albumentations transform pipeline with:
-        - Resize to 800x800
-        - Random brightness/contrast
-        - Horizontal and vertical flips
-        - Rotation
-        - Normalization
-        - Conversion to tensor
+    - A.Compose: Albumentations transform pipeline.
     """
     return A.Compose(
         [
@@ -75,8 +69,13 @@ def get_albumentations_transform():
         ]
     )
 
-def check_disk_space(path, min_gb=5):
-    """Check if there is at least min_gb GB free at the given path."""
+def check_disk_space(path: str, min_gb: int = 5) -> None:
+    """
+    Check if there is at least min_gb GB free at the given path.
+
+    Raises:
+        RuntimeError: If there is not enough disk space.
+    """
     total, used, free = shutil.disk_usage(path)
     free_gb = free / (1024 ** 3)
     if free_gb < min_gb:
@@ -85,7 +84,7 @@ def check_disk_space(path, min_gb=5):
     else:
         logging.info(f"Disk space check passed: {free_gb:.2f} GB free at {path}.")
 
-def train_on_dataset(dataset_name, output_dir, dataset_format="json", rcnn="101"):
+def train_on_dataset(dataset_name: str, output_dir: str, dataset_format: str = "json", rcnn: str = "101") -> None:
     """
     Trains a model on the specified dataset with the selected backbone(s).
 
@@ -105,17 +104,16 @@ def train_on_dataset(dataset_name, output_dir, dataset_format="json", rcnn="101"
 
     # Path for the split file
     split_file = os.path.join(SPLIT_DIR, f"{dataset_name}_split.json")
-    print(f"Split file for {dataset_name}: {split_file}")
+    logging.info(f"Split file for {dataset_name}: {split_file}")
 
     train_data = DatasetCatalog.get(f"{dataset_name}_train")
     test_data = DatasetCatalog.get(f"{dataset_name}_test")
-    print(f"Training images: {len(train_data)}")
-    print(f"Test images: {len(test_data)}")
+    logging.info(f"Training images: {len(train_data)}")
+    logging.info(f"Test images: {len(test_data)}")
     categories = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
-    print(f"Categories: {categories}")
+    logging.info(f"Categories: {categories}")
 
-    # Helper function to train with a given backbone
-    def train_with_backbone(backbone_name, config_file, model_suffix):
+    def train_with_backbone(backbone_name: str, config_file: str, model_suffix: str) -> None:
         cfg = get_cfg()
         cfg.merge_from_file(model_zoo.get_config_file(config_file))
         cfg.DATASETS.TRAIN = (f"{dataset_name}_train",)
@@ -140,13 +138,12 @@ def train_on_dataset(dataset_name, output_dir, dataset_format="json", rcnn="101"
         cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(thing_classes)
         cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-        # Output directory for the dataset and backbone
         dataset_output_dir = os.path.join(output_dir, dataset_name, f"rcnn_{model_suffix}")
         os.makedirs(dataset_output_dir, exist_ok=True)
         cfg.OUTPUT_DIR = dataset_output_dir
 
-        print(f"Training with backbone: {backbone_name}")
-        print("Classes:", MetadataCatalog.get(cfg.DATASETS.TRAIN[0]).thing_classes)
+        logging.info(f"Training with backbone: {backbone_name}")
+        logging.info(f"Classes: {MetadataCatalog.get(cfg.DATASETS.TRAIN[0]).thing_classes}")
         trainer = CustomTrainer(cfg)
         trainer.resume_or_load(resume=False)
         trainer.train()
@@ -154,30 +151,15 @@ def train_on_dataset(dataset_name, output_dir, dataset_format="json", rcnn="101"
         evaluator = COCOEvaluator(f"{dataset_name}_test", output_dir=dataset_output_dir)
         DefaultTrainer.test(cfg, trainer.model, evaluators=[evaluator])
 
-        # Save the trained model
-        model_path = os.path.join(dataset_output_dir, f"model_final_{model_suffix}.pth")
-        torch.save(trainer.model.state_dict(), model_path)
-        print(f"Model trained on {dataset_name} with {backbone_name} saved to {model_path}")
+        # Use Detectron2's checkpoint
+        src_ckpt = os.path.join(dataset_output_dir, "model_final.pth")
+        dst_ckpt = os.path.join(dataset_output_dir, f"model_final_{model_suffix}.pth")
+        if os.path.exists(src_ckpt):
+            shutil.copy(src_ckpt, dst_ckpt)
+            logging.info(f"Copied Detectron2 checkpoint to {dst_ckpt}")
+        else:
+            logging.warning(f"Detectron2 checkpoint {src_ckpt} not found after training.")
 
-        # Quantize the trained model
-    #    trainer.model.qconfig = torch.quantization.get_default_qat_qconfig("qnnpack")
-    #    model_qat = torch.quantization.prepare_qat(trainer.model)
-    #    model_qat.train()
-
-    #    cfg.SOLVER.MAX_ITER = 500  # short fine-tuning
-    #    cfg.SOLVER.BASE_LR = cfg.SOLVER.BASE_LR * 0.1  # smaller LR
-    #    cfg.SOLVER.WARMUP_ITERS = 0
-
-    #    trainer.model = model_qat
-    #    trainer.resume_or_load(resume=False)
-    #    trainer.train()
-
-    #    quantized_model_path = os.path.join(dataset_output_dir, f"model_final_quantized_{model_suffix}.pth")
-    #    model_quantized = torch.quantization.convert(model_qat.eval())
-    #    torch.save(model_quantized, quantized_model_path)
-    #    print(f"Quantized model saved to {quantized_model_path}")
-
-    # Decide which backbone(s) to train
     if rcnn == "50":
         train_with_backbone("R50", "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml", "r50")
     elif rcnn == "101":

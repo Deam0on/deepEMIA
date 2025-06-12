@@ -1,15 +1,14 @@
 """
-Streamlit web interface for the UW Computer Vision project.
+Streamlit utility functions for the UW Computer Vision project.
 
-This module provides a user-friendly web interface for:
-- Dataset management
-- Model training and evaluation
-- Running inference
-- Visualizing results
-- Downloading predictions and visualizations
+This module provides backend utilities for the Streamlit GUI, including:
+- Dataset management in Google Cloud Storage (GCS)
+- File upload/download and zipping from GCS
+- Progress and ETA estimation
+- Password protection for admin features
+- Utility functions for listing and formatting GCS contents
 
-The interface integrates with Google Cloud Storage for data management and
-provides real-time progress tracking and ETA estimation.
+All functions are designed to integrate seamlessly with the Streamlit frontend.
 """
 
 import json
@@ -25,7 +24,6 @@ import yaml
 from google.api_core import page_iterator
 from google.cloud import storage
 
-# Add these lines at the beginning of the script
 ADMIN_PASSWORD = "admin"
 
 from src.utils.config import get_config
@@ -85,7 +83,6 @@ def check_password():
     Returns:
     - bool: True if the password is correct, else False
     """
-
     def password_entered():
         if st.session_state["password"] == ADMIN_PASSWORD:
             st.session_state["password_correct"] = True
@@ -94,7 +91,6 @@ def check_password():
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # First run, show input for password
         st.text_input(
             "Password", type="password", on_change=password_entered, key="password"
         )
@@ -325,7 +321,7 @@ def estimate_eta(task, num_images=0):
     - num_images (int): Number of images for inference task
 
     Returns:
-    - float: Estimated time remaining in seconds
+    - tuple: (download_eta, task_eta, upload_eta)
     """
     data = read_eta_data()
     if task == "inference":
@@ -343,13 +339,12 @@ def estimate_eta(task, num_images=0):
 
 def read_eta_data():
     """
-    Updates the progress bar and countdown timer.
+    Reads ETA data from the ETA file.
 
-    Parameters:
-    - start_time (datetime): Start time of the task
-    - eta (float): Estimated time remaining in seconds
-    - phase (str): Current phase of the task
+    Returns:
+    - dict: ETA data if file exists, else empty dict
     """
     if os.path.exists(ETA_FILE):
         with open(ETA_FILE, "r") as file:
             return json.load(file)
+    return {}

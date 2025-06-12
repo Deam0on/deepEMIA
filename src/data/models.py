@@ -1,10 +1,10 @@
 """
-Data preparation module for the UW Computer Vision project.
+Model and data utility module for the UW Computer Vision project.
 
 This module handles:
 - Dataset splitting into train and test sets
 - Dataset registration for Detectron2
-- Model loading and preparation
+- Model loading and preparation (including quantized models)
 - Dataset information management
 
 The module integrates with Detectron2 for computer vision tasks and provides
@@ -12,6 +12,7 @@ utilities for handling various data formats and model types.
 """
 
 import os
+import logging
 from pathlib import Path
 
 import torch
@@ -30,7 +31,7 @@ SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
 CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
 
 
-def get_trained_model_paths(base_dir):
+def get_trained_model_paths(base_dir: str) -> dict:
     """
     Retrieves paths to trained models in a given base directory.
 
@@ -49,7 +50,7 @@ def get_trained_model_paths(base_dir):
     return model_paths
 
 
-def load_model(cfg, model_path, dataset_name, is_quantized=False):
+def load_model(cfg, model_path: str, dataset_name: str, is_quantized: bool = False):
     """
     Loads a trained model. If quantized fails, fallback must be handled by caller.
 
@@ -94,7 +95,7 @@ def load_model(cfg, model_path, dataset_name, is_quantized=False):
             return QuantizedPredictor(model)
 
         except Exception as e:
-            print(f"Failed to load or initialize quantized model: {e}")
+            logging.error(f"Failed to load or initialize quantized model: {e}")
             raise RuntimeError("Quantized model load failed.")
 
     # fallback or standard model
@@ -105,7 +106,7 @@ def load_model(cfg, model_path, dataset_name, is_quantized=False):
     return DefaultPredictor(cfg)
 
 
-def choose_and_use_model(model_paths, dataset_name, threshold, metadata):
+def choose_and_use_model(model_paths: dict, dataset_name: str, threshold: float, metadata):
     """
     Chooses and loads the appropriate model for a given dataset.
 
@@ -113,12 +114,13 @@ def choose_and_use_model(model_paths, dataset_name, threshold, metadata):
     - model_paths (dict): Dictionary of available model paths
     - dataset_name (str): Name of the dataset
     - threshold (float): Confidence threshold for predictions
+    - metadata: Metadata object for the dataset
 
     Returns:
     - tuple: (predictor, metadata) The loaded model and its metadata
     """
     if dataset_name not in model_paths:
-        print(f"No model found for dataset {dataset_name}")
+        logging.error(f"No model found for dataset {dataset_name}")
         return None, None
 
     base_model_path = model_paths[dataset_name]
@@ -141,15 +143,15 @@ def choose_and_use_model(model_paths, dataset_name, threshold, metadata):
     predictor = None
     if not torch.cuda.is_available() and os.path.exists(quantized_model_path):
         try:
-            print(f"Trying quantized model for {dataset_name}")
+            logging.info(f"Trying quantized model for {dataset_name}")
             predictor = load_model(
                 cfg, quantized_model_path, dataset_name, is_quantized=True
             )
         except RuntimeError:
-            print(f"Falling back to standard model for {dataset_name}")
+            logging.warning(f"Falling back to standard model for {dataset_name}")
             predictor = load_model(cfg, base_model_path, dataset_name, is_quantized=False)
     else:
-        print(f"Using standard model for {dataset_name}")
+        logging.info(f"Using standard model for {dataset_name}")
         predictor = load_model(cfg, base_model_path, dataset_name, is_quantized=False)
 
     return predictor, metadata
