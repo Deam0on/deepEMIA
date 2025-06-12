@@ -6,9 +6,10 @@ including midpoint calculation, color conversions, wavelength estimation, and
 arrow detection in images.
 """
 
+import logging
+
 import cv2
 import numpy as np
-import logging
 
 
 def midpoint(ptA: tuple, ptB: tuple) -> tuple:

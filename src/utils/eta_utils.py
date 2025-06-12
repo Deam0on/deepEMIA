@@ -17,8 +17,8 @@ ETA data is stored in a JSON file.
 """
 
 import json
-import os
 import logging
+import os
 from pathlib import Path
 
 import yaml

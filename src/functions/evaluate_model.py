@@ -12,26 +12,20 @@ utilities for visualizing and saving model predictions.
 """
 
 import csv
-import os
 import logging
+import os
 from pathlib import Path
 
 import cv2
 import yaml
 from detectron2.config import get_cfg
-from detectron2.data import DatasetCatalog, MetadataCatalog, build_detection_test_loader
+from detectron2.data import (DatasetCatalog, MetadataCatalog,
+                             build_detection_test_loader)
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
 from detectron2.utils.visualizer import Visualizer
 
-from src.data.datasets import (
-    read_dataset_info,
-    register_datasets,
-)
-from src.data.models import (
-    choose_and_use_model,
-    get_trained_model_paths,
-)
-
+from src.data.datasets import read_dataset_info, register_datasets
+from src.data.models import choose_and_use_model, get_trained_model_paths
 from src.utils.config import get_config
 
 config = get_config()
@@ -42,7 +36,10 @@ CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
 
 
 def evaluate_model(
-    dataset_name: str, output_dir: str, visualize: bool = False, dataset_format: str = "json"
+    dataset_name: str,
+    output_dir: str,
+    visualize: bool = False,
+    dataset_format: str = "json",
 ) -> None:
     """
     Evaluates the model on the specified dataset and optionally visualizes predictions.

@@ -20,10 +20,10 @@ The module provides a comprehensive pipeline for:
 ## IMPORTS
 import copy
 import csv
+import logging
 import os
 import time
 from pathlib import Path
-import logging
 
 import cv2
 import detectron2.data.transforms as T
@@ -33,29 +33,24 @@ import pandas as pd
 import torch
 import torchvision
 import yaml
-from detectron2.data import MetadataCatalog, build_detection_train_loader, DatasetCatalog
+from detectron2.structures import Boxes, Instances
+from detectron2 import model_zoo
+from detectron2.config import get_cfg
+from detectron2.engine import DefaultPredictor
+from detectron2.data import (DatasetCatalog, MetadataCatalog,
+                             build_detection_train_loader)
 from detectron2.data import detection_utils as utils
 from detectron2.engine import DefaultTrainer
 from detectron2.utils.visualizer import ColorMode, Visualizer
 from imutils import perspective
 from scipy.spatial import distance as dist
 
-from src.data.datasets import (
-    read_dataset_info,
-    register_datasets,
-)
-from src.data.models import (
-    choose_and_use_model,
-    get_trained_model_paths,
-)
-from src.utils.mask_utils import (
-    postprocess_masks,
-    rle_encoding,
-)
+from src.data.datasets import read_dataset_info, register_datasets
+from src.data.models import choose_and_use_model, get_trained_model_paths
+from src.utils.config import get_config
+from src.utils.mask_utils import postprocess_masks, rle_encoding
 from src.utils.measurements import midpoint
 from src.utils.scalebar_ocr import detect_scale_bar
-
-from src.utils.config import get_config
 
 config = get_config()
 
@@ -258,8 +253,6 @@ def merge_instances_with_nms(instances_list, iou_threshold=0.5):
     """
     Merge multiple Detectron2 Instances objects using NMS to remove duplicates.
     """
-    from detectron2.structures import Instances, Boxes
-    import torch
 
     # Concatenate all predictions
     all_boxes = []
@@ -356,13 +349,15 @@ def deduplicate_instances(instances_list, iou_threshold=0.5):
 
 
 def load_predictor(config_file, model_suffix, output_dir, dataset_name, threshold):
-    from detectron2.config import get_cfg
-    from detectron2 import model_zoo
-    from detectron2.engine import DefaultPredictor
 
     cfg = get_cfg()
     cfg.merge_from_file(model_zoo.get_config_file(config_file))
-    cfg.MODEL.WEIGHTS = os.path.join(output_dir, dataset_name, f"rcnn_{model_suffix}", f"model_final_{model_suffix}.pth")
+    cfg.MODEL.WEIGHTS = os.path.join(
+        output_dir,
+        dataset_name,
+        f"rcnn_{model_suffix}",
+        f"model_final_{model_suffix}.pth",
+    )
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = threshold
     cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     predictor = DefaultPredictor(cfg)
@@ -397,13 +392,29 @@ def run_inference(
     register_datasets(dataset_info, dataset_name, dataset_format=dataset_format)
 
     logging.info("Forcing metadata population from DatasetCatalog...")
-    d = DatasetCatalog.get(f"{dataset_name}_train")
+    _ = DatasetCatalog.get(f"{dataset_name}_train")
     metadata = MetadataCatalog.get(f"{dataset_name}_train")
     logging.info("Metadata populated successfully.")
 
-    # Prepare both predictors
-    predictor_r101 = load_predictor("COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml", "r101", output_dir, dataset_name, threshold)
-    predictor_r50 = load_predictor("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml", "r50", output_dir, dataset_name, threshold)
+    # Prepare predictors as needed
+    predictor_r101 = None
+    predictor_r50 = None
+    if rcnn in ("101", "combo"):
+        predictor_r101 = load_predictor(
+            "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml",
+            "r101",
+            output_dir,
+            dataset_name,
+            threshold,
+        )
+    if rcnn in ("50", "combo"):
+        predictor_r50 = load_predictor(
+            "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml",
+            "r50",
+            output_dir,
+            dataset_name,
+            threshold,
+        )
 
     image_folder_path = get_image_folder_path()
     path = output_dir
@@ -427,22 +438,31 @@ def run_inference(
         logging.info(f"Preparing masks for image {name}")
         image = cv2.imread(os.path.join(inpath, name))
 
-        # Run both predictors
-        outputs_r101 = predictor_r101(image)
-        outputs_r50 = predictor_r50(image)
-        instances_r101 = outputs_r101["instances"].to("cpu")
-        instances_r50 = outputs_r50["instances"].to("cpu")
+        # Run predictors as per rcnn selection
+        if rcnn == "101":
+            outputs = predictor_r101(image)
+            instances = outputs["instances"].to("cpu")
+        elif rcnn == "50":
+            outputs = predictor_r50(image)
+            instances = outputs["instances"].to("cpu")
+        elif rcnn == "combo":
+            outputs_r101 = predictor_r101(image)
+            outputs_r50 = predictor_r50(image)
+            instances_r101 = outputs_r101["instances"].to("cpu")
+            instances_r50 = outputs_r50["instances"].to("cpu")
+            instances = deduplicate_instances(
+                [instances_r101, instances_r50], iou_threshold=0.5
+            )
+        else:
+            raise ValueError(f"Unknown rcnn value: {rcnn}")
 
-        # Combine and deduplicate
-        merged_instances = deduplicate_instances([instances_r101, instances_r50], iou_threshold=0.5)
-
-        if not hasattr(merged_instances, "pred_masks") or len(merged_instances) == 0:
+        if not hasattr(instances, "pred_masks") or len(instances) == 0:
             logging.warning(f"No masks predicted for image {name}. Skipping.")
             continue
 
         masks = postprocess_masks(
-            merged_instances.pred_masks.numpy(),
-            merged_instances.scores.numpy(),
+            instances.pred_masks.numpy(),
+            instances.scores.numpy(),
             image,
         )
 
@@ -452,8 +472,9 @@ def run_inference(
                 EncodedPixels.append(conv(rle_encoding(masks[i])))
 
     df = pd.DataFrame({"ImageId": Img_ID, "EncodedPixels": EncodedPixels})
-    df.to_csv(os.path.join(path, "results_combo.csv"), index=False, sep=",")
+    df.to_csv(os.path.join(path, f"results_{rcnn}.csv"), index=False, sep=",")
 
+    # --- Per-class measurement CSVs ---
     num_classes = len(MetadataCatalog.get(f"{dataset_name}_train").thing_classes)
     for x_pred in range(num_classes):
         TList = []
@@ -463,7 +484,6 @@ def run_inference(
 
         with open(csv_filename, "w", newline="") as csvfile:
             csvwriter = csv.writer(csvfile)
-
             csvwriter.writerow(
                 [
                     "Instance_ID",
@@ -497,24 +517,47 @@ def run_inference(
 
                 psum, um_pix = detect_scale_bar(im, roi_config)
 
-                all_instances = []
-                for predictor in predictors:
-                    outputs = predictor(im)
-                    all_instances.append(outputs["instances"].to("cpu"))
-
-                if rcnn == "combo":
-                    merged_instances = merge_instances_with_nms(all_instances)
+                # Run predictors as per rcnn selection
+                if rcnn == "101":
+                    outputs = predictor_r101(im)
+                    merged_instances = outputs["instances"].to("cpu")
+                elif rcnn == "50":
+                    outputs = predictor_r50(im)
+                    merged_instances = outputs["instances"].to("cpu")
+                elif rcnn == "combo":
+                    outputs_r101 = predictor_r101(im)
+                    outputs_r50 = predictor_r50(im)
+                    instances_r101 = outputs_r101["instances"].to("cpu")
+                    instances_r50 = outputs_r50["instances"].to("cpu")
+                    merged_instances = deduplicate_instances(
+                        [instances_r101, instances_r50], iou_threshold=0.5
+                    )
                 else:
-                    merged_instances = all_instances[0]
+                    raise ValueError(f"Unknown rcnn value: {rcnn}")
 
-                filtered_instances = merged_instances[merged_instances.pred_classes == x_pred]
+                filtered_instances = merged_instances[
+                    merged_instances.pred_classes == x_pred
+                ]
 
                 if draw_id:
                     GetInference(im, filtered_instances, metadata, test_img, x_pred)
                 else:
-                    # Use the first predictor for visualization if needed
-                    GetInferenceNoID(predictors[0], im, x_pred, metadata, test_img)
-                GetCounts(predictors[0], im, TList, PList)
+                    GetInferenceNoID(
+                        predictor_r101 if rcnn == "101" else predictor_r50,
+                        im,
+                        x_pred,
+                        metadata,
+                        test_img,
+                    )
+                GetCounts(
+                    predictor_r101 if rcnn == "101" else predictor_r50, im, TList, PList
+                )
+
+                if (
+                    not hasattr(filtered_instances, "pred_masks")
+                    or len(filtered_instances) == 0
+                ):
+                    continue
 
                 pred_masks = filtered_instances.pred_masks.numpy()
                 pred_boxes = filtered_instances.pred_boxes.tensor.numpy()
@@ -525,9 +568,7 @@ def run_inference(
 
                 for i in range(num_instances):
                     instance_id = i + 1
-                    binary_mask = (pred_masks[i] > 0).astype(
-                        np.uint8
-                    ) * 255  # ensure binary uint8
+                    binary_mask = (pred_masks[i] > 0).astype(np.uint8) * 255
                     single_im_mask = binary_mask.copy()
                     mask_3ch = np.stack([single_im_mask] * 3, axis=-1)
                     mask_filename = os.path.join(output_dir, f"mask_{instance_id}.jpg")
@@ -625,5 +666,5 @@ def run_inference(
                 total_time += elapsed
                 logging.info(f"Time taken for image {idx}: {elapsed:.3f} seconds")
 
-    average_time = total_time / num_images if num_images else 0
-    logging.info(f"Average inference time per image: {average_time:.3f} seconds")
+        average_time = total_time / num_images if num_images else 0
+        logging.info(f"Average inference time per image: {average_time:.3f} seconds")

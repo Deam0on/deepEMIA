@@ -7,22 +7,24 @@ Logging is configured to print simplified logs to the terminal and full logs to 
 """
 
 import argparse
+import glob
+import logging
 import os
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
+
 import yaml
-import logging
-import glob
-import shutil
 
 from src.data.datasets import split_dataset
 from src.functions.evaluate_model import evaluate_model
 from src.functions.inference import run_inference
 from src.functions.train_model import train_on_dataset
-from src.utils.eta_utils import update_eta_data
-from src.utils.gcs_utils import download_data_from_bucket, upload_data_to_bucket
 from src.utils.config import get_config
+from src.utils.eta_utils import update_eta_data
+from src.utils.gcs_utils import (download_data_from_bucket,
+                                 upload_data_to_bucket)
 
 config = get_config()
 bucket = config["bucket"]
@@ -30,6 +32,7 @@ SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
 CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
 ETA_FILE = Path(config["paths"]["eta_file"]).expanduser().resolve()
 local_dataset_path = Path(config["paths"]["local_dataset_root"]).expanduser().resolve()
+
 
 def setup_config():
     """
@@ -40,7 +43,11 @@ def setup_config():
     print("=== UW Computer Vision Project Setup ===")
     config_path = Path.home() / "uw-com-vision" / "config" / "config.yaml"
     if config_path.exists():
-        overwrite = input(f"Config file already exists at {config_path}. Overwrite? (y/n): ").strip().lower()
+        overwrite = (
+            input(f"Config file already exists at {config_path}. Overwrite? (y/n): ")
+            .strip()
+            .lower()
+        )
         if overwrite != "y":
             print("Setup cancelled.")
             return
@@ -69,7 +76,7 @@ def setup_config():
                 "width_factor": float(width),
                 "height_factor": float(height),
             }
-        }
+        },
     }
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -151,7 +158,7 @@ def main():
         type=str,
         default="101",
         choices=["50", "101", "combo"],
-        help="RCNN backbone to use: '50', '101', or 'combo' (both). Default is '101'."
+        help="RCNN backbone to use: '50', '101', or 'combo' (both). Default is '101'.",
     )
 
     args = parser.parse_args()
@@ -163,8 +170,15 @@ def main():
     local_path = Path.home() / "uw-com-vision"
     try:
         subprocess.run(
-            ["gsutil", "-m", "cp", "-r", f"gs://{bucket}/dataset_info.json", str(local_path)],
-            check=True
+            [
+                "gsutil",
+                "-m",
+                "cp",
+                "-r",
+                f"gs://{bucket}/dataset_info.json",
+                str(local_path),
+            ],
+            check=True,
         )
         logging.info("Successfully copied dataset_info.json from GCS.")
     except subprocess.CalledProcessError as e:
@@ -190,15 +204,18 @@ def main():
         # Download data
         logging.info(f"Downloading training data for {args.dataset_name}...")
         download_time_taken = download_data_from_bucket()
-        
+
         # Train
         logging.info(
             f"Training model on dataset {args.dataset_name} using '{args.dataset_format}' format and RCNN {args.rcnn}..."
         )
         train_on_dataset(
-            args.dataset_name, output_dir, dataset_format=args.dataset_format, rcnn=args.rcnn
+            args.dataset_name,
+            output_dir,
+            dataset_format=args.dataset_format,
+            rcnn=args.rcnn,
         )
-        
+
         # Delete dataset after training
         dataset_path = local_dataset_path / "DATASET" / args.dataset_name
         if dataset_path.exists():
@@ -236,7 +253,7 @@ def main():
         inference_path = local_dataset_path / "DATASET" / "INFERENCE"
         logging.info("Downloading inference data...")
         download_time_taken = download_data_from_bucket()
-        
+
         num_images = len(
             [f for f in os.listdir(img_dir) if f.endswith((".tif", ".png", ".jpg"))]
         )
@@ -267,14 +284,14 @@ def main():
     if args.upload:
         logging.info(f"Uploading results for dataset {args.dataset_name} to bucket...")
         upload_time_taken = upload_data_to_bucket()
-        
+
         # Upload logs directory to the bucket
         logs_dir = Path("logs")
         if logs_dir.exists():
             try:
                 subprocess.run(
                     ["gsutil", "-m", "cp", "-r", str(logs_dir), f"gs://{bucket}/logs/"],
-                    check=True
+                    check=True,
                 )
                 logging.info(f"Uploaded logs directory to gs://{bucket}/logs/")
             except subprocess.CalledProcessError as e:
@@ -285,7 +302,9 @@ def main():
                 shutil.rmtree(logs_dir)
                 logging.info(f"Deleted local logs directory: {logs_dir}")
             except Exception as e:
-                logging.warning(f"Could not delete local logs directory {logs_dir}: {e}")
+                logging.warning(
+                    f"Could not delete local logs directory {logs_dir}: {e}"
+                )
 
         # Delete result files after upload
         for pattern in ("*.png", "*.csv"):
@@ -308,6 +327,7 @@ def main():
     if args.upload:
         update_eta_data("upload", upload_time_taken)
 
+
 if __name__ == "__main__":
     # Logging setup (already present)
     log_dir = Path("logs")
@@ -318,6 +338,6 @@ if __name__ == "__main__":
         handlers=[
             logging.StreamHandler(),
             logging.FileHandler(log_dir / "full.log", mode="a", encoding="utf-8"),
-        ]
+        ],
     )
     main()

@@ -1,6 +1,6 @@
+import logging
 import re
 from math import sqrt
-import logging
 
 import cv2
 import easyocr
@@ -118,7 +118,9 @@ def detect_scale_bar(image, roi_config):
         cv2.line(image, (x1_full, y1_full), (x2_full, y2_full), (0, 255, 0), 2)
         scale_len = max_length
         um_pix = float(psum) / scale_len if scale_len > 0 else 1.0
-        logging.info(f"Detected scale bar: {psum} units, {scale_len:.2f} pixels, {um_pix:.4f} units/pixel")
+        logging.info(
+            f"Detected scale bar: {psum} units, {scale_len:.2f} pixels, {um_pix:.4f} units/pixel"
+        )
     else:
         um_pix = 1
         psum = "0"

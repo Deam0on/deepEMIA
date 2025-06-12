@@ -4,15 +4,17 @@ Deprecated Backup Utilities
 This module contains backup or deprecated functions for mask extraction and encoding.
 """
 
-import cv2
-import torch
-import numpy as np
 import logging
+
+import cv2
+import numpy as np
+import torch
 
 from src.utils.mask_utils import rle_encode
 
 # Ensure these are defined or imported from the correct module
 # from src.utils.constants import THRESHOLDS, MIN_PIXELS
+
 
 def get_masks(fn: str, predictor) -> list:
     """

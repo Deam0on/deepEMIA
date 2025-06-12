@@ -12,9 +12,9 @@ utilities for handling various data formats and model types.
 """
 
 import json
+import logging
 import os
 import random
-import logging
 from pathlib import Path
 
 import numpy as np
@@ -22,8 +22,8 @@ import shapely.affinity
 import shapely.geometry
 import yaml
 from detectron2.data import DatasetCatalog, MetadataCatalog
-from detectron2.structures import BoxMode
 from detectron2.data.datasets import register_coco_instances
+from detectron2.structures import BoxMode
 from sklearn.model_selection import train_test_split
 
 from src.utils.config import get_config
@@ -110,7 +110,9 @@ def register_datasets(dataset_info, dataset_name, test_size=0.2, dataset_format=
             raise ValueError(f"Dataset '{dataset_name}' not found in dataset_info.")
 
         img_dir, label_dir, thing_classes = dataset_info[dataset_name]
-        logging.info(f"Processing dataset: {dataset_name}, Info: {dataset_info[dataset_name]}")
+        logging.info(
+            f"Processing dataset: {dataset_name}, Info: {dataset_info[dataset_name]}"
+        )
 
         split_file = os.path.join(SPLIT_DIR, f"{dataset_name}_split.json")
         category_key = dataset_name

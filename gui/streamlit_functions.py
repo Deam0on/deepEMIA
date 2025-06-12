@@ -83,6 +83,7 @@ def check_password():
     Returns:
     - bool: True if the password is correct, else False
     """
+
     def password_entered():
         if st.session_state["password"] == ADMIN_PASSWORD:
             st.session_state["password_correct"] = True

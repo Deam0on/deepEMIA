@@ -11,8 +11,8 @@ The module integrates with Detectron2 for computer vision tasks and provides
 utilities for handling various data formats and model types.
 """
 
-import os
 import logging
+import os
 from pathlib import Path
 
 import torch
@@ -102,11 +102,13 @@ def load_model(cfg, model_path: str, dataset_name: str, is_quantized: bool = Fal
     cfg.MODEL.WEIGHTS = model_path
     metadata = MetadataCatalog.get(f"{dataset_name}_train")
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(metadata.thing_classes)
-    
+
     return DefaultPredictor(cfg)
 
 
-def choose_and_use_model(model_paths: dict, dataset_name: str, threshold: float, metadata):
+def choose_and_use_model(
+    model_paths: dict, dataset_name: str, threshold: float, metadata
+):
     """
     Chooses and loads the appropriate model for a given dataset.
 
@@ -149,7 +151,9 @@ def choose_and_use_model(model_paths: dict, dataset_name: str, threshold: float,
             )
         except RuntimeError:
             logging.warning(f"Falling back to standard model for {dataset_name}")
-            predictor = load_model(cfg, base_model_path, dataset_name, is_quantized=False)
+            predictor = load_model(
+                cfg, base_model_path, dataset_name, is_quantized=False
+            )
     else:
         logging.info(f"Using standard model for {dataset_name}")
         predictor = load_model(cfg, base_model_path, dataset_name, is_quantized=False)

@@ -21,20 +21,14 @@ from pathlib import Path
 import streamlit as st
 import yaml
 from PIL import Image
-
-from streamlit_functions import (
-    check_password,
-    contains_errors,
-    create_zip_from_gcs,
-    estimate_eta,
-    format_and_sort_folders,
-    list_directories,
-    list_png_files_in_gcs_folder,
-    list_specific_csv_files_in_gcs_folder,
-    load_dataset_names_from_gcs,
-    save_dataset_names_to_gcs,
-    upload_files_to_gcs,
-)
+from streamlit_functions import (check_password, contains_errors,
+                                 create_zip_from_gcs, estimate_eta,
+                                 format_and_sort_folders, list_directories,
+                                 list_png_files_in_gcs_folder,
+                                 list_specific_csv_files_in_gcs_folder,
+                                 load_dataset_names_from_gcs,
+                                 save_dataset_names_to_gcs,
+                                 upload_files_to_gcs)
 
 ADMIN_PASSWORD = "admin"
 
@@ -74,6 +68,7 @@ use_new_data = st.checkbox("Use new data from bucket", value=False)
 
 dataset_name = st.selectbox("Dataset Name", list(st.session_state.datasets.keys()))
 
+
 def add_new_dataset(new_dataset_name: str, new_classes: str):
     """
     Adds a new dataset to the session state and saves it to GCS.
@@ -95,6 +90,7 @@ def add_new_dataset(new_dataset_name: str, new_classes: str):
     else:
         st.warning("Please enter a valid dataset name and classes.")
 
+
 def remove_dataset(dataset_name: str):
     """
     Removes a dataset from the session state and GCS.
@@ -110,6 +106,7 @@ def remove_dataset(dataset_name: str):
     st.success(f"Dataset '{dataset_name}' deleted.")
     st.session_state.confirm_delete = False
     st.experimental_rerun()
+
 
 # Dataset creation and deletion (admin only)
 if check_password():
@@ -154,7 +151,10 @@ threshold = st.slider(
     help="Adjust the detection threshold for the model.",
 )
 
-def update_progress_bar_and_countdown(start_time, eta, phase, progress_bar, countdown_placeholder, total_eta, process=None):
+
+def update_progress_bar_and_countdown(
+    start_time, eta, phase, progress_bar, countdown_placeholder, total_eta, process=None
+):
     """
     Updates the progress bar and countdown timer during task execution.
 
@@ -181,8 +181,13 @@ def update_progress_bar_and_countdown(start_time, eta, phase, progress_bar, coun
         progress_percentage = min(elapsed_time / total_eta, 1.0)
         progress_bar.progress(progress_percentage)
         time.sleep(1)
-        if phase == "Task in progress" and process is not None and process.poll() is not None:
+        if (
+            phase == "Task in progress"
+            and process is not None
+            and process.poll() is not None
+        ):
             break
+
 
 # Task execution
 if st.button("Run Task"):
@@ -202,7 +207,14 @@ if st.button("Run Task"):
         start_time = time.time()
 
         # Download Phase
-        update_progress_bar_and_countdown(start_time, download_eta, "Downloading", progress_bar, countdown_placeholder, total_eta)
+        update_progress_bar_and_countdown(
+            start_time,
+            download_eta,
+            "Downloading",
+            progress_bar,
+            countdown_placeholder,
+            total_eta,
+        )
 
         # Task Phase
         task_start_time = time.time()
@@ -213,13 +225,28 @@ if st.button("Run Task"):
             stderr=subprocess.PIPE,
             text=True,
         )
-        update_progress_bar_and_countdown(task_start_time, task_eta, "Task in progress", progress_bar, countdown_placeholder, total_eta, process)
+        update_progress_bar_and_countdown(
+            task_start_time,
+            task_eta,
+            "Task in progress",
+            progress_bar,
+            countdown_placeholder,
+            total_eta,
+            process,
+        )
 
         stdout, stderr = process.communicate()
 
         # Upload Phase
         start_time = time.time()
-        update_progress_bar_and_countdown(start_time, upload_eta, "Uploading", progress_bar, countdown_placeholder, total_eta)
+        update_progress_bar_and_countdown(
+            start_time,
+            upload_eta,
+            "Uploading",
+            progress_bar,
+            countdown_placeholder,
+            total_eta,
+        )
 
         progress_bar.progress(100)
         countdown_placeholder.text("Task Completed")
@@ -312,9 +339,17 @@ if st.session_state.show_images:
             csv_bytes = blob.download_as_bytes()
             csv_name = os.path.basename(blob.name)
             if csv_name == "results_x_pred_1.csv":
-                download_name = "results_pores.csv" if dataset_name != "hw_patterns" else "results_cyclones.csv"
+                download_name = (
+                    "results_pores.csv"
+                    if dataset_name != "hw_patterns"
+                    else "results_cyclones.csv"
+                )
             elif csv_name == "results_x_pred_0.csv":
-                download_name = "results_throats.csv" if dataset_name != "hw_patterns" else "results_flows.csv"
+                download_name = (
+                    "results_throats.csv"
+                    if dataset_name != "hw_patterns"
+                    else "results_flows.csv"
+                )
             else:
                 continue
             st.download_button(

@@ -5,11 +5,13 @@ Provides a singleton-style loader for the main YAML configuration file.
 Ensures the config is loaded only once and reused throughout the project.
 """
 
-import yaml
-from pathlib import Path
 import logging
+from pathlib import Path
+
+import yaml
 
 _config = None
+
 
 def get_config():
     """

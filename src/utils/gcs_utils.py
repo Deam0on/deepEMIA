@@ -15,10 +15,10 @@ Note:
     Requires gsutil to be installed and configured with appropriate permissions.
 """
 
+import logging
 import os
 import shutil
 import subprocess
-import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -51,7 +51,14 @@ def download_data_from_bucket() -> float:
         logging.info(f"Removing existing dataset directory: {dirpath}")
         shutil.rmtree(dirpath)
 
-    cmd = ["gsutil", "-m", "cp", "-r", f"gs://{bucket}/DATASET", str(local_dataset_path)]
+    cmd = [
+        "gsutil",
+        "-m",
+        "cp",
+        "-r",
+        f"gs://{bucket}/DATASET",
+        str(local_dataset_path),
+    ]
     logging.info(f"Running command: {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
@@ -86,7 +93,9 @@ def upload_data_to_bucket() -> float:
     png_files = list(Path.home().glob("*.png"))
     if png_files:
         logging.info(f"Uploading {len(png_files)} PNG files to {archive_path}")
-        cmd = ["gsutil", "-m", "cp", "-r"] + [str(f) for f in png_files] + [archive_path]
+        cmd = (
+            ["gsutil", "-m", "cp", "-r"] + [str(f) for f in png_files] + [archive_path]
+        )
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             logging.error(f"PNG upload failed: {result.stderr}")
@@ -95,7 +104,9 @@ def upload_data_to_bucket() -> float:
     csv_files = list(Path.home().glob("*.csv"))
     if csv_files:
         logging.info(f"Uploading {len(csv_files)} CSV files to {archive_path}")
-        cmd = ["gsutil", "-m", "cp", "-r"] + [str(f) for f in csv_files] + [archive_path]
+        cmd = (
+            ["gsutil", "-m", "cp", "-r"] + [str(f) for f in csv_files] + [archive_path]
+        )
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             logging.error(f"CSV upload failed: {result.stderr}")

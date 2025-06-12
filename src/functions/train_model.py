@@ -14,11 +14,11 @@ The module provides a complete training pipeline with support for:
 - Evaluation during training
 """
 
+import logging
 ## IMPORTS
 import os
-from pathlib import Path
 import shutil
-import logging
+from pathlib import Path
 
 import albumentations as A
 import cv2
@@ -27,16 +27,12 @@ import yaml
 from albumentations.pytorch import ToTensorV2
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
-from detectron2.data import (
-    DatasetCatalog,
-    MetadataCatalog,
-)
+from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.engine import DefaultTrainer
 from detectron2.evaluation import COCOEvaluator
 
 from src.data.datasets import read_dataset_info, register_datasets
 from src.functions.inference import CustomTrainer
-
 from src.utils.config import get_config
 
 config = get_config()
@@ -69,6 +65,7 @@ def get_albumentations_transform() -> A.Compose:
         ]
     )
 
+
 def check_disk_space(path: str, min_gb: int = 5) -> None:
     """
     Check if there is at least min_gb GB free at the given path.
@@ -77,14 +74,19 @@ def check_disk_space(path: str, min_gb: int = 5) -> None:
         RuntimeError: If there is not enough disk space.
     """
     total, used, free = shutil.disk_usage(path)
-    free_gb = free / (1024 ** 3)
+    free_gb = free / (1024**3)
     if free_gb < min_gb:
-        logging.error(f"Not enough disk space: only {free_gb:.2f} GB free at {path}. Minimum required: {min_gb} GB.")
+        logging.error(
+            f"Not enough disk space: only {free_gb:.2f} GB free at {path}. Minimum required: {min_gb} GB."
+        )
         raise RuntimeError("Insufficient disk space for training.")
     else:
         logging.info(f"Disk space check passed: {free_gb:.2f} GB free at {path}.")
 
-def train_on_dataset(dataset_name: str, output_dir: str, dataset_format: str = "json", rcnn: str = "101") -> None:
+
+def train_on_dataset(
+    dataset_name: str, output_dir: str, dataset_format: str = "json", rcnn: str = "101"
+) -> None:
     """
     Trains a model on the specified dataset with the selected backbone(s).
 
@@ -113,7 +115,9 @@ def train_on_dataset(dataset_name: str, output_dir: str, dataset_format: str = "
     categories = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
     logging.info(f"Categories: {categories}")
 
-    def train_with_backbone(backbone_name: str, config_file: str, model_suffix: str) -> None:
+    def train_with_backbone(
+        backbone_name: str, config_file: str, model_suffix: str
+    ) -> None:
         cfg = get_cfg()
         cfg.merge_from_file(model_zoo.get_config_file(config_file))
         cfg.DATASETS.TRAIN = (f"{dataset_name}_train",)
@@ -129,7 +133,10 @@ def train_on_dataset(dataset_name: str, output_dir: str, dataset_format: str = "
             cfg.SOLVER.MAX_ITER = max(1000, int(200 * num_images))
         else:
             cfg.SOLVER.MAX_ITER = max(1000, int(100 * num_images))
-        cfg.SOLVER.STEPS = [int(0.6 * cfg.SOLVER.MAX_ITER), int(0.8 * cfg.SOLVER.MAX_ITER)]
+        cfg.SOLVER.STEPS = [
+            int(0.6 * cfg.SOLVER.MAX_ITER),
+            int(0.8 * cfg.SOLVER.MAX_ITER),
+        ]
         cfg.SOLVER.GAMMA = 0.1
         cfg.SOLVER.WARMUP_ITERS = 1000
         cfg.SOLVER.WARMUP_FACTOR = 1e-3
@@ -138,12 +145,16 @@ def train_on_dataset(dataset_name: str, output_dir: str, dataset_format: str = "
         cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(thing_classes)
         cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-        dataset_output_dir = os.path.join(output_dir, dataset_name, f"rcnn_{model_suffix}")
+        dataset_output_dir = os.path.join(
+            output_dir, dataset_name, f"rcnn_{model_suffix}"
+        )
         os.makedirs(dataset_output_dir, exist_ok=True)
         cfg.OUTPUT_DIR = dataset_output_dir
 
         logging.info(f"Training with backbone: {backbone_name}")
-        logging.info(f"Classes: {MetadataCatalog.get(cfg.DATASETS.TRAIN[0]).thing_classes}")
+        logging.info(
+            f"Classes: {MetadataCatalog.get(cfg.DATASETS.TRAIN[0]).thing_classes}"
+        )
         trainer = CustomTrainer(cfg)
         trainer.resume_or_load(resume=False)
         trainer.train()
@@ -158,14 +169,24 @@ def train_on_dataset(dataset_name: str, output_dir: str, dataset_format: str = "
             shutil.copy(src_ckpt, dst_ckpt)
             logging.info(f"Copied Detectron2 checkpoint to {dst_ckpt}")
         else:
-            logging.warning(f"Detectron2 checkpoint {src_ckpt} not found after training.")
+            logging.warning(
+                f"Detectron2 checkpoint {src_ckpt} not found after training."
+            )
 
     if rcnn == "50":
-        train_with_backbone("R50", "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml", "r50")
+        train_with_backbone(
+            "R50", "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml", "r50"
+        )
     elif rcnn == "101":
-        train_with_backbone("R101", "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml", "r101")
+        train_with_backbone(
+            "R101", "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml", "r101"
+        )
     elif rcnn == "combo":
-        train_with_backbone("R50", "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml", "r50")
-        train_with_backbone("R101", "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml", "r101")
+        train_with_backbone(
+            "R50", "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml", "r50"
+        )
+        train_with_backbone(
+            "R101", "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml", "r101"
+        )
     else:
         raise ValueError("Invalid value for rcnn. Choose from '50', '101', or 'combo'.")
