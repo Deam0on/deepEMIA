@@ -232,6 +232,7 @@ def main():
             output_dir,
             args.visualize,
             dataset_format=args.dataset_format,
+            rcnn=args.rcnn,
         )
         task_end_time = datetime.now()
 

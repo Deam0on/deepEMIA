@@ -295,7 +295,7 @@ def run_inference(
     selected_model_dataset = dataset_name
     
     predictor, _ = choose_and_use_model(
-        trained_model_paths, selected_model_dataset, threshold, metadata
+        trained_model_paths, selected_model_dataset, threshold, metadata, rcnn
     )
 
     # metadata = MetadataCatalog.get(f"{dataset_name}_train")

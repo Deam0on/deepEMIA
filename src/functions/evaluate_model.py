@@ -40,6 +40,7 @@ def evaluate_model(
     output_dir: str,
     visualize: bool = False,
     dataset_format: str = "json",
+    rcnn: int = 101
 ) -> None:
     """
     Evaluates the model on the specified dataset and optionally visualizes predictions.
@@ -72,7 +73,7 @@ def evaluate_model(
     threshold = 0.45
 
     # Choose and load the model
-    predictor = choose_and_use_model(trained_model_paths, dataset_name, threshold)
+    predictor = choose_and_use_model(trained_model_paths, dataset_name, threshold, rcnn)
 
     # Initialize configuration
     cfg = get_cfg()

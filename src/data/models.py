@@ -31,7 +31,7 @@ SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
 CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
 
 
-def get_trained_model_paths(base_dir: str, rcnn: int = 50) -> dict:
+def get_trained_model_paths(base_dir: str, rcnn: int = 101) -> dict:
     """
     Retrieves paths to trained models in a given base directory.
 
@@ -109,8 +109,8 @@ def load_model(cfg, model_path: str, dataset_name: str, is_quantized: bool = Fal
 
 
 def choose_and_use_model(
-    model_paths: dict, dataset_name: str, threshold: float, metadata
-):
+    model_paths: dict, dataset_name: str, threshold: float, metadata, rcnn: int = 101):
+    
     """
     Chooses and loads the appropriate model for a given dataset.
 
@@ -135,7 +135,7 @@ def choose_and_use_model(
     cfg = get_cfg()
     cfg.merge_from_file(
         model_zoo.get_config_file(
-            "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
+            f"COCO-InstanceSegmentation/mask_rcnn_R_{rcnn}_FPN_3x.yaml"
         )
     )
     cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
