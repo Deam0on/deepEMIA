@@ -351,11 +351,16 @@ def run_inference(
                     all_masks.append(mask)
                     all_scores.append(scores[i])
 
-        # Deduplicate masks if using both
+        # Sort by score (optional, to keep highest-confidence masks)
+        sorted_indices = np.argsort(all_scores)[::-1]
+        all_masks = [all_masks[i] for i in sorted_indices]
+        all_scores = [all_scores[i] for i in sorted_indices]
+
+        # Deduplicate
         unique_masks = []
         unique_scores = []
         for i, mask in enumerate(all_masks):
-            if not any(iou(mask, um) > 0.5 for um in unique_masks):
+            if not any(iou(mask, um) > 0.8 for um in unique_masks):
                 unique_masks.append(mask)
                 unique_scores.append(all_scores[i])
 
