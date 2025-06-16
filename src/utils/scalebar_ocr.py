@@ -95,6 +95,11 @@ def detect_scale_bar(image, roi_config):
             minLineLength=50,
             maxLineGap=5,
         )
+        roi_width = x_end - x_start
+        min_length = roi_width * 0.2
+        max_length = roi_width * 0.9
+        intensity_threshold = 200  # adjust as needed for your images
+
         if lines is not None:
             for points in lines:
                 x1, y1, x2, y2 = points[0]
@@ -103,8 +108,20 @@ def detect_scale_bar(image, roi_config):
                     (line_center[0] - text_box_center[0]) ** 2
                     + (line_center[1] - text_box_center[1]) ** 2
                 )
-                if dist_to_text < proximity_threshold:
-                    length = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+                length = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+                angle = np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi
+
+                # Intensity check: mean intensity along the line should be high (white bar)
+                line_mask = np.zeros_like(gray_roi, dtype=np.uint8)
+                cv2.line(line_mask, (x1, y1), (x2, y2), 255, 2)
+                mean_intensity = cv2.mean(gray_roi, mask=line_mask)[0]
+
+                if (
+                    dist_to_text < proximity_threshold
+                    and abs(angle) < 10  # horizontal
+                    and min_length < length < max_length
+                    and mean_intensity > intensity_threshold
+                ):
                     if length > max_length:
                         max_length = length
                         longest_line = (x1, y1, x2, y2)
