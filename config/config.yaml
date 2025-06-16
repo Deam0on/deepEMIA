@@ -1,4 +1,4 @@
-bucket: zent-sem
+bucket: nn-uct
 paths:
   main_script: "~/uw-com-vision/main.py"
   split_dir: "~/split_dir"
