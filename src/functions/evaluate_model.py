@@ -12,7 +12,7 @@ utilities for visualizing and saving model predictions.
 """
 
 import csv
-import logging
+from src.utils.logger_utils import system_logger
 import os
 from pathlib import Path
 
@@ -91,7 +91,7 @@ def evaluate_model(
 
     # Perform inference and evaluate
     metrics = inference_on_dataset(predictor.model, val_loader, evaluator)
-    logging.info(f"Evaluation metrics: {metrics}")
+    system_logger.info(f"Evaluation metrics: {metrics}")
 
     # Save metrics to CSV
     csv_path = Path(output_dir) / "metrics.csv"
@@ -103,7 +103,7 @@ def evaluate_model(
         for key, value in metrics.items():
             writer.writerow({"metric": key, "value": value})
 
-    logging.info(f"Metrics saved to {csv_path}")
+    system_logger.info(f"Metrics saved to {csv_path}")
 
     # Visualize predictions if requested
     if visualize:
@@ -144,4 +144,4 @@ def visualize_predictions(predictor, dataset_name: str, output_dir: str) -> None
         os.makedirs(output_dir, exist_ok=True)
         vis_path = os.path.join(output_dir, os.path.basename(d["file_name"]))
         cv2.imwrite(vis_path, vis_output)
-        logging.info(f"Saved visualization to {vis_path}")
+        system_logger.info(f"Saved visualization to {vis_path}")

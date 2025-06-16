@@ -12,7 +12,7 @@ utilities for handling various data formats and model types.
 """
 
 import json
-import logging
+from src.utils.logger_utils import system_logger
 import os
 import random
 from pathlib import Path
@@ -58,7 +58,7 @@ def split_dataset(img_dir, dataset_name, test_size=0.2, seed=42):
     split_data = {"train": train_files, "test": test_files}
     with open(split_file, "w") as f:
         json.dump(split_data, f)
-    logging.info(f"Training & Testing data successfully split into {split_file}")
+    system_logger.info(f"Training & Testing data successfully split into {split_file}")
     return train_files, test_files
 
 
@@ -90,7 +90,7 @@ def register_datasets(dataset_info, dataset_name, test_size=0.2, dataset_format=
     - ValueError: If the dataset name is not found in dataset_info
     """
     if dataset_format == "coco":
-        logging.info(f"Registering COCO dataset: {dataset_name}")
+        system_logger.info(f"Registering COCO dataset: {dataset_name}")
         base_path = os.path.join(os.path.expanduser("~"), "DATASET", dataset_name)
         train_json_path = os.path.join(base_path, "annotations", "instances_train.json")
         train_images_path = os.path.join(base_path, "train")
@@ -102,15 +102,15 @@ def register_datasets(dataset_info, dataset_name, test_size=0.2, dataset_format=
         register_coco_instances(
             f"{dataset_name}_test", {}, test_json_path, test_images_path
         )
-        logging.info("COCO dataset registration complete.")
+        system_logger.info("COCO dataset registration complete.")
 
     elif dataset_format == "json":
-        logging.info(f"Registering custom JSON dataset: {dataset_name}")
+        system_logger.info(f"Registering custom JSON dataset: {dataset_name}")
         if dataset_name not in dataset_info:
             raise ValueError(f"Dataset '{dataset_name}' not found in dataset_info.")
 
         img_dir, label_dir, thing_classes = dataset_info[dataset_name]
-        logging.info(
+        system_logger.info(
             f"Processing dataset: {dataset_name}, Info: {dataset_info[dataset_name]}"
         )
 
@@ -130,7 +130,7 @@ def register_datasets(dataset_info, dataset_name, test_size=0.2, dataset_format=
             os.makedirs(SPLIT_DIR, exist_ok=True)
             with open(split_file, "w") as f:
                 json.dump(split_data, f)
-            logging.info(f"Split created and saved at {split_file}")
+            system_logger.info(f"Split created and saved at {split_file}")
 
         DatasetCatalog.register(
             f"{dataset_name}_train",
@@ -147,7 +147,7 @@ def register_datasets(dataset_info, dataset_name, test_size=0.2, dataset_format=
             ),
         )
         MetadataCatalog.get(f"{dataset_name}_test").set(thing_classes=thing_classes)
-        logging.info("Custom JSON dataset registration complete.")
+        system_logger.info("Custom JSON dataset registration complete.")
 
     else:
         raise ValueError(f"Unknown dataset_format: {dataset_format}")
@@ -176,7 +176,7 @@ def get_split_dicts(img_dir, label_dir, files, category_json, category_key):
 
     category_names = dataset_info[category_key][2]
     category_name_to_id = {name: idx for idx, name in enumerate(category_names)}
-    logging.info(f"Category Mapping: {category_name_to_id}")
+    system_logger.info(f"Category Mapping: {category_name_to_id}")
 
     dataset_dicts = []
     for idx, file in enumerate(files):
@@ -224,7 +224,7 @@ def get_split_dicts(img_dir, label_dir, files, category_json, category_key):
             if categoryName in category_name_to_id:
                 category_id = category_name_to_id[categoryName]
             else:
-                logging.warning(f"Category Name Not Found: {categoryName}")
+                system_logger.warning(f"Category Name Not Found: {categoryName}")
                 continue
 
             obj = {
@@ -254,5 +254,5 @@ def read_dataset_info(file_path):
         dataset_info = {
             k: tuple(v) if isinstance(v, list) else v for k, v in data.items()
         }
-        logging.info(f"Dataset Info: {dataset_info}")
+        system_logger.info(f"Dataset Info: {dataset_info}")
     return dataset_info

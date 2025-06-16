@@ -4,7 +4,7 @@ Deprecated Backup Utilities
 This module contains backup or deprecated functions for mask extraction and encoding.
 """
 
-import logging
+from src.utils.logger_utils import system_logger
 
 import cv2
 import numpy as np
@@ -29,7 +29,7 @@ def get_masks(fn: str, predictor) -> list:
     """
     im = cv2.imread(fn)
     if im is None:
-        logging.error(f"Failed to read image: {fn}")
+        system_logger.error(f"Failed to read image: {fn}")
         return []
     pred = predictor(im)
     pred_class = torch.mode(pred["instances"].pred_classes)[0]

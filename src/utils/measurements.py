@@ -6,7 +6,7 @@ including midpoint calculation, color conversions, wavelength estimation, and
 arrow detection in images.
 """
 
-import logging
+from src.utils.logger_utils import system_logger
 
 import cv2
 import numpy as np

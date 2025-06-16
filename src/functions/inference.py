@@ -20,7 +20,7 @@ The module provides a comprehensive pipeline for:
 ## IMPORTS
 import copy
 import csv
-import logging
+from src.utils.logger_utils import system_logger
 import os
 import time
 from pathlib import Path
@@ -292,10 +292,10 @@ def run_inference(
 
     # This forces the dataset to be loaded and the metadata to be populated.
     # It's a robust way to ensure the catalog is ready.
-    logging.info("Forcing metadata population from DatasetCatalog...")
+    system_logger.info("Forcing metadata population from DatasetCatalog...")
     d = DatasetCatalog.get(f"{dataset_name}_train")
     metadata = MetadataCatalog.get(f"{dataset_name}_train")
-    logging.info("Metadata populated successfully.")
+    system_logger.info("Metadata populated successfully.")
 
     if rcnn == "combo":
         predictors = []
@@ -329,12 +329,12 @@ def run_inference(
     # Get the specific ROI config for this dataset, or fall back to the default
     roi_profiles = full_config.get("scale_bar_rois", {})
     roi_config = roi_profiles.get(dataset_name, roi_profiles["default"])
-    logging.info(f"Using scale bar ROI profile for '{dataset_name}': {roi_config}")
+    system_logger.info(f"Using scale bar ROI profile for '{dataset_name}': {roi_config}")
 
     conv = lambda l: " ".join(map(str, l))
 
     for name in images_name:
-        logging.info(f"Preparing masks for image {name}")
+        system_logger.info(f"Preparing masks for image {name}")
         image = cv2.imread(os.path.join(inpath, name))
         all_masks = []
         all_scores = []
@@ -351,7 +351,7 @@ def run_inference(
                 f"Predictor {idx} ({'R50' if len(predictors)==2 and idx==0 else 'R101' if len(predictors)==2 and idx==1 else rcnn}): "
                 f"found {len(masks) if masks is not None else 0} masks for image {name}"
             )
-            logging.info(logger_msg)
+            system_logger.info(logger_msg)
             if masks:
                 for i, mask in enumerate(masks):
                     all_masks.append(mask)
@@ -370,7 +370,7 @@ def run_inference(
                 unique_masks.append(mask)
                 unique_scores.append(all_scores[i])
 
-        logging.info(f"After deduplication: {len(unique_masks)} unique masks for image {name}")
+        system_logger.info(f"After deduplication: {len(unique_masks)} unique masks for image {name}")
 
         conv = lambda l: " ".join(map(str, l))
         for i, mask in enumerate(unique_masks):
@@ -416,7 +416,7 @@ def run_inference(
 
             for idx, test_img in enumerate(image_list, 1):
                 start_time = time.perf_counter()
-                logging.info(f"Inferencing image {idx} out of {num_images}")
+                system_logger.info(f"Inferencing image {idx} out of {num_images}")
 
                 input_path = os.path.join(test_img_path, test_img)
                 im = cv2.imread(input_path)
@@ -544,7 +544,7 @@ def run_inference(
                         )
                 elapsed = time.perf_counter() - start_time
                 total_time += elapsed
-                logging.info(f"Time taken for image {idx}: {elapsed:.3f} seconds")
+                system_logger.info(f"Time taken for image {idx}: {elapsed:.3f} seconds")
 
     average_time = total_time / num_images if num_images else 0
-    logging.info(f"Average inference time per image: {average_time:.3f} seconds")
+    system_logger.info(f"Average inference time per image: {average_time:.3f} seconds")

@@ -1,4 +1,4 @@
-import logging
+from src.utils.logger_utils import system_logger
 import re
 from math import sqrt
 
@@ -21,11 +21,11 @@ def detect_scale_bar(image, roi_config):
         - microns_per_pixel (float): The conversion factor from pixels to microns
     """
     if not isinstance(image, np.ndarray):
-        logging.error("Input image is not a numpy array.")
+        system_logger.error("Input image is not a numpy array.")
         return "0", 1.0
     for key in ["x_start_factor", "y_start_factor", "width_factor", "height_factor"]:
         if key not in roi_config:
-            logging.error(f"ROI config missing key: {key}")
+            system_logger.error(f"ROI config missing key: {key}")
             return "0", 1.0
 
     h, w = image.shape[:2]
@@ -34,7 +34,7 @@ def detect_scale_bar(image, roi_config):
     x_end = int(x_start + w * roi_config["width_factor"])
     y_end = int(y_start + h * roi_config["height_factor"])
 
-    logging.info(f"ROI for scale bar OCR: x={x_start}:{x_end}, y={y_start}:{y_end}")
+    system_logger.info(f"ROI for scale bar OCR: x={x_start}:{x_end}, y={y_start}:{y_end}")
     cv2.rectangle(image, (x_start, y_start), (x_end, y_end), (0, 0, 255), 2)
 
     roi = image[y_start:y_end, x_start:x_end].copy()
@@ -44,14 +44,14 @@ def detect_scale_bar(image, roi_config):
         reader = easyocr.Reader(["en"], verbose=False)
         result = reader.readtext(gray_roi, detail=1, paragraph=False)
     except Exception as e:
-        logging.error(f"EasyOCR failed: {e}")
+        system_logger.error(f"EasyOCR failed: {e}")
         result = []
 
     text_box_center = None
     psum = "0"
 
     if result:
-        logging.info(f"OCR detected text: {[r[1] for r in result]}")
+        system_logger.info(f"OCR detected text: {[r[1] for r in result]}")
         for detection in result:
             bbox, text, _ = detection
             text_clean = re.sub("[^0-9]", "", text)
@@ -75,7 +75,7 @@ def detect_scale_bar(image, roi_config):
         pxum_r = ""
         psum = "0"
         text_box_center = None
-        logging.warning("No text detected by OCR in scale bar ROI.")
+        system_logger.warning("No text detected by OCR in scale bar ROI.")
 
     edges = cv2.Canny(gray_roi, 50, 150, apertureSize=3)
     lines_list = []
@@ -118,12 +118,12 @@ def detect_scale_bar(image, roi_config):
         cv2.line(image, (x1_full, y1_full), (x2_full, y2_full), (0, 255, 0), 2)
         scale_len = max_length
         um_pix = float(psum) / scale_len if scale_len > 0 else 1.0
-        logging.info(
+        system_logger.info(
             f"Detected scale bar: {psum} units, {scale_len:.2f} pixels, {um_pix:.4f} units/pixel"
         )
     else:
         um_pix = 1
         psum = "0"
-        logging.warning("No scale bar line detected near OCR text.")
+        system_logger.warning("No scale bar line detected near OCR text.")
 
     return psum, um_pix

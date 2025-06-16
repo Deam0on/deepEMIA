@@ -3,13 +3,13 @@ UW Computer Vision Project - Main Pipeline Script
 
 This script provides a command-line interface for running dataset preparation, model training,
 evaluation, and inference tasks. It integrates with Google Cloud Storage and tracks progress/ETA.
-Logging is configured to print simplified logs to the terminal and full logs to logs/full.log.
+system_logger is configured to print simplified logs to the terminal and full logs to logs/full.log.
 """
 
 import argparse
 import atexit
 import glob
-import logging
+from src.utils.logger_utils import system_logger
 import os
 import shutil
 import subprocess
@@ -26,15 +26,7 @@ from src.utils.config import get_config
 from src.utils.eta_utils import update_eta_data
 from src.utils.gcs_utils import (download_data_from_bucket,
                                  upload_data_to_bucket)
-
-logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(Path.home() / "logs" / "full.log", mode="a", encoding="utf-8"),
-        ],
-    )
+from src.utils.logger_utils import system_logger
 
 config = get_config()
 bucket = config["bucket"]
@@ -191,9 +183,9 @@ def main():
             ],
             check=True,
         )
-        logging.info("Successfully copied dataset_info.json from GCS.")
+        system_logger.info("Successfully copied dataset_info.json from GCS.")
     except subprocess.CalledProcessError as e:
-        logging.error(f"Failed to copy dataset_info.json from GCS: {e}")
+        system_logger.error(f"Failed to copy dataset_info.json from GCS: {e}")
         raise
 
     img_dir = local_dataset_path / "DATASET" / args.dataset_name
@@ -203,21 +195,21 @@ def main():
     download_time_taken = 0
     upload_time_taken = 0
 
-    logging.info(f"Running task: {args.task} on dataset: {args.dataset_name}")
+    system_logger.info(f"Running task: {args.task} on dataset: {args.dataset_name}")
 
     if args.task == "prepare":
-        logging.info(f"Preparing dataset {args.dataset_name}...")
+        system_logger.info(f"Preparing dataset {args.dataset_name}...")
         task_start_time = datetime.now()
         split_dataset(img_dir, args.dataset_name)
         task_end_time = datetime.now()
 
     elif args.task == "train":
         # Download data
-        logging.info(f"Downloading training data for {args.dataset_name}...")
+        system_logger.info(f"Downloading training data for {args.dataset_name}...")
         download_time_taken = download_data_from_bucket()
 
         # Train
-        logging.info(
+        system_logger.info(
             f"Training model on dataset {args.dataset_name} using '{args.dataset_format}' format and RCNN {args.rcnn}..."
         )
         train_on_dataset(
@@ -231,10 +223,10 @@ def main():
         dataset_path = local_dataset_path / "DATASET" / args.dataset_name
         if dataset_path.exists():
             shutil.rmtree(dataset_path)
-            logging.info(f"Deleted training data at {dataset_path} after training.")
+            system_logger.info(f"Deleted training data at {dataset_path} after training.")
 
     elif args.task == "evaluate":
-        logging.info(
+        system_logger.info(
             f"Evaluating model on dataset {args.dataset_name} using '{args.dataset_format}' format..."
         )
         task_start_time = datetime.now()
@@ -248,7 +240,7 @@ def main():
         task_end_time = datetime.now()
 
     elif args.task == "inference":
-        logging.info(
+        system_logger.info(
             f"Running inference on dataset {args.dataset_name} using '{args.dataset_format}' format and RCNN {args.rcnn}..."
         )
 
@@ -257,13 +249,13 @@ def main():
             for file_path in glob.glob(pattern):
                 try:
                     os.remove(file_path)
-                    logging.info(f"Removed file: {file_path}")
+                    system_logger.info(f"Removed file: {file_path}")
                 except Exception as e:
-                    logging.warning(f"Could not remove file {file_path}: {e}")
+                    system_logger.warning(f"Could not remove file {file_path}: {e}")
 
         # Download inference data
         inference_path = local_dataset_path / "DATASET" / "INFERENCE"
-        logging.info("Downloading inference data...")
+        system_logger.info("Downloading inference data...")
         download_time_taken = download_data_from_bucket()
 
         num_images = len(
@@ -288,13 +280,13 @@ def main():
         # Delete inference data after inference
         if inference_path.exists():
             shutil.rmtree(inference_path)
-            logging.info(f"Deleted inference data at {inference_path} after inference.")
+            system_logger.info(f"Deleted inference data at {inference_path} after inference.")
 
     total_end_time = datetime.now()
     total_time_taken = (total_end_time - total_start_time).total_seconds()
 
     if args.upload:
-        logging.info(f"Uploading results for dataset {args.dataset_name} to bucket...")
+        system_logger.info(f"Uploading results for dataset {args.dataset_name} to bucket...")
         upload_time_taken = upload_data_to_bucket()
 
         # Upload logs directory to the bucket
@@ -305,16 +297,16 @@ def main():
                     ["gsutil", "-m", "cp", "-r", str(logs_dir), f"gs://{bucket}/logs/"],
                     check=True,
                 )
-                logging.info(f"Uploaded logs directory to gs://{bucket}/logs/")
+                system_logger.info(f"Uploaded logs directory to gs://{bucket}/logs/")
             except subprocess.CalledProcessError as e:
-                logging.warning(f"Failed to upload logs directory: {e}")
+                system_logger.warning(f"Failed to upload logs directory: {e}")
 
             # # Delete logs directory after upload
             # try:
             #     shutil.rmtree(logs_dir)
-            #     logging.info(f"Deleted local logs directory: {logs_dir}")
+            #     system_logger.info(f"Deleted local logs directory: {logs_dir}")
             # except Exception as e:
-            #     logging.warning(
+            #     system_logger.warning(
             #         f"Could not delete local logs directory {logs_dir}: {e}"
             #     )
 
@@ -323,13 +315,13 @@ def main():
             for file_path in Path.home().glob(pattern):
                 try:
                     file_path.unlink()
-                    logging.info(f"Deleted result file: {file_path}")
+                    system_logger.info(f"Deleted result file: {file_path}")
                 except Exception as e:
-                    logging.warning(f"Could not delete result file {file_path}: {e}")
+                    system_logger.warning(f"Could not delete result file {file_path}: {e}")
         output_dir = Path.home() / "output"
         if output_dir.exists():
             shutil.rmtree(output_dir)
-            logging.info(f"Deleted output directory: {output_dir}")
+            system_logger.info(f"Deleted output directory: {output_dir}")
 
     if args.task != "inference":
         update_eta_data(args.task, total_time_taken)
@@ -342,12 +334,12 @@ def main():
 
 if __name__ == "__main__":
     
-    atexit.register(logging.shutdown)
+    atexit.register(system_logger.shutdown)
     try:
         LOGS_DIR.mkdir(parents=True, exist_ok=True)
     except Exception as e:
         print(f"Failed to create log directory: {LOGS_DIR} ({e})")
     
-    print(f"Logging to: {LOGS_DIR / 'full.log'}")
+    print(f"system_logger to: {LOGS_DIR / 'full.log'}")
     main()
 

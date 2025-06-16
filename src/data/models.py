@@ -11,7 +11,7 @@ The module integrates with Detectron2 for computer vision tasks and provides
 utilities for handling various data formats and model types.
 """
 
-import logging
+from src.utils.logger_utils import system_logger
 import os
 from pathlib import Path
 
@@ -97,7 +97,7 @@ def load_model(cfg, model_path: str, dataset_name: str, is_quantized: bool = Fal
             return QuantizedPredictor(model)
 
         except Exception as e:
-            logging.error(f"Failed to load or initialize quantized model: {e}")
+            system_logger.error(f"Failed to load or initialize quantized model: {e}")
             raise RuntimeError("Quantized model load failed.")
 
     # fallback or standard model
@@ -124,7 +124,7 @@ def choose_and_use_model(
     - tuple: (predictor, metadata) The loaded model and its metadata
     """
     if dataset_name not in model_paths:
-        logging.error(f"No model found for dataset {dataset_name}")
+        system_logger.error(f"No model found for dataset {dataset_name}")
         return None, None
 
     base_model_path = model_paths[dataset_name]
@@ -147,17 +147,17 @@ def choose_and_use_model(
     predictor = None
     if not torch.cuda.is_available() and os.path.exists(quantized_model_path):
         try:
-            logging.info(f"Trying quantized model for {dataset_name}")
+            system_logger.info(f"Trying quantized model for {dataset_name}")
             predictor = load_model(
                 cfg, quantized_model_path, dataset_name, is_quantized=True
             )
         except RuntimeError:
-            logging.warning(f"Falling back to standard model for {dataset_name}")
+            system_logger.warning(f"Falling back to standard model for {dataset_name}")
             predictor = load_model(
                 cfg, base_model_path, dataset_name, is_quantized=False
             )
     else:
-        logging.info(f"Using standard model for {dataset_name}")
+        system_logger.info(f"Using standard model for {dataset_name}")
         predictor = load_model(cfg, base_model_path, dataset_name, is_quantized=False)
 
     return predictor, metadata

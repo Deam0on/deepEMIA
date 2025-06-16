@@ -17,7 +17,7 @@ ETA data is stored in a JSON file.
 """
 
 import json
-import logging
+from src.utils.logger_utils import system_logger
 import os
 from pathlib import Path
 
@@ -50,13 +50,13 @@ def read_eta_data() -> dict:
         try:
             with open(ETA_FILE, "r") as file:
                 data = json.load(file)
-            logging.info(f"Loaded ETA data from {ETA_FILE}")
+            system_logger.info(f"Loaded ETA data from {ETA_FILE}")
             return data
         except Exception as e:
-            logging.error(f"Failed to read ETA file {ETA_FILE}: {e}")
+            system_logger.error(f"Failed to read ETA file {ETA_FILE}: {e}")
             return DEFAULT_ETA.copy()
     else:
-        logging.info(f"ETA file {ETA_FILE} not found. Using default values.")
+        system_logger.info(f"ETA file {ETA_FILE} not found. Using default values.")
         return DEFAULT_ETA.copy()
 
 
@@ -87,18 +87,18 @@ def update_eta_data(task: str, time_taken: float, num_images: int = 0) -> None:
             "average_time_per_image": new_avg_time_per_image,
             "buffer": buffer,
         }
-        logging.info(
+        system_logger.info(
             f"Updated inference ETA: {new_avg_time_per_image:.2f}s/image (buffer: {buffer})"
         )
     else:
         current_avg = data.get(task, {}).get("average_time", time_taken)
         new_avg_time = (current_avg + time_taken) / 2
         data[task] = {"average_time": new_avg_time}
-        logging.info(f"Updated {task} ETA: {new_avg_time:.2f}s")
+        system_logger.info(f"Updated {task} ETA: {new_avg_time:.2f}s")
 
     try:
         with open(ETA_FILE, "w") as file:
             json.dump(data, file, indent=2)
-        logging.info(f"Saved updated ETA data to {ETA_FILE}")
+        system_logger.info(f"Saved updated ETA data to {ETA_FILE}")
     except Exception as e:
-        logging.error(f"Failed to write ETA file {ETA_FILE}: {e}")
+        system_logger.error(f"Failed to write ETA file {ETA_FILE}: {e}")

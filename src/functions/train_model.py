@@ -14,7 +14,7 @@ The module provides a complete training pipeline with support for:
 - Evaluation during training
 """
 
-import logging
+from src.utils.logger_utils import system_logger
 ## IMPORTS
 import os
 import shutil
@@ -76,12 +76,12 @@ def check_disk_space(path: str, min_gb: int = 5) -> None:
     total, used, free = shutil.disk_usage(path)
     free_gb = free / (1024**3)
     if free_gb < min_gb:
-        logging.error(
+        system_logger.error(
             f"Not enough disk space: only {free_gb:.2f} GB free at {path}. Minimum required: {min_gb} GB."
         )
         raise RuntimeError("Insufficient disk space for training.")
     else:
-        logging.info(f"Disk space check passed: {free_gb:.2f} GB free at {path}.")
+        system_logger.info(f"Disk space check passed: {free_gb:.2f} GB free at {path}.")
 
 
 def train_on_dataset(
@@ -106,14 +106,14 @@ def train_on_dataset(
 
     # Path for the split file
     split_file = os.path.join(SPLIT_DIR, f"{dataset_name}_split.json")
-    logging.info(f"Split file for {dataset_name}: {split_file}")
+    system_logger.info(f"Split file for {dataset_name}: {split_file}")
 
     train_data = DatasetCatalog.get(f"{dataset_name}_train")
     test_data = DatasetCatalog.get(f"{dataset_name}_test")
-    logging.info(f"Training images: {len(train_data)}")
-    logging.info(f"Test images: {len(test_data)}")
+    system_logger.info(f"Training images: {len(train_data)}")
+    system_logger.info(f"Test images: {len(test_data)}")
     categories = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
-    logging.info(f"Categories: {categories}")
+    system_logger.info(f"Categories: {categories}")
 
     def train_with_backbone(
         backbone_name: str, config_file: str, model_suffix: str
@@ -151,8 +151,8 @@ def train_on_dataset(
         os.makedirs(dataset_output_dir, exist_ok=True)
         cfg.OUTPUT_DIR = dataset_output_dir
 
-        logging.info(f"Training with backbone: {backbone_name}")
-        logging.info(
+        system_logger.info(f"Training with backbone: {backbone_name}")
+        system_logger.info(
             f"Classes: {MetadataCatalog.get(cfg.DATASETS.TRAIN[0]).thing_classes}"
         )
         trainer = CustomTrainer(cfg)
@@ -167,9 +167,9 @@ def train_on_dataset(
         dst_ckpt = os.path.join(dataset_output_dir, f"model_final_{model_suffix}.pth")
         if os.path.exists(src_ckpt):
             shutil.copy(src_ckpt, dst_ckpt)
-            logging.info(f"Copied Detectron2 checkpoint to {dst_ckpt}")
+            system_logger.info(f"Copied Detectron2 checkpoint to {dst_ckpt}")
         else:
-            logging.warning(
+            system_logger.warning(
                 f"Detectron2 checkpoint {src_ckpt} not found after training."
             )
 

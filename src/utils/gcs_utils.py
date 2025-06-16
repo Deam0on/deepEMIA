@@ -15,7 +15,7 @@ Note:
     Requires gsutil to be installed and configured with appropriate permissions.
 """
 
-import logging
+from src.utils.logger_utils import system_logger
 import os
 import shutil
 import subprocess
@@ -48,7 +48,7 @@ def download_data_from_bucket() -> float:
     download_start_time = datetime.now()
     dirpath = Path.home() / "DATASET"
     if dirpath.exists() and dirpath.is_dir():
-        logging.info(f"Removing existing dataset directory: {dirpath}")
+        system_logger.info(f"Removing existing dataset directory: {dirpath}")
         shutil.rmtree(dirpath)
 
     cmd = [
@@ -59,12 +59,12 @@ def download_data_from_bucket() -> float:
         f"gs://{bucket}/DATASET",
         str(local_dataset_path),
     ]
-    logging.info(f"Running command: {' '.join(cmd)}")
+    system_logger.info(f"Running command: {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        logging.error(f"gsutil download failed: {result.stderr}")
+        system_logger.error(f"gsutil download failed: {result.stderr}")
     else:
-        logging.info("gsutil download completed successfully.")
+        system_logger.info("gsutil download completed successfully.")
 
     download_end_time = datetime.now()
     return (download_end_time - download_start_time).total_seconds()
@@ -92,33 +92,33 @@ def upload_data_to_bucket() -> float:
     # Upload .png files
     png_files = list(Path.home().glob("*.png"))
     if png_files:
-        logging.info(f"Uploading {len(png_files)} PNG files to {archive_path}")
+        system_logger.info(f"Uploading {len(png_files)} PNG files to {archive_path}")
         cmd = (
             ["gsutil", "-m", "cp", "-r"] + [str(f) for f in png_files] + [archive_path]
         )
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            logging.error(f"PNG upload failed: {result.stderr}")
+            system_logger.error(f"PNG upload failed: {result.stderr}")
 
     # Upload .csv files
     csv_files = list(Path.home().glob("*.csv"))
     if csv_files:
-        logging.info(f"Uploading {len(csv_files)} CSV files to {archive_path}")
+        system_logger.info(f"Uploading {len(csv_files)} CSV files to {archive_path}")
         cmd = (
             ["gsutil", "-m", "cp", "-r"] + [str(f) for f in csv_files] + [archive_path]
         )
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            logging.error(f"CSV upload failed: {result.stderr}")
+            system_logger.error(f"CSV upload failed: {result.stderr}")
 
     # Upload output directory contents
     output_dir = Path.home() / "output"
     if output_dir.exists() and any(output_dir.iterdir()):
-        logging.info(f"Uploading output directory contents to {archive_path}")
+        system_logger.info(f"Uploading output directory contents to {archive_path}")
         cmd = ["gsutil", "-m", "cp", "-r", str(output_dir) + "/*", archive_path]
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            logging.error(f"Output directory upload failed: {result.stderr}")
+            system_logger.error(f"Output directory upload failed: {result.stderr}")
 
     upload_end_time = datetime.now()
     return (upload_end_time - upload_start_time).total_seconds()

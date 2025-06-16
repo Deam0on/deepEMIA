@@ -5,7 +5,7 @@ Provides a singleton-style loader for the main YAML configuration file.
 Ensures the config is loaded only once and reused throughout the project.
 """
 
-import logging
+from src.utils.logger_utils import system_logger
 from pathlib import Path
 
 import yaml
@@ -30,11 +30,11 @@ def get_config():
         try:
             with open(config_path, "r") as f:
                 _config = yaml.safe_load(f)
-            logging.info(f"Loaded configuration from {config_path}")
+            system_logger.info(f"Loaded configuration from {config_path}")
         except FileNotFoundError:
-            logging.error(f"Configuration file not found: {config_path}")
+            system_logger.error(f"Configuration file not found: {config_path}")
             raise
         except yaml.YAMLError as e:
-            logging.error(f"Error parsing configuration file: {e}")
+            system_logger.error(f"Error parsing configuration file: {e}")
             raise
     return _config
