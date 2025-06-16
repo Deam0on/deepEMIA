@@ -333,12 +333,15 @@ def run_inference(
 
     conv = lambda l: " ".join(map(str, l))
 
+    # Store deduplicated masks for each image
+    dedup_results = {}
+
     for name in images_name:
         system_logger.info(f"Preparing masks for image {name}")
         image = cv2.imread(os.path.join(inpath, name))
         all_masks = []
         all_scores = []
-        all_sources = []  # Track which model each mask came from
+        all_sources = []
 
         for idx, predictor in enumerate(predictors):
             outputs = predictor(image)
@@ -357,7 +360,7 @@ def run_inference(
                 for i, mask in enumerate(masks):
                     all_masks.append(mask)
                     all_scores.append(scores[i])
-                    all_sources.append(idx)  # 0 for R50, 1 for R101
+                    all_sources.append(idx)
 
         # Sort by score (descending)
         sorted_indices = np.argsort(all_scores)[::-1]
@@ -370,7 +373,7 @@ def run_inference(
         unique_scores = []
         unique_sources = []
         for i, mask in enumerate(all_masks):
-            if not any(iou(mask, um) > 0.7 for um in unique_masks):  # Try 0.7 or 0.6
+            if not any(iou(mask, um) > 0.7 for um in unique_masks):
                 unique_masks.append(mask)
                 unique_scores.append(all_scores[i])
                 unique_sources.append(all_sources[i])
@@ -379,6 +382,13 @@ def run_inference(
             f"After deduplication: {len(unique_masks)} unique masks for image {name} "
             f"(kept: {unique_sources.count(0)} from R50, {unique_sources.count(1)} from R101)"
         )
+
+        # Save for later use
+        dedup_results[name] = {
+            "masks": unique_masks,
+            "scores": unique_scores,
+            "sources": unique_sources,
+        }
 
         conv = lambda l: " ".join(map(str, l))
         for i, mask in enumerate(unique_masks):
@@ -431,32 +441,13 @@ def run_inference(
 
                 psum, um_pix = detect_scale_bar(im, roi_config)
 
-                outputs = predictor(im)
-                inst_out = outputs["instances"]
-                filtered_instances = inst_out[inst_out.pred_classes == x_pred].to("cpu")
+                # Use deduplicated masks for this image
+                masks = dedup_results.get(test_img, {}).get("masks", [])
+                if not masks:
+                    continue
 
-                if draw_id:
-                    GetInference(im, filtered_instances, metadata, test_img, x_pred)
-                else:
-                    GetInferenceNoID(predictor, im, x_pred, metadata, test_img)
-                GetCounts(predictor, im, TList, PList)
-
-                # mask_array = filtered_instances.pred_masks.to("cpu").numpy()
-                # num_instances = mask_array.shape[0]
-                # mask_array = np.moveaxis(mask_array, 0, -1)
-
-                pred_masks = filtered_instances.pred_masks.numpy()
-                pred_boxes = filtered_instances.pred_boxes.tensor.numpy()
-                scores = filtered_instances.scores.numpy()
-                num_instances = len(filtered_instances)
-
-                output = np.zeros_like(im)
-
-                for i in range(num_instances):
-                    instance_id = i + 1
-                    binary_mask = (pred_masks[i] > 0).astype(
-                        np.uint8
-                    ) * 255  # ensure binary uint8
+                for instance_id, mask in enumerate(masks, 1):
+                    binary_mask = (mask > 0).astype(np.uint8) * 255
                     single_im_mask = binary_mask.copy()
                     mask_3ch = np.stack([single_im_mask] * 3, axis=-1)
                     mask_filename = os.path.join(output_dir, f"mask_{instance_id}.jpg")
