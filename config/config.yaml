@@ -4,6 +4,7 @@ paths:
   split_dir: "~/split_dir"
   category_json: "~/uw-com-vision/dataset_info.json"
   eta_file: "~/uw-com-vision/config/eta_data.json"
+  logs_dir: "~/logs"
   local_dataset_root: "~"
 scale_bar_rois:
   default:

@@ -32,6 +32,7 @@ SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
 CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
 ETA_FILE = Path(config["paths"]["eta_file"]).expanduser().resolve()
 local_dataset_path = Path(config["paths"]["local_dataset_root"]).expanduser().resolve()
+LOGS_DIR = Path(config["paths"]["logs_dir"]).expanduser().resolve()
 
 
 def setup_config():
@@ -287,7 +288,7 @@ def main():
         upload_time_taken = upload_data_to_bucket()
 
         # Upload logs directory to the bucket
-        logs_dir = Path("logs")
+        logs_dir = LOGS_DIR
         if logs_dir.exists():
             try:
                 subprocess.run(
@@ -330,15 +331,15 @@ def main():
 
 
 if __name__ == "__main__":
-    # Logging setup (already present)
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
+    # Logging setup (now uses LOGS_DIR from config)
+    LOGS_DIR.mkdir(exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[
             logging.StreamHandler(),
-            logging.FileHandler(log_dir / "full.log", mode="a", encoding="utf-8"),
+            logging.FileHandler(LOGS_DIR / "full.log", mode="a", encoding="utf-8"),
         ],
     )
     main()
+    logging.shutdown()
