@@ -14,5 +14,5 @@ scale_bar_rois:
     width_factor: 1
     height_factor: 0.067
 scalebar_thresholds:
-  intensity: 200
+  intensity: 150
   proximity: 50
