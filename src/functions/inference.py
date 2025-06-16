@@ -61,6 +61,8 @@ with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
 # Resolve paths
 SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
 CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
+local_dataset_root = Path(config["paths"]["local_dataset_root"]).expanduser().resolve()
+
 
 
 def custom_mapper(dataset_dicts):
@@ -464,11 +466,11 @@ def run_inference(
                             cX = int(M["m10"] / M["m00"])
                             cY = int(M["m01"] / M["m00"])
                             cv2.putText(vis_img, str(i+1), (cX, cY), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1, cv2.LINE_AA)
-                    vis_save_path = os.path.join(output_dir, f"{test_img}_class_{x_pred}_pred.png")
+                    vis_save_path = os.path.join(local_dataset_root, f"{test_img}_class_{x_pred}_pred.png")
                     cv2.imwrite(vis_save_path, vis_img)
 
                 for instance_id, mask in enumerate(masks, 1):
-                    binary_mask = (mask > 0).astype(np.uint8) * 255
+                    binary_mask = (mask > 0).astype(np.uint8) * 255                
                     single_im_mask = binary_mask.copy()
                     mask_3ch = np.stack([single_im_mask] * 3, axis=-1)
                     mask_filename = os.path.join(output_dir, f"mask_{instance_id}.jpg")
