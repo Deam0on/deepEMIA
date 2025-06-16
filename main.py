@@ -32,7 +32,7 @@ SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
 CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
 ETA_FILE = Path(config["paths"]["eta_file"]).expanduser().resolve()
 local_dataset_path = Path(config["paths"]["local_dataset_root"]).expanduser().resolve()
-LOGS_DIR = Path(config["paths"]["logs_dir"]).expanduser().resolve()
+LOGS_DIR = Path(config["paths"].get("logs_dir", "~/logs")).expanduser().resolve()
 
 
 def setup_config():
@@ -299,14 +299,14 @@ def main():
             except subprocess.CalledProcessError as e:
                 logging.warning(f"Failed to upload logs directory: {e}")
 
-            # Delete logs directory after upload
-            try:
-                shutil.rmtree(logs_dir)
-                logging.info(f"Deleted local logs directory: {logs_dir}")
-            except Exception as e:
-                logging.warning(
-                    f"Could not delete local logs directory {logs_dir}: {e}"
-                )
+            # # Delete logs directory after upload
+            # try:
+            #     shutil.rmtree(logs_dir)
+            #     logging.info(f"Deleted local logs directory: {logs_dir}")
+            # except Exception as e:
+            #     logging.warning(
+            #         f"Could not delete local logs directory {logs_dir}: {e}"
+            #     )
 
         # Delete result files after upload
         for pattern in ("*.png", "*.csv"):
