@@ -20,12 +20,13 @@ The module provides a comprehensive pipeline for:
 ## IMPORTS
 import copy
 import csv
+import logging
 import os
 import time
 from pathlib import Path
 
-import cv2
-import detectron2.data.transforms as T
+import cv2 
+import detectron2.data.transforms as T 
 import imutils
 import numpy as np
 import pandas as pd
@@ -338,7 +339,7 @@ def run_inference(
         all_masks = []
         all_scores = []
 
-        for predictor in predictors:
+        for idx, predictor in enumerate(predictors):
             outputs = predictor(image)
             masks = postprocess_masks(
                 np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
@@ -346,6 +347,11 @@ def run_inference(
                 image,
             )
             scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
+            logger_msg = (
+                f"Predictor {idx} ({'R50' if len(predictors)==2 and idx==0 else 'R101' if len(predictors)==2 and idx==1 else rcnn}): "
+                f"found {len(masks) if masks is not None else 0} masks for image {name}"
+            )
+            logging.info(logger_msg)
             if masks:
                 for i, mask in enumerate(masks):
                     all_masks.append(mask)
@@ -363,6 +369,8 @@ def run_inference(
             if not any(iou(mask, um) > 0.8 for um in unique_masks):
                 unique_masks.append(mask)
                 unique_scores.append(all_scores[i])
+
+        logging.info(f"After deduplication: {len(unique_masks)} unique masks for image {name}")
 
         conv = lambda l: " ".join(map(str, l))
         for i, mask in enumerate(unique_masks):
