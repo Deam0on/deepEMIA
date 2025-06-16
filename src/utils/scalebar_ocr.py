@@ -5,9 +5,15 @@ from math import sqrt
 import cv2
 import easyocr
 import numpy as np
+import yaml
+from pathlib import Path
 
 
-def detect_scale_bar(image, roi_config):
+class ScaleBarDetectionError(Exception):
+    pass
+
+
+def detect_scale_bar(image, roi_config, intensity_threshold=200, proximity_threshold=50):
     """
     Detects scale bars in SEM images using OCR and Hough line detection.
 
@@ -20,13 +26,28 @@ def detect_scale_bar(image, roi_config):
         - scale_bar_length_str (str): The detected scale bar length as a string (e.g., "500")
         - microns_per_pixel (float): The conversion factor from pixels to microns
     """
+    # --- Load thresholds from config if available ---
+    config_path = Path.home() / "uw-com-vision" / "config" / "config.yaml"
+    if config_path.exists():
+        try:
+            with open(config_path, "r") as f:
+                full_config = yaml.safe_load(f)
+            scalebar_thresholds = full_config.get("scalebar_thresholds", {})
+            # Only override if not explicitly passed in function call
+            if "intensity" in scalebar_thresholds and intensity_threshold == 200:
+                intensity_threshold = scalebar_thresholds["intensity"]
+            if "proximity" in scalebar_thresholds and proximity_threshold == 50:
+                proximity_threshold = scalebar_thresholds["proximity"]
+        except Exception as e:
+            system_logger.warning(f"Could not load thresholds from config.yaml: {e}")
+
     if not isinstance(image, np.ndarray):
         system_logger.error("Input image is not a numpy array.")
-        return "0", 1.0
+        raise ScaleBarDetectionError("Input image is not a numpy array.")
     for key in ["x_start_factor", "y_start_factor", "width_factor", "height_factor"]:
         if key not in roi_config:
             system_logger.error(f"ROI config missing key: {key}")
-            return "0", 1.0
+            raise ScaleBarDetectionError(f"ROI config missing key: {key}")
 
     h, w = image.shape[:2]
     x_start = int(w * roi_config["x_start_factor"])
@@ -82,8 +103,6 @@ def detect_scale_bar(image, roi_config):
     scale_len = 0
     um_pix = 1
 
-    proximity_threshold = 50
-    intensity_threshold = 150
     longest_line = None
     max_length = 0
 

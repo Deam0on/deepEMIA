@@ -5,6 +5,7 @@ paths:
   category_json: "~/uw-com-vision/dataset_info.json"
   eta_file: "~/uw-com-vision/config/eta_data.json"
   logs_dir: "~/logs"
+  output_dir: "~/uw-com-vision/output"
   local_dataset_root: "~"
 scale_bar_rois:
   default:
@@ -12,3 +13,6 @@ scale_bar_rois:
     y_start_factor: 0.866
     width_factor: 1
     height_factor: 0.067
+scalebar_thresholds:
+  intensity: 200
+  proximity: 50
