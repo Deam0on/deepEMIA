@@ -7,6 +7,7 @@ Logging is configured to print simplified logs to the terminal and full logs to 
 """
 
 import argparse
+import atexit
 import glob
 import logging
 import os
@@ -25,6 +26,15 @@ from src.utils.config import get_config
 from src.utils.eta_utils import update_eta_data
 from src.utils.gcs_utils import (download_data_from_bucket,
                                  upload_data_to_bucket)
+
+logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler(Path.home() / "logs" / "full.log", mode="a", encoding="utf-8"),
+        ],
+    )
 
 config = get_config()
 bucket = config["bucket"]
@@ -331,20 +341,13 @@ def main():
 
 
 if __name__ == "__main__":
-    # Logging setup (now uses LOGS_DIR from config)
+    
+    atexit.register(logging.shutdown)
     try:
         LOGS_DIR.mkdir(parents=True, exist_ok=True)
     except Exception as e:
         print(f"Failed to create log directory: {LOGS_DIR} ({e})")
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(LOGS_DIR / "full.log", mode="a", encoding="utf-8"),
-        ],
-    )
+    
     print(f"Logging to: {LOGS_DIR / 'full.log'}")
-    logging.info("Test log entry: logging is working.")
     main()
-    logging.shutdown()
+
