@@ -292,10 +292,10 @@ def run_inference(
 
     # This forces the dataset to be loaded and the metadata to be populated.
     # It's a robust way to ensure the catalog is ready.
-    print("Forcing metadata population from DatasetCatalog...")
+    logging.info("Forcing metadata population from DatasetCatalog...")
     d = DatasetCatalog.get(f"{dataset_name}_train")
     metadata = MetadataCatalog.get(f"{dataset_name}_train")
-    print("Metadata populated successfully.")
+    logging.info("Metadata populated successfully.")
 
     if rcnn == "combo":
         predictors = []
@@ -329,12 +329,12 @@ def run_inference(
     # Get the specific ROI config for this dataset, or fall back to the default
     roi_profiles = full_config.get("scale_bar_rois", {})
     roi_config = roi_profiles.get(dataset_name, roi_profiles["default"])
-    print(f"Using scale bar ROI profile for '{dataset_name}': {roi_config}")
+    logging.info(f"Using scale bar ROI profile for '{dataset_name}': {roi_config}")
 
     conv = lambda l: " ".join(map(str, l))
 
     for name in images_name:
-        print(f"Preparing masks for image {name}")
+        logging.info(f"Preparing masks for image {name}")
         image = cv2.imread(os.path.join(inpath, name))
         all_masks = []
         all_scores = []
@@ -416,7 +416,7 @@ def run_inference(
 
             for idx, test_img in enumerate(image_list, 1):
                 start_time = time.perf_counter()
-                print(f"Inferencing image {idx} out of {num_images}")
+                logging.info(f"Inferencing image {idx} out of {num_images}")
 
                 input_path = os.path.join(test_img_path, test_img)
                 im = cv2.imread(input_path)
@@ -544,7 +544,7 @@ def run_inference(
                         )
                 elapsed = time.perf_counter() - start_time
                 total_time += elapsed
-                print(f"Time taken for image {idx}: {elapsed:.3f} seconds")
+                logging.info(f"Time taken for image {idx}: {elapsed:.3f} seconds")
 
     average_time = total_time / num_images if num_images else 0
-    print(f"Average inference time per image: {average_time:.3f} seconds")
+    logging.info(f"Average inference time per image: {average_time:.3f} seconds")
