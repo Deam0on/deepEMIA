@@ -338,6 +338,7 @@ def run_inference(
         image = cv2.imread(os.path.join(inpath, name))
         all_masks = []
         all_scores = []
+        all_sources = []  # Track which model each mask came from
 
         for idx, predictor in enumerate(predictors):
             outputs = predictor(image)
@@ -356,21 +357,28 @@ def run_inference(
                 for i, mask in enumerate(masks):
                     all_masks.append(mask)
                     all_scores.append(scores[i])
+                    all_sources.append(idx)  # 0 for R50, 1 for R101
 
-        # Sort by score (optional, to keep highest-confidence masks)
+        # Sort by score (descending)
         sorted_indices = np.argsort(all_scores)[::-1]
         all_masks = [all_masks[i] for i in sorted_indices]
         all_scores = [all_scores[i] for i in sorted_indices]
+        all_sources = [all_sources[i] for i in sorted_indices]
 
         # Deduplicate
         unique_masks = []
         unique_scores = []
+        unique_sources = []
         for i, mask in enumerate(all_masks):
-            if not any(iou(mask, um) > 0.8 for um in unique_masks):
+            if not any(iou(mask, um) > 0.7 for um in unique_masks):  # Try 0.7 or 0.6
                 unique_masks.append(mask)
                 unique_scores.append(all_scores[i])
+                unique_sources.append(all_sources[i])
 
-        system_logger.info(f"After deduplication: {len(unique_masks)} unique masks for image {name}")
+        system_logger.info(
+            f"After deduplication: {len(unique_masks)} unique masks for image {name} "
+            f"(kept: {unique_sources.count(0)} from R50, {unique_sources.count(1)} from R101)"
+        )
 
         conv = lambda l: " ".join(map(str, l))
         for i, mask in enumerate(unique_masks):
