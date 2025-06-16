@@ -332,7 +332,10 @@ def main():
 
 if __name__ == "__main__":
     # Logging setup (now uses LOGS_DIR from config)
-    LOGS_DIR.mkdir(exist_ok=True)
+    try:
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        print(f"Failed to create log directory: {LOGS_DIR} ({e})")
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
@@ -341,5 +344,7 @@ if __name__ == "__main__":
             logging.FileHandler(LOGS_DIR / "full.log", mode="a", encoding="utf-8"),
         ],
     )
+    print(f"Logging to: {LOGS_DIR / 'full.log'}")
+    logging.info("Test log entry: logging is working.")
     main()
     logging.shutdown()
