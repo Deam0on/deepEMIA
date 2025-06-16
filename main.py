@@ -334,7 +334,6 @@ def main():
 
 if __name__ == "__main__":
     
-    atexit.register(system_logger.shutdown)
     try:
         LOGS_DIR.mkdir(parents=True, exist_ok=True)
     except Exception as e:
