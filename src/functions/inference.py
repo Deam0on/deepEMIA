@@ -261,7 +261,7 @@ def iou(mask1, mask2):
 def run_inference(
     dataset_name,
     output_dir,
-    visualize=False,
+    visualize=True,
     threshold=0.65,
     draw_id=False,
     dataset_format="json",
@@ -445,6 +445,27 @@ def run_inference(
                 masks = dedup_results.get(test_img, {}).get("masks", [])
                 if not masks:
                     continue
+
+                # --- Visualization: Save overlay image with deduplicated masks ---
+                if visualize:
+                    vis_img = im.copy()
+                    color = (0, 255, 0)
+                    for i, mask in enumerate(masks):
+                        # Create colored overlay for each mask
+                        colored_mask = np.zeros_like(vis_img)
+                        colored_mask[mask.astype(bool)] = color
+                        vis_img = cv2.addWeighted(vis_img, 1.0, colored_mask, 0.5, 0)
+                        # Optionally, draw contours and label
+                        contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                        cv2.drawContours(vis_img, contours, -1, (0, 0, 255), 1)
+                        # Draw instance ID at centroid
+                        M = cv2.moments(mask.astype(np.uint8))
+                        if M["m00"] > 0:
+                            cX = int(M["m10"] / M["m00"])
+                            cY = int(M["m01"] / M["m00"])
+                            cv2.putText(vis_img, str(i+1), (cX, cY), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1, cv2.LINE_AA)
+                    vis_save_path = os.path.join(output_dir, f"{test_img}_class_{x_pred}_pred.png")
+                    cv2.imwrite(vis_save_path, vis_img)
 
                 for instance_id, mask in enumerate(masks, 1):
                     binary_mask = (mask > 0).astype(np.uint8) * 255
