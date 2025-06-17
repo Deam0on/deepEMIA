@@ -1,5 +1,6 @@
 from detectron2.data import detection_utils as utils
 from detectron2.data import transforms as T
+import torch
 
 
 def custom_mapper(dataset_dict, augment=False):
@@ -23,7 +24,7 @@ def custom_mapper(dataset_dict, augment=False):
             utils.transform_instance_annotations(obj, transforms, image.shape[:2])
             for obj in annos
         ]
-    # Convert image to tensor
-    dataset_dict["image"] = utils.convert_image_to_tensor(image, "BGR")
+    # Convert image to tensor (CHW, float32)
+    dataset_dict["image"] = torch.as_tensor(image.transpose(2, 0, 1).astype("float32"))
     dataset_dict["annotations"] = annos
     return dataset_dict
