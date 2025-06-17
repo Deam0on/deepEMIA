@@ -46,6 +46,8 @@ GCS_INFERENCE_FOLDER = "DATASET/INFERENCE"
 GCS_ARCHIVE_FOLDER = "Archive"
 GCS_DATASET_INFO_PATH = "dataset_info.json"
 
+st.set_page_config(layout="wide")
+
 # Initialize session state
 if "show_errors" not in st.session_state:
     st.session_state.show_errors = False
