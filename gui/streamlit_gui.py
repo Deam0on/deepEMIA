@@ -21,6 +21,7 @@ from io import BytesIO
 from PIL import Image
 import time
 import subprocess
+import re
 from streamlit_functions import (check_password, contains_errors,
                                  create_zip_from_gcs, estimate_eta,
                                  format_and_sort_folders, list_directories,
@@ -221,16 +222,42 @@ if st.button("Run Task"):
         st.text(stdout)
         st.session_state.stderr = stderr
 
-        # --- NEW: Print log output after run is complete ---
         logs_dir = Path(config["paths"].get("logs_dir", "~/logs")).expanduser().resolve()
-        log_file = logs_dir / "full.log"
-        if log_file.exists():
-            with st.expander("Show Full Log Output"):
-                with open(log_file, "r") as lf:
-                    log_content = lf.read()
-                st.code(log_content, language="text")
+
+        def get_latest_log_file(logs_dir):
+            log_files = sorted(
+                [f for f in logs_dir.glob("system_*.log")],
+                key=lambda f: f.stat().st_mtime,
+                reverse=True,
+            )
+            return log_files[0] if log_files else None
+
+        def extract_warnings_and_errors(log_content):
+            # Only lines with [WARNING], [ERROR], or Traceback
+            pattern = re.compile(r"\[(WARNING|ERROR)\]|Traceback", re.IGNORECASE)
+            return "\n".join(line for line in log_content.splitlines() if pattern.search(line))
+
+        latest_log_file = get_latest_log_file(logs_dir)
+        if latest_log_file and latest_log_file.exists():
+            with open(latest_log_file, "r") as lf:
+                log_content = lf.read()
+            st.subheader(f"Run Log Output ({latest_log_file.name})")
+            st.code(log_content, language="text")
         else:
-            st.warning(f"Log file not found: {log_file}")
+            st.warning("No log file found.")
+
+        # Show only warnings and errors in the expander, with consistent font
+        if latest_log_file and latest_log_file.exists():
+            warnings_and_errors = extract_warnings_and_errors(log_content)
+            if warnings_and_errors.strip():
+                with st.expander("Show errors and warnings", expanded=True):
+                    st.code(warnings_and_errors, language="text")
+            else:
+                with st.expander("Show errors and warnings", expanded=False):
+                    st.info("No warnings or errors found in the latest log.")
+        else:
+            with st.expander("Show errors and warnings", expanded=False):
+                st.info("No log file found to check for warnings/errors.")
 
     if stderr:
         st.error("Errors occurred during execution. See below.")
