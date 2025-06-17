@@ -15,7 +15,6 @@ Note:
     Requires gsutil to be installed and configured with appropriate permissions.
 """
 
-from src.utils.logger_utils import system_logger
 import os
 import shutil
 import subprocess
@@ -25,6 +24,7 @@ from pathlib import Path
 import yaml
 
 from src.utils.config import get_config
+from src.utils.logger_utils import system_logger
 
 config = get_config()
 bucket = config["bucket"]

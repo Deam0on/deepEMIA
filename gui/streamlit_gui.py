@@ -14,7 +14,11 @@ provides real-time progress tracking and ETA estimation.
 
 import os
 import subprocess
+import sys
 import time
+
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 from io import BytesIO
 from pathlib import Path
 
@@ -80,7 +84,7 @@ def add_new_dataset(new_dataset_name: str, new_classes: str):
     Returns:
     - None
     """
-    path1 = f"/home//DATASET/{new_dataset_name}/"
+    path1 = f"/home/DATASET/{new_dataset_name}/"
     path2 = path1
     classes = [cls.strip() for cls in new_classes.split(",")] if new_classes else []
     if new_dataset_name and classes:
@@ -248,7 +252,7 @@ if st.button("Run Task"):
             total_eta,
         )
 
-        progress_bar.progress(100)
+        progress_bar.progress(1.0)
         countdown_placeholder.text("Task Completed")
 
     st.text(stdout)

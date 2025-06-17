@@ -14,7 +14,6 @@ The module provides a complete training pipeline with support for:
 - Evaluation during training
 """
 
-from src.utils.logger_utils import system_logger
 ## IMPORTS
 import os
 import shutil
@@ -34,6 +33,7 @@ from detectron2.evaluation import COCOEvaluator
 from src.data.datasets import read_dataset_info, register_datasets
 from src.functions.inference import CustomTrainer
 from src.utils.config import get_config
+from src.utils.logger_utils import system_logger
 
 config = get_config()
 

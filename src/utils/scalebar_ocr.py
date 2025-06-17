@@ -1,19 +1,22 @@
-from src.utils.logger_utils import system_logger
 import re
 from math import sqrt
+from pathlib import Path
 
 import cv2
 import easyocr
 import numpy as np
 import yaml
-from pathlib import Path
+
+from src.utils.logger_utils import system_logger
 
 
 class ScaleBarDetectionError(Exception):
     pass
 
 
-def detect_scale_bar(image, roi_config, intensity_threshold=200, proximity_threshold=50):
+def detect_scale_bar(
+    image, roi_config, intensity_threshold=200, proximity_threshold=50
+):
     """
     Detects scale bars in SEM images using OCR and Hough line detection.
 
@@ -55,7 +58,9 @@ def detect_scale_bar(image, roi_config, intensity_threshold=200, proximity_thres
     x_end = int(x_start + w * roi_config["width_factor"])
     y_end = int(y_start + h * roi_config["height_factor"])
 
-    system_logger.info(f"ROI for scale bar OCR: x={x_start}:{x_end}, y={y_start}:{y_end}")
+    system_logger.info(
+        f"ROI for scale bar OCR: x={x_start}:{x_end}, y={y_start}:{y_end}"
+    )
     cv2.rectangle(image, (x_start, y_start), (x_end, y_end), (0, 0, 255), 2)
 
     roi = image[y_start:y_end, x_start:x_end].copy()

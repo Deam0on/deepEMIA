@@ -5,10 +5,11 @@ Provides a singleton-style loader for the main YAML configuration file.
 Ensures the config is loaded only once and reused throughout the project.
 """
 
-from src.utils.logger_utils import system_logger
 from pathlib import Path
 
 import yaml
+
+from src.utils.logger_utils import system_logger
 
 _config = None
 

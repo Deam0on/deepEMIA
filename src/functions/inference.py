@@ -20,37 +20,29 @@ The module provides a comprehensive pipeline for:
 ## IMPORTS
 import copy
 import csv
-from src.utils.logger_utils import system_logger
 import os
 import time
 from pathlib import Path
 
-import cv2 
-import detectron2.data.transforms as T 
+import cv2
+import detectron2.data.transforms as T
 import imutils
 import numpy as np
 import pandas as pd
 import torch
 import yaml
-from detectron2.data import MetadataCatalog, build_detection_train_loader, DatasetCatalog
+from detectron2.data import (DatasetCatalog, MetadataCatalog,
+                             build_detection_train_loader)
 from detectron2.data import detection_utils as utils
 from detectron2.engine import DefaultTrainer
 from detectron2.utils.visualizer import ColorMode, Visualizer
 from imutils import perspective
 from scipy.spatial import distance as dist
 
-from src.data.datasets import (
-    read_dataset_info,
-    register_datasets,
-)
-from src.data.models import (
-    choose_and_use_model,
-    get_trained_model_paths,
-)
-from src.utils.mask_utils import (
-    postprocess_masks,
-    rle_encoding,
-)
+from src.data.datasets import read_dataset_info, register_datasets
+from src.data.models import choose_and_use_model, get_trained_model_paths
+from src.utils.logger_utils import system_logger
+from src.utils.mask_utils import postprocess_masks, rle_encoding
 from src.utils.measurements import midpoint
 from src.utils.scalebar_ocr import detect_scale_bar
 
@@ -62,7 +54,6 @@ with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
 SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
 CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
 local_dataset_root = Path(config["paths"]["local_dataset_root"]).expanduser().resolve()
-
 
 
 def custom_mapper(dataset_dicts):
@@ -260,6 +251,7 @@ def iou(mask1, mask2):
     union = np.logical_or(mask1, mask2).sum()
     return intersection / union if union > 0 else 0
 
+
 def run_inference(
     dataset_name,
     output_dir,
@@ -331,7 +323,9 @@ def run_inference(
     # Get the specific ROI config for this dataset, or fall back to the default
     roi_profiles = full_config.get("scale_bar_rois", {})
     roi_config = roi_profiles.get(dataset_name, roi_profiles["default"])
-    system_logger.info(f"Using scale bar ROI profile for '{dataset_name}': {roi_config}")
+    system_logger.info(
+        f"Using scale bar ROI profile for '{dataset_name}': {roi_config}"
+    )
 
     conv = lambda l: " ".join(map(str, l))
 
@@ -458,19 +452,34 @@ def run_inference(
                         colored_mask[mask.astype(bool)] = color
                         vis_img = cv2.addWeighted(vis_img, 1.0, colored_mask, 0.5, 0)
                         # Optionally, draw contours and label
-                        contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                        contours, _ = cv2.findContours(
+                            mask.astype(np.uint8),
+                            cv2.RETR_EXTERNAL,
+                            cv2.CHAIN_APPROX_SIMPLE,
+                        )
                         cv2.drawContours(vis_img, contours, -1, (0, 0, 255), 1)
                         # Draw instance ID at centroid
                         M = cv2.moments(mask.astype(np.uint8))
                         if M["m00"] > 0:
                             cX = int(M["m10"] / M["m00"])
                             cY = int(M["m01"] / M["m00"])
-                            cv2.putText(vis_img, str(i+1), (cX, cY), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1, cv2.LINE_AA)
-                    vis_save_path = os.path.join(local_dataset_root, f"{test_img}_class_{x_pred}_pred.png")
+                            cv2.putText(
+                                vis_img,
+                                str(i + 1),
+                                (cX, cY),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.5,
+                                (255, 0, 0),
+                                1,
+                                cv2.LINE_AA,
+                            )
+                    vis_save_path = os.path.join(
+                        local_dataset_root, f"{test_img}_class_{x_pred}_pred.png"
+                    )
                     cv2.imwrite(vis_save_path, vis_img)
 
                 for instance_id, mask in enumerate(masks, 1):
-                    binary_mask = (mask > 0).astype(np.uint8) * 255                
+                    binary_mask = (mask > 0).astype(np.uint8) * 255
                     single_im_mask = binary_mask.copy()
                     mask_3ch = np.stack([single_im_mask] * 3, axis=-1)
                     mask_filename = os.path.join(output_dir, f"mask_{instance_id}.jpg")

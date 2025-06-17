@@ -4,12 +4,11 @@ Deprecated Backup Utilities
 This module contains backup or deprecated functions for mask extraction and encoding.
 """
 
-from src.utils.logger_utils import system_logger
-
 import cv2
 import numpy as np
 import torch
 
+from src.utils.logger_utils import system_logger
 from src.utils.mask_utils import rle_encode
 
 # Ensure these are defined or imported from the correct module

@@ -17,13 +17,13 @@ ETA data is stored in a JSON file.
 """
 
 import json
-from src.utils.logger_utils import system_logger
 import os
 from pathlib import Path
 
 import yaml
 
 from src.utils.config import get_config
+from src.utils.logger_utils import system_logger
 
 config = get_config()
 

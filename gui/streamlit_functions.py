@@ -14,6 +14,10 @@ All functions are designed to integrate seamlessly with the Streamlit frontend.
 import json
 import os
 import subprocess
+import sys
+
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 import zipfile
 from datetime import datetime
 from pathlib import Path

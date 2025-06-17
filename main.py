@@ -9,7 +9,6 @@ system_logger is configured to print simplified logs to the terminal and full lo
 import argparse
 import atexit
 import glob
-from src.utils.logger_utils import system_logger
 import os
 import shutil
 import subprocess
@@ -223,7 +222,9 @@ def main():
         dataset_path = local_dataset_path / "DATASET" / args.dataset_name
         if dataset_path.exists():
             shutil.rmtree(dataset_path)
-            system_logger.info(f"Deleted training data at {dataset_path} after training.")
+            system_logger.info(
+                f"Deleted training data at {dataset_path} after training."
+            )
 
     elif args.task == "evaluate":
         system_logger.info(
@@ -280,13 +281,17 @@ def main():
         # Delete inference data after inference
         if inference_path.exists():
             shutil.rmtree(inference_path)
-            system_logger.info(f"Deleted inference data at {inference_path} after inference.")
+            system_logger.info(
+                f"Deleted inference data at {inference_path} after inference."
+            )
 
     total_end_time = datetime.now()
     total_time_taken = (total_end_time - total_start_time).total_seconds()
 
     if args.upload:
-        system_logger.info(f"Uploading results for dataset {args.dataset_name} to bucket...")
+        system_logger.info(
+            f"Uploading results for dataset {args.dataset_name} to bucket..."
+        )
         upload_time_taken = upload_data_to_bucket()
 
         # Upload logs directory to the bucket
@@ -317,7 +322,9 @@ def main():
                     file_path.unlink()
                     system_logger.info(f"Deleted result file: {file_path}")
                 except Exception as e:
-                    system_logger.warning(f"Could not delete result file {file_path}: {e}")
+                    system_logger.warning(
+                        f"Could not delete result file {file_path}: {e}"
+                    )
         output_dir = Path.home() / "output"
         if output_dir.exists():
             shutil.rmtree(output_dir)
@@ -333,12 +340,11 @@ def main():
 
 
 if __name__ == "__main__":
-    
+
     try:
         LOGS_DIR.mkdir(parents=True, exist_ok=True)
     except Exception as e:
         print(f"Failed to create log directory: {LOGS_DIR} ({e})")
-    
+
     print(f"system_logger to: {LOGS_DIR / 'full.log'}")
     main()
-

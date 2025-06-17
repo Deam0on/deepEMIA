@@ -12,7 +12,6 @@ utilities for handling various data formats and model types.
 """
 
 import json
-from src.utils.logger_utils import system_logger
 import os
 import random
 from pathlib import Path
@@ -27,6 +26,7 @@ from detectron2.structures import BoxMode
 from sklearn.model_selection import train_test_split
 
 from src.utils.config import get_config
+from src.utils.logger_utils import system_logger
 
 config = get_config()
 

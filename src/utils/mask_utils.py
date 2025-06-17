@@ -6,12 +6,13 @@ including Run-Length Encoding (RLE) and mask cleaning for segmentation tasks.
 """
 
 import itertools
-from src.utils.logger_utils import system_logger
 
 import numpy as np
 from scipy.ndimage import binary_fill_holes
 from skimage.measure import label
 from skimage.morphology import dilation, erosion
+
+from src.utils.logger_utils import system_logger
 
 
 def binary_mask_to_rle(binary_mask: np.ndarray) -> dict:

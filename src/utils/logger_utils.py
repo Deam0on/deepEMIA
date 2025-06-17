@@ -1,8 +1,9 @@
 import logging
 import os
-from pathlib import Path
 import sys
 from datetime import datetime
+from pathlib import Path
+
 
 def get_log_dir():
     if getattr(sys, "frozen", False):
@@ -13,6 +14,7 @@ def get_log_dir():
         base_dir = Path.home() / "logs"
     os.makedirs(base_dir, exist_ok=True)
     return base_dir
+
 
 LOG_DIR = get_log_dir()
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

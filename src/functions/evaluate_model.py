@@ -12,7 +12,6 @@ utilities for visualizing and saving model predictions.
 """
 
 import csv
-from src.utils.logger_utils import system_logger
 import os
 from pathlib import Path
 
@@ -27,6 +26,7 @@ from detectron2.utils.visualizer import Visualizer
 from src.data.datasets import read_dataset_info, register_datasets
 from src.data.models import choose_and_use_model, get_trained_model_paths
 from src.utils.config import get_config
+from src.utils.logger_utils import system_logger
 
 config = get_config()
 
@@ -40,7 +40,7 @@ def evaluate_model(
     output_dir: str,
     visualize: bool = False,
     dataset_format: str = "json",
-    rcnn: int = 101
+    rcnn: int = 101,
 ) -> None:
     """
     Evaluates the model on the specified dataset and optionally visualizes predictions.

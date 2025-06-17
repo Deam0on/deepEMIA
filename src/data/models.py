@@ -11,7 +11,6 @@ The module integrates with Detectron2 for computer vision tasks and provides
 utilities for handling various data formats and model types.
 """
 
-from src.utils.logger_utils import system_logger
 import os
 from pathlib import Path
 
@@ -23,6 +22,7 @@ from detectron2.data import MetadataCatalog
 from detectron2.engine import DefaultPredictor
 
 from src.utils.config import get_config
+from src.utils.logger_utils import system_logger
 
 config = get_config()
 
@@ -109,8 +109,8 @@ def load_model(cfg, model_path: str, dataset_name: str, is_quantized: bool = Fal
 
 
 def choose_and_use_model(
-    model_paths: dict, dataset_name: str, threshold: float, metadata, rcnn: int = 101):
-    
+    model_paths: dict, dataset_name: str, threshold: float, metadata, rcnn: int = 101
+):
     """
     Chooses and loads the appropriate model for a given dataset.
 
