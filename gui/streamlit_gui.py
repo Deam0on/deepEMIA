@@ -16,12 +16,11 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from io import BytesIO
-from pathlib import Path
-
 import streamlit as st
 import yaml
 from PIL import Image
