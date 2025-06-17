@@ -13,17 +13,15 @@ provides real-time progress tracking and ETA estimation.
 """
 
 import os
-import subprocess
 import sys
-import time
 from pathlib import Path
-
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from io import BytesIO
-import streamlit as st
-import yaml
 from PIL import Image
+import time
+import subprocess
+import streamlit as st
 from streamlit_functions import (check_password, contains_errors,
                                  create_zip_from_gcs, estimate_eta,
                                  format_and_sort_folders, list_directories,
@@ -67,7 +65,8 @@ if "confirm_delete" not in st.session_state:
 
 st.title("DL-IA Control Panel")
 st.header("Script controls")
-use_new_data = st.checkbox("Use new data from bucket", value=False)
+# --- Changed: Default to True ---
+use_new_data = st.checkbox("Use new data from bucket", value=True)
 
 dataset_name = st.selectbox("Dataset Name", list(st.session_state.datasets.keys()))
 
@@ -116,17 +115,16 @@ if check_password():
     new_dataset = st.checkbox("New dataset")
     if new_dataset:
         new_dataset_name = st.text_input("Enter new dataset name")
-        if new_dataset_name:
-            new_classes = st.text_input("Enter classes (comma separated)")
-            if st.button("Add Dataset"):
-                add_new_dataset(new_dataset_name, new_classes)
+        new_classes = st.text_input("Enter class names (comma-separated)")
+        if st.button("Add Dataset"):
+            add_new_dataset(new_dataset_name, new_classes)
 
     confirm_deletion = st.checkbox("Confirm Deletion")
     if st.button("Remove Dataset"):
         if confirm_deletion:
             remove_dataset(dataset_name)
         else:
-            st.warning("Please check the confirmation box to delete the dataset.")
+            st.warning("Please confirm deletion before removing a dataset.")
 
 # Define the task mapping
 task_mapping = {
@@ -136,11 +134,9 @@ task_mapping = {
     "train": "NEW MODEL TRAINING",
 }
 
-# Change the task order and create a reverse mapping for the command
 tasks_order = ["inference", "evaluate", "prepare", "train"]
 reverse_task_mapping = {v: k for k, v in task_mapping.items()}
 
-# Update task selection with user-friendly names
 task_display_names = [task_mapping[task] for task in tasks_order]
 selected_task_display = st.selectbox("Select Task", task_display_names)
 task = reverse_task_mapping[selected_task_display]
@@ -154,6 +150,13 @@ threshold = st.slider(
     help="Adjust the detection threshold for the model.",
 )
 
+# --- NEW: RCNN Model Selection ---
+rcnn_model = st.selectbox(
+    "Select RCNN Backbone",
+    options=["101", "50", "combo"],
+    index=0,
+    help="Choose the RCNN backbone: 101, 50, or combo (both)."
+)
 
 def update_progress_bar_and_countdown(
     start_time, eta, phase, progress_bar, countdown_placeholder, total_eta, process=None
@@ -201,7 +204,11 @@ if st.button("Run Task"):
     download_eta, task_eta, upload_eta = estimate_eta(task)
     total_eta = download_eta + task_eta + upload_eta
 
-    command = f"python3 {MAIN_SCRIPT_PATH} --task {task} --dataset_name {dataset_name} --threshold {threshold} {visualize_flag} {download_flag} {upload_flag}"
+    # --- Pass rcnn_model to command ---
+    command = (
+        f"python3 {MAIN_SCRIPT_PATH} --task {task} --dataset_name {dataset_name} "
+        f"--threshold {threshold} --rcnn {rcnn_model} {visualize_flag} {download_flag} {upload_flag}"
+    )
     st.info(f"Running: {command}")
 
     with st.spinner("Running task..."):
@@ -228,67 +235,52 @@ if st.button("Run Task"):
             stderr=subprocess.PIPE,
             text=True,
         )
-        update_progress_bar_and_countdown(
-            task_start_time,
-            task_eta,
-            "Task in progress",
-            progress_bar,
-            countdown_placeholder,
-            total_eta,
-            process,
-        )
-
         stdout, stderr = process.communicate()
-
-        # Upload Phase
-        start_time = time.time()
-        update_progress_bar_and_countdown(
-            start_time,
-            upload_eta,
-            "Uploading",
-            progress_bar,
-            countdown_placeholder,
-            total_eta,
-        )
-
         progress_bar.progress(1.0)
-        countdown_placeholder.text("Task Completed")
+        st.text(stdout)
+        st.session_state.stderr = stderr
 
-    st.text(stdout)
-    st.session_state.stderr = stderr
+        # --- NEW: Print log output after run is complete ---
+        logs_dir = Path(config["paths"].get("logs_dir", "~/logs")).expanduser().resolve()
+        log_file = logs_dir / "full.log"
+        if log_file.exists():
+            with open(log_file, "r") as lf:
+                log_content = lf.read()
+            st.subheader("Run Log Output")
+            st.code(log_content, language="text")
+        else:
+            st.warning(f"Log file not found: {log_file}")
 
     if stderr:
-        st.session_state.show_errors = True
+        st.error("Errors occurred during execution. See below.")
     else:
-        st.success(f"{task.capitalize()} task completed successfully!")
+        st.success("Task completed successfully.")
 
-# File upload section
+# --- Changed: Default to measurement data and overwrite ---
 upload_folder_mapping = {
-    f"{GCS_DATASET_FOLDER}/{dataset_name}": "TRAINING DATA",
     GCS_INFERENCE_FOLDER: "MEASUREMENT DATA",
+    f"{GCS_DATASET_FOLDER}/{dataset_name}": "TRAINING DATA",
 }
 reverse_upload_folder_mapping = {v: k for k, v in upload_folder_mapping.items()}
 
 if use_new_data:
     st.header("Upload Files to GCS")
     upload_folder_display_names = [
-        upload_folder_mapping[f"{GCS_DATASET_FOLDER}/{dataset_name}"],
         upload_folder_mapping[GCS_INFERENCE_FOLDER],
+        upload_folder_mapping[f"{GCS_DATASET_FOLDER}/{dataset_name}"],
     ]
+    # --- Default to MEASUREMENT DATA ---
     selected_upload_folder_display = st.selectbox(
-        "Select folder to upload to", upload_folder_display_names
+        "Select folder to upload to", upload_folder_display_names, index=0
     )
     upload_folder = reverse_upload_folder_mapping[selected_upload_folder_display]
-    overwrite = st.checkbox("Overwrite existing data in the folder")
+    # --- Default overwrite to True ---
+    overwrite = st.checkbox("Overwrite existing data in the folder", value=True)
     uploaded_files = st.file_uploader(
         "Choose files to upload", accept_multiple_files=True
     )
     if st.button("Upload Files") and uploaded_files:
-        with st.spinner("Uploading files..."):
-            upload_files_to_gcs(
-                GCS_BUCKET_NAME, upload_folder, uploaded_files, overwrite
-            )
-        st.success("Files uploaded successfully.")
+        upload_files_to_gcs(GCS_BUCKET_NAME, upload_folder, uploaded_files, overwrite)
 
 # Error and warning display
 has_errors = contains_errors(st.session_state.stderr)
