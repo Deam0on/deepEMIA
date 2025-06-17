@@ -117,12 +117,22 @@ threshold = st.slider(
     help="Adjust the detection threshold for the model.",
 )
 
-rcnn_model = st.selectbox(
+# Map display names to command-line values
+rcnn_options = {
+    "R50 (prefer small particles)": "50",
+    "R101 (prefer large particles)": "101",
+    "Dual model (universal)": "combo"
+}
+rcnn_display_names = list(rcnn_options.keys())
+
+# Set "Dual model (universal)" as default
+rcnn_model_display = st.selectbox(
     "Select RCNN Backbone",
-    options=["101", "50", "combo"],
-    index=0,
-    help="Choose the RCNN backbone: 101, 50, or combo (both)."
+    options=rcnn_display_names,
+    index=2,  # 0-based index; 2 is "Dual model (universal)"
+    help="Choose the RCNN backbone: R50 for small particles, R101 for large particles, or Dual model for universal."
 )
+rcnn_model = rcnn_options[rcnn_model_display]
 
 def add_new_dataset(new_dataset_name: str, new_classes: str):
     """
