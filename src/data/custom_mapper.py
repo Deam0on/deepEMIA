@@ -26,5 +26,12 @@ def custom_mapper(dataset_dict, augment=False):
         ]
     # Convert image to tensor (CHW, float32)
     dataset_dict["image"] = torch.as_tensor(image.transpose(2, 0, 1).astype("float32"))
-    dataset_dict["annotations"] = annos
+
+    # Convert annotations to Instances and add as 'instances'
+    if "annotations" in dataset_dict:
+        dataset_dict["instances"] = utils.annotations_to_instances(
+            annos, image.shape[:2]
+        )
+        del dataset_dict["annotations"]
+
     return dataset_dict
