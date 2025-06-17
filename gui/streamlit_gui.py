@@ -259,22 +259,22 @@ if st.button("Run Task"):
             with st.expander("Show errors and warnings", expanded=False):
                 st.info("No log file found to check for warnings/errors.")
 
-    if stderr:
-        st.error("Errors occurred during execution. See below.")
-    else:
-        st.success("Task completed successfully.")
+#     if stderr:
+#         st.error("Errors occurred during execution. See below.")
+#     else:
+#         st.success("Task completed successfully.")
 
-# Error and warning display
-has_errors = contains_errors(st.session_state.stderr)
-has_stderr = bool(st.session_state.stderr)
-expand_expander = has_errors
+# # Error and warning display
+# has_errors = contains_errors(st.session_state.stderr)
+# has_stderr = bool(st.session_state.stderr)
+# expand_expander = has_errors
 
-if has_stderr:
-    with st.expander("Show errors and warnings", expanded=expand_expander):
-        if has_errors:
-            st.error(st.session_state.stderr)
-        else:
-            st.warning(st.session_state.stderr)
+# if has_stderr:
+#     with st.expander("Show errors and warnings", expanded=expand_expander):
+#         if has_errors:
+#             st.error(st.session_state.stderr)
+#         else:
+#             st.warning(st.session_state.stderr)
 
 # List folders in the GCS bucket
 st.header("Google Cloud Storage")
