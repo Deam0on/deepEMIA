@@ -197,6 +197,11 @@ For more details, see the README or documentation.
         choices=["50", "101", "combo"],
         help="RCNN backbone to use: '50', '101', or 'combo' (both). Default is '101'.",
     )
+    parser.add_argument(
+        "--augment",
+        action="store_true",
+        help="Enable data augmentation during training (applies to both images and annotations).",
+    )
 
     args = parser.parse_args()
 
@@ -251,6 +256,7 @@ For more details, see the README or documentation.
             output_dir,
             dataset_format=args.dataset_format,
             rcnn=args.rcnn,
+            augment=args.augment,
         )
 
         # Delete dataset after training

@@ -24,7 +24,7 @@ import torch
 from albumentations.pytorch import ToTensorV2
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
-from detectron2.data import DatasetCatalog, MetadataCatalog
+from detectron2.data import DatasetCatalog, MetadataCatalog, build_detection_train_loader
 from detectron2.engine import DefaultTrainer
 from detectron2.evaluation import COCOEvaluator
 
@@ -32,6 +32,7 @@ from src.data.datasets import read_dataset_info, register_datasets
 from src.functions.inference import CustomTrainer
 from src.utils.config import get_config
 from src.utils.logger_utils import system_logger
+from src.data.custom_mapper import custom_mapper
 
 config = get_config()
 
@@ -82,9 +83,29 @@ def check_disk_space(path: str, min_gb: int = 5) -> None:
         system_logger.info(f"Disk space check passed: {free_gb:.2f} GB free at {path}.")
 
 
+class AugTrainer(DefaultTrainer):
+    def __init__(self, cfg, augment=False):
+        self.augment = augment
+        super().__init__(cfg)
+
+    @classmethod
+    def build_train_loader(cls, cfg, augment=False):
+        # Pass augment flag to the custom mapper
+        return build_detection_train_loader(cfg, mapper=lambda d: custom_mapper(d, augment=augment))
+
+    def build_hooks(self):
+        # If you have custom hooks, add them here
+        return super().build_hooks()
+
+
 def train_on_dataset(
-    dataset_name: str, output_dir: str, dataset_format: str = "json", rcnn: str = "101"
-) -> None:
+    dataset_name,
+    output_dir,
+    dataset_format="json",
+    rcnn="101",
+    augment=False,
+    # ...other args...
+):
     """
     Trains a model on the specified dataset with the selected backbone(s).
 
@@ -112,6 +133,12 @@ def train_on_dataset(
     system_logger.info(f"Test images: {len(test_data)}")
     categories = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
     system_logger.info(f"Categories: {categories}")
+
+    # Log augmentation status
+    if augment:
+        system_logger.info("Data augmentation is ENABLED for training (using custom_mapper with flips, rotation, brightness).")
+    else:
+        system_logger.info("Data augmentation is DISABLED for training.")
 
     def train_with_backbone(
         backbone_name: str, config_file: str, model_suffix: str
@@ -153,7 +180,25 @@ def train_on_dataset(
         system_logger.info(
             f"Classes: {MetadataCatalog.get(cfg.DATASETS.TRAIN[0]).thing_classes}"
         )
-        trainer = CustomTrainer(cfg)
+        # Log hyperparameters
+        system_logger.info(
+            f"Training hyperparameters: "
+            f"Backbone={backbone_name}, "
+            f"Base LR={cfg.SOLVER.BASE_LR}, "
+            f"Batch Size={cfg.SOLVER.IMS_PER_BATCH}, "
+            f"Max Iter={cfg.SOLVER.MAX_ITER}, "
+            f"Steps={cfg.SOLVER.STEPS}, "
+            f"Gamma={cfg.SOLVER.GAMMA}, "
+            f"Warmup Iters={cfg.SOLVER.WARMUP_ITERS}, "
+            f"Warmup Factor={cfg.SOLVER.WARMUP_FACTOR}, "
+            f"ROI Batch Size={cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE}, "
+            f"Num Classes={cfg.MODEL.ROI_HEADS.NUM_CLASSES}, "
+            f"Device={cfg.MODEL.DEVICE}"
+        )
+        trainer = AugTrainer(cfg, augment=augment)
+        trainer.build_train_loader = lambda: build_detection_train_loader(
+            cfg, mapper=lambda d: custom_mapper(d, augment=augment)
+        )
         trainer.resume_or_load(resume=False)
         trainer.train()
 
