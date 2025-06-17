@@ -45,6 +45,18 @@ GCS_INFERENCE_FOLDER = "DATASET/INFERENCE"
 GCS_ARCHIVE_FOLDER = "Archive"
 GCS_DATASET_INFO_PATH = "dataset_info.json"
 
+def update_progress_bar_and_countdown(
+    start_time, eta, phase, progress_bar, countdown_placeholder, total_eta, process=None
+):
+    """Update a progress bar and countdown timer for a given phase."""
+    elapsed = 0
+    while elapsed < eta:
+        percent = min((elapsed + 1) / total_eta, 1.0)
+        progress_bar.progress(percent)
+        countdown_placeholder.info(f"{phase}... {int(eta - elapsed)}s remaining")
+        time.sleep(1)
+        elapsed += 1
+    countdown_placeholder.empty()
 
 def create_zip_from_gcs(bucket_name, folder, zip_name="archive.zip"):
     """
