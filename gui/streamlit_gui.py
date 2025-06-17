@@ -15,13 +15,15 @@ provides real-time progress tracking and ETA estimation.
 import os
 import sys
 from pathlib import Path
+
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-import streamlit as st
-from io import BytesIO
-from PIL import Image
-import time
-import subprocess
 import re
+import subprocess
+import time
+from io import BytesIO
+
+import streamlit as st
+from PIL import Image
 from streamlit_functions import (check_password, contains_errors,
                                  create_zip_from_gcs, estimate_eta,
                                  format_and_sort_folders, list_directories,
@@ -29,8 +31,8 @@ from streamlit_functions import (check_password, contains_errors,
                                  list_specific_csv_files_in_gcs_folder,
                                  load_dataset_names_from_gcs,
                                  save_dataset_names_to_gcs,
-                                 upload_files_to_gcs,
-                                 update_progress_bar_and_countdown)
+                                 update_progress_bar_and_countdown,
+                                 upload_files_to_gcs)
 
 from src.utils.config import get_config
 
@@ -63,7 +65,9 @@ if "confirm_delete" not in st.session_state:
     st.session_state.confirm_delete = False
 
 # --- Streamlit UI ---
-st.markdown("<h1 style='color:#4F8BF9;'>DL-IA Control Panel</h1>", unsafe_allow_html=True)
+st.markdown(
+    "<h1 style='color:#4F8BF9;'>DL-IA Control Panel</h1>", unsafe_allow_html=True
+)
 st.markdown("---")
 st.header("Upload Data to Google Cloud Storage")
 
@@ -121,7 +125,7 @@ threshold = st.slider(
 rcnn_options = {
     "R50 (prefer small particles)": "50",
     "R101 (prefer large particles)": "101",
-    "Dual model (universal)": "combo"
+    "Dual model (universal)": "combo",
 }
 rcnn_display_names = list(rcnn_options.keys())
 
@@ -130,9 +134,10 @@ rcnn_model_display = st.selectbox(
     "Select RCNN Backbone",
     options=rcnn_display_names,
     index=2,  # 0-based index; 2 is "Dual model (universal)"
-    help="Choose the RCNN backbone: R50 for small particles, R101 for large particles, or Dual model for universal."
+    help="Choose the RCNN backbone: R50 for small particles, R101 for large particles, or Dual model for universal.",
 )
 rcnn_model = rcnn_options[rcnn_model_display]
+
 
 def add_new_dataset(new_dataset_name: str, new_classes: str):
     """
@@ -234,7 +239,9 @@ if st.button("Run Task"):
         st.text(stdout)
         st.session_state.stderr = stderr
 
-        logs_dir = Path(config["paths"].get("logs_dir", "~/logs")).expanduser().resolve()
+        logs_dir = (
+            Path(config["paths"].get("logs_dir", "~/logs")).expanduser().resolve()
+        )
 
         def get_latest_log_file(logs_dir):
             log_files = sorted(
@@ -247,7 +254,9 @@ if st.button("Run Task"):
         def extract_warnings_and_errors(log_content):
             # Only lines with [WARNING], [ERROR], or Traceback
             pattern = re.compile(r"\[(WARNING|ERROR)\]|Traceback", re.IGNORECASE)
-            return "\n".join(line for line in log_content.splitlines() if pattern.search(line))
+            return "\n".join(
+                line for line in log_content.splitlines() if pattern.search(line)
+            )
 
         latest_log_file = get_latest_log_file(logs_dir)
         if latest_log_file and latest_log_file.exists():
@@ -270,23 +279,6 @@ if st.button("Run Task"):
         else:
             with st.expander("Show errors and warnings", expanded=False):
                 st.info("No log file found to check for warnings/errors.")
-
-#     if stderr:
-#         st.error("Errors occurred during execution. See below.")
-#     else:
-#         st.success("Task completed successfully.")
-
-# # Error and warning display
-# has_errors = contains_errors(st.session_state.stderr)
-# has_stderr = bool(st.session_state.stderr)
-# expand_expander = has_errors
-
-# if has_stderr:
-#     with st.expander("Show errors and warnings", expanded=expand_expander):
-#         if has_errors:
-#             st.error(st.session_state.stderr)
-#         else:
-#             st.warning(st.session_state.stderr)
 
 # List folders in the GCS bucket
 st.header("Google Cloud Storage")

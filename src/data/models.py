@@ -15,7 +15,6 @@ import os
 from pathlib import Path
 
 import torch
-import yaml
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
 from detectron2.data import MetadataCatalog

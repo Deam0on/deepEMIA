@@ -116,6 +116,7 @@ All configuration is managed via [`config/config.yaml`](config/config.yaml):
 - `bucket`: Name of your GCS bucket
 - `paths`: Paths for scripts, splits, category info, ETA file, and dataset root
 - `scale_bar_rois`: Default and per-dataset ROI settings for scale bar detection
+- `admin_password`: Password for accessing admin features in the web interface. Placeholder for now, will be re-done with fernet.crypto
 
 Example:
 
@@ -159,6 +160,12 @@ After setup, you can proceed to use the other tasks (`prepare`, `train`, `evalua
 ### Command Line Interface
 
 The main pipeline is controlled via [`main.py`](main.py):
+
+For a full list of options and usage examples, run:
+
+```sh
+python main.py --help
+```
 
 #### Prepare Dataset
 
@@ -245,8 +252,19 @@ A Streamlit-based web interface is provided for interactive use.
 
 - **Add new datasets:** Update `dataset_info.json` and place your data in the expected structure.
 - **Add new tasks or models:** Implement new modules in `src/functions/` or `src/data/`.
-- **Customize measurement/extraction:** Extend `src/utils/measurements.py` or `src/utils/scalebar_ocr.py`.
+- **Customize measurement/extraction:** Extend or modify `src/utils/measurements.py` for geometric and color measurements, or `src/utils/scalebar_ocr.py` for scale bar detection.
 - **Web interface:** Add new features to `gui/streamlit_gui.py` and `gui/streamlit_functions.py`.
+
+## Logs
+
+All pipeline logs are saved in the directory specified by `logs_dir` in your config (default: `~/logs`). After each run, logs are uploaded to your GCS bucket for traceability.
+
+## Web Interface Notes
+
+- The RCNN backbone selector defaults to "Dual model (universal)" for best generalization.
+- The upload section is now at the top for a more intuitive workflow.
+- Only warnings and errors are shown in the error panel for clarity.
+- The log viewer always shows the latest run log.
 
 ## Contributing
 

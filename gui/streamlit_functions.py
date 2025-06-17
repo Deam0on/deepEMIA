@@ -19,12 +19,12 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
+import time
 import zipfile
 from datetime import datetime
 from tempfile import TemporaryDirectory
-import time
+
 import streamlit as st
-import yaml
 from google.api_core import page_iterator
 from google.cloud import storage
 
@@ -46,6 +46,7 @@ GCS_INFERENCE_FOLDER = "DATASET/INFERENCE"
 GCS_ARCHIVE_FOLDER = "Archive"
 GCS_DATASET_INFO_PATH = "dataset_info.json"
 
+
 def update_progress_bar_and_countdown(
     start_time, eta, phase, progress_bar, countdown_placeholder, total_eta, process=None
 ):
@@ -58,6 +59,7 @@ def update_progress_bar_and_countdown(
         time.sleep(1)
         elapsed += 1
     countdown_placeholder.empty()
+
 
 def create_zip_from_gcs(bucket_name, folder, zip_name="archive.zip"):
     """

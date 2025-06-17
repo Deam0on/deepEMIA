@@ -20,9 +20,7 @@ import shutil
 from pathlib import Path
 
 import albumentations as A
-import cv2
 import torch
-import yaml
 from albumentations.pytorch import ToTensorV2
 from detectron2 import model_zoo
 from detectron2.config import get_cfg

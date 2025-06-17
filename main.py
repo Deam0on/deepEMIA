@@ -97,7 +97,42 @@ def main():
     - Task execution with appropriate parameters
     """
     parser = argparse.ArgumentParser(
-        description="Pipeline for preparing data, training, evaluating, and running inference on models."
+        description="Computer Vision Pipeline: Prepare data, train, evaluate, and run inference.",
+        epilog="""
+Examples:
+  Prepare a dataset:
+    python main.py --task prepare --dataset_name <dataset_name>
+
+  Train a model (default: R101 backbone):
+    python main.py --task train --dataset_name <dataset_name> --rcnn 101
+
+  Train with both backbones (combo):
+    python main.py --task train --dataset_name <dataset_name> --rcnn combo
+
+  Evaluate a model:
+    python main.py --task evaluate --dataset_name <dataset_name> --visualize
+
+  Run inference (with threshold and dual model):
+    python main.py --task inference --dataset_name <dataset_name> --threshold 0.65 --rcnn combo --visualize
+
+  Run setup (first-time configuration):
+    python main.py --task setup
+
+Tasks:
+  prepare    Prepare the dataset by splitting into train and test sets.
+  train      Train a model on the dataset.
+  evaluate   Evaluate the trained model on the test set.
+  inference  Run inference on new data using the trained model.
+  setup      Run first-time configuration setup.
+
+RCNN Backbone options:
+  50      R50 (prefer small particles)
+  101     R101 (prefer large particles, default)
+  combo   Dual model (universal, merges both)
+
+For more details, see the README or documentation.
+""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--task",

@@ -15,13 +15,10 @@ Note:
     Requires gsutil to be installed and configured with appropriate permissions.
 """
 
-import os
 import shutil
 import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
-
-import yaml
 
 from src.utils.config import get_config
 from src.utils.logger_utils import system_logger

@@ -16,7 +16,6 @@ import os
 from pathlib import Path
 
 import cv2
-import yaml
 from detectron2.config import get_cfg
 from detectron2.data import (DatasetCatalog, MetadataCatalog,
                              build_detection_test_loader)

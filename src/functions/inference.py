@@ -36,14 +36,12 @@ from detectron2.data import (DatasetCatalog, MetadataCatalog,
 from detectron2.data import detection_utils as utils
 from detectron2.engine import DefaultTrainer
 from detectron2.utils.visualizer import ColorMode, Visualizer
-from imutils import perspective
-from scipy.spatial import distance as dist
 
 from src.data.datasets import read_dataset_info, register_datasets
 from src.data.models import choose_and_use_model, get_trained_model_paths
 from src.utils.logger_utils import system_logger
 from src.utils.mask_utils import postprocess_masks, rle_encoding
-from src.utils.measurements import midpoint
+from src.utils.measurements import calculate_measurements
 from src.utils.scalebar_ocr import detect_scale_bar
 
 # Load config once at the start of your program
@@ -494,81 +492,29 @@ def run_inference(
                         pixelsPerMetric = 1
                         if cv2.contourArea(c) < 100:
                             continue
-                        area = cv2.contourArea(c)
-                        perimeter = cv2.arcLength(c, True)
 
-                        orig = single_im_mask.copy()
-                        box = cv2.minAreaRect(c)
-                        box = (
-                            cv2.boxPoints(box)
-                            if imutils.is_cv2()
-                            else cv2.boxPoints(box)
+                        measurements = calculate_measurements(
+                            c,
+                            single_im_mask,
+                            um_pix=um_pix,
+                            pixelsPerMetric=pixelsPerMetric,
                         )
-                        box = np.array(box, dtype="int")
-                        box = perspective.order_points(box)
-                        cv2.drawContours(orig, [box.astype("int")], -1, (0, 255, 0), 2)
-                        for x, y in box:
-                            cv2.circle(orig, (int(x), int(y)), 5, (0, 0, 255), -1)
-                        (tl, tr, br, bl) = box
-                        (tltrX, tltrY) = midpoint(tl, tr)
-                        (blbrX, blbrY) = midpoint(bl, br)
-                        (tlblX, tlblY) = midpoint(tl, bl)
-                        (trbrX, trbrY) = midpoint(tr, br)
-                        dA = dist.euclidean((tltrX, tltrY), (blbrX, blbrY))
-                        dB = dist.euclidean((tlblX, tlblY), (trbrX, trbrY))
-                        dimA = dA / pixelsPerMetric
-                        dimB = dB / pixelsPerMetric
-
-                        dimArea = area / pixelsPerMetric
-                        dimPerimeter = perimeter / pixelsPerMetric
-                        diaFeret = max(dimA, dimB)
-                        if (dimA and dimB) != 0:
-                            Aspect_Ratio = max(dimB, dimA) / min(dimA, dimB)
-                        else:
-                            Aspect_Ratio = 0
-                        Length = min(dimA, dimB) * um_pix
-                        Width = max(dimA, dimB) * um_pix
-
-                        CircularED = np.sqrt(4 * area / np.pi) * um_pix
-                        Chords = cv2.arcLength(c, True) * um_pix
-                        Roundness = 1 / Aspect_Ratio if Aspect_Ratio != 0 else 0
-                        Sphericity = (
-                            (2 * np.sqrt(np.pi * dimArea)) / dimPerimeter * um_pix
-                        )
-                        Circularity = (
-                            4 * np.pi * (dimArea / (dimPerimeter) ** 2) * um_pix
-                        )
-                        Feret_diam = diaFeret * um_pix
-
-                        ellipse = cv2.fitEllipse(c)
-                        (x, y), (major_axis, minor_axis), angle = ellipse
-
-                        if major_axis > minor_axis:
-                            a = major_axis / 2.0
-                            b = minor_axis / 2.0
-                        else:
-                            a = minor_axis / 2.0
-                            b = major_axis / 2.0
-                        eccentricity = np.sqrt(1 - (b**2 / a**2))
-
-                        major_axis_length = major_axis / pixelsPerMetric * um_pix
-                        minor_axis_length = minor_axis / pixelsPerMetric * um_pix
 
                         csvwriter.writerow(
                             [
                                 instance_id,
-                                major_axis_length,
-                                minor_axis_length,
-                                eccentricity,
-                                Length,
-                                Width,
-                                CircularED,
-                                Aspect_Ratio,
-                                Circularity,
-                                Chords,
-                                Feret_diam,
-                                Roundness,
-                                Sphericity,
+                                measurements["major_axis_length"],
+                                measurements["minor_axis_length"],
+                                measurements["eccentricity"],
+                                measurements["Length"],
+                                measurements["Width"],
+                                measurements["CircularED"],
+                                measurements["Aspect_Ratio"],
+                                measurements["Circularity"],
+                                measurements["Chords"],
+                                measurements["Feret_diam"],
+                                measurements["Roundness"],
+                                measurements["Sphericity"],
                                 psum,
                                 test_img,
                             ]

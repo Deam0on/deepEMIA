@@ -20,8 +20,6 @@ import json
 import os
 from pathlib import Path
 
-import yaml
-
 from src.utils.config import get_config
 from src.utils.logger_utils import system_logger
 

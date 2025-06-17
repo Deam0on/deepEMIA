@@ -94,11 +94,9 @@ def detect_scale_bar(
                 )
                 break
         else:
-            pxum_r = ""
             psum = "0"
             text_box_center = None
     else:
-        pxum_r = ""
         psum = "0"
         text_box_center = None
         system_logger.warning("No text detected by OCR in scale bar ROI.")
