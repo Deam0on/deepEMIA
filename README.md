@@ -219,6 +219,18 @@ python main.py --task inference --dataset_name <dataset_name> --rcnn combo
 
 When using `--rcnn combo` for inference, the pipeline will run both models on each image, merge their predictions, and remove duplicates using non-maximum suppression with the default IoU threshold.
 
+### Data Augmentation
+
+You can enable data augmentation during training by adding the `--augment` flag to your command. This will apply random flips, rotations, and brightness changes to both images and their annotations.
+
+**Example:**
+
+```sh
+python main.py --task train --augment
+```
+
+If you omit `--augment`, training will use the original images without augmentation.
+
 ### Web Interface
 
 A Streamlit-based web interface is provided for interactive use.
