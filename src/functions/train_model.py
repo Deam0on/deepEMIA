@@ -24,15 +24,16 @@ import torch
 from albumentations.pytorch import ToTensorV2
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
-from detectron2.data import DatasetCatalog, MetadataCatalog, build_detection_train_loader
+from detectron2.data import (DatasetCatalog, MetadataCatalog,
+                             build_detection_train_loader)
 from detectron2.engine import DefaultTrainer
 from detectron2.evaluation import COCOEvaluator
 
+from src.data.custom_mapper import custom_mapper
 from src.data.datasets import read_dataset_info, register_datasets
 from src.functions.inference import CustomTrainer
 from src.utils.config import get_config
 from src.utils.logger_utils import system_logger
-from src.data.custom_mapper import custom_mapper
 
 config = get_config()
 
@@ -91,7 +92,9 @@ class AugTrainer(DefaultTrainer):
     @classmethod
     def build_train_loader(cls, cfg, augment=False):
         # Pass augment flag to the custom mapper
-        return build_detection_train_loader(cfg, mapper=lambda d: custom_mapper(d, augment=augment))
+        return build_detection_train_loader(
+            cfg, mapper=lambda d: custom_mapper(d, augment=augment)
+        )
 
     def build_hooks(self):
         # If you have custom hooks, add them here
@@ -136,7 +139,9 @@ def train_on_dataset(
 
     # Log augmentation status
     if augment:
-        system_logger.info("Data augmentation is ENABLED for training (using custom_mapper with flips, rotation, brightness).")
+        system_logger.info(
+            "Data augmentation is ENABLED for training (using custom_mapper with flips, rotation, brightness)."
+        )
     else:
         system_logger.info("Data augmentation is DISABLED for training.")
 
