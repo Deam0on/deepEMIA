@@ -310,10 +310,15 @@ def run_inference(
     path = output_dir
     os.makedirs(path, exist_ok=True)
     inpath = image_folder_path
-    images_name = [f for f in os.listdir(inpath) if f.endswith(".tif")]
+    images_name = [f for f in os.listdir(inpath) if is_image_file(f)]  # <-- changed here
 
     Img_ID = []
     EncodedPixels = []
+
+    # --- NEW: Track processed images and timing ---
+    processed_images = set()
+    total_images = len(images_name)
+    overall_start_time = time.perf_counter()  # Start timing before first mask
 
     with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
         full_config = yaml.safe_load(f)
@@ -330,14 +335,14 @@ def run_inference(
     # Store deduplicated masks for each image
     dedup_results = {}
 
-    for name in images_name:
-        system_logger.info(f"Preparing masks for image {name}")
+    for idx, name in enumerate(images_name, 1):
+        system_logger.info(f"Preparing masks for image {name} ({idx} out of {total_images})")
         image = cv2.imread(os.path.join(inpath, name))
         all_masks = []
         all_scores = []
         all_sources = []
 
-        for idx, predictor in enumerate(predictors):
+        for pred_idx, predictor in enumerate(predictors):
             outputs = predictor(image)
             masks = postprocess_masks(
                 np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
@@ -346,7 +351,7 @@ def run_inference(
             )
             scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
             logger_msg = (
-                f"Predictor {idx} ({'R50' if len(predictors)==2 and idx==0 else 'R101' if len(predictors)==2 and idx==1 else rcnn}): "
+                f"Predictor {pred_idx} ({'R50' if len(predictors)==2 and pred_idx==0 else 'R101' if len(predictors)==2 and pred_idx==1 else rcnn}): "
                 f"found {len(masks) if masks is not None else 0} masks for image {name}"
             )
             system_logger.info(logger_msg)
@@ -354,7 +359,7 @@ def run_inference(
                 for i, mask in enumerate(masks):
                     all_masks.append(mask)
                     all_scores.append(scores[i])
-                    all_sources.append(idx)
+                    all_sources.append(pred_idx)
 
         # Sort by score (descending)
         sorted_indices = np.argsort(all_scores)[::-1]
@@ -384,10 +389,23 @@ def run_inference(
             "sources": unique_sources,
         }
 
+        processed_images.add(name)
+
         conv = lambda l: " ".join(map(str, l))
         for i, mask in enumerate(unique_masks):
-            Img_ID.append(name.replace(".tif", ""))
+            Img_ID.append(name.rsplit('.', 1)[0])
             EncodedPixels.append(conv(rle_encoding(mask)))
+
+    overall_elapsed = time.perf_counter() - overall_start_time  # End timing after last mask
+    average_time = overall_elapsed / total_images if total_images else 0
+    system_logger.info(f"Average mask generation and deduplication time per image: {average_time:.3f} seconds")
+
+    # --- Ensure all images were processed ---
+    unprocessed = set(images_name) - processed_images
+    if unprocessed:
+        system_logger.warning(f"The following images were not processed: {unprocessed}")
+    else:
+        system_logger.info("All images in the INFERENCE folder were processed.")
 
     df = pd.DataFrame({"ImageId": Img_ID, "EncodedPixels": EncodedPixels})
     df.to_csv(os.path.join(path, "R50_flip_results.csv"), index=False, sep=",")
