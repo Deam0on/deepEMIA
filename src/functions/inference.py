@@ -220,7 +220,9 @@ def GetInferenceNoID(predictor, im, x_pred, metadata, test_img):
     cv2.imwrite(
         test_img + "_" + str(x_pred) + "__pred.png", out.get_image()[:, :, ::-1]
     )
-
+    
+def is_image_file(filename):
+    return filename.lower().endswith(('.tif', '.tiff', '.png', '.jpg', '.jpeg', '.bmp', '.gif'))
 
 def GetCounts(predictor, im, TList, PList):
     """
@@ -543,3 +545,4 @@ def run_inference(
 
     average_time = total_time / num_images if num_images else 0
     system_logger.info(f"Average inference time per image: {average_time:.3f} seconds")
+
