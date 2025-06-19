@@ -202,6 +202,13 @@ For more details, see the README or documentation.
         action="store_true",
         help="Enable data augmentation during training (applies to both images and annotations).",
     )
+    parser.add_argument(
+        "--pass",
+        dest="pass_mode",
+        choices=["single", "multi"],
+        default="single",
+        help="Inference pass mode: 'single' for one pass, 'multi' for iterative deduplication",
+    )
 
     args = parser.parse_args()
 
@@ -313,6 +320,7 @@ For more details, see the README or documentation.
             draw_id=args.draw_id,
             dataset_format=args.dataset_format,
             rcnn=args.rcnn,
+            pass_mode=args.pass_mode,  # <-- Pass the argument here
         )
 
         task_end_time = datetime.now()

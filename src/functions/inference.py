@@ -28,8 +28,11 @@ import cv2
 import detectron2.data.transforms as T
 import imutils
 import numpy as np
+import os
+import time
+import cv2
 import pandas as pd
-import torch
+import csv
 import yaml
 from detectron2.data import (DatasetCatalog, MetadataCatalog,
                              build_detection_train_loader)
@@ -252,6 +255,58 @@ def iou(mask1, mask2):
     return intersection / union if union > 0 else 0
 
 
+def iterative_combo_predictors(predictors, image, iou_threshold=0.7, min_increase=0.10, max_iters=10):
+    """
+    Run both predictors iteratively, deduplicating after each round,
+    until the number of unique masks increases by less than min_increase.
+    """
+    all_masks = []
+    all_scores = []
+    all_sources = []
+    prev_count = 0
+
+    for iteration in range(max_iters):
+        new_masks = []
+        new_scores = []
+        new_sources = []
+        for pred_idx, predictor in enumerate(predictors):
+            outputs = predictor(image)
+            masks = postprocess_masks(
+                np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
+                outputs["instances"].to("cpu")._fields["scores"].numpy(),
+                image,
+            )
+            scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
+            if masks:
+                for i, mask in enumerate(masks):
+                    new_masks.append(mask)
+                    new_scores.append(scores[i])
+                    new_sources.append(pred_idx)
+        # Combine with previous masks
+        all_masks.extend(new_masks)
+        all_scores.extend(new_scores)
+        all_sources.extend(new_sources)
+        # Deduplicate
+        unique_masks = []
+        unique_scores = []
+        unique_sources = []
+        for i, mask in enumerate(all_masks):
+            if not any(iou(mask, um) > iou_threshold for um in unique_masks):
+                unique_masks.append(mask)
+                unique_scores.append(all_scores[i])
+                unique_sources.append(all_sources[i])
+        new_count = len(unique_masks)
+        if prev_count > 0:
+            increase = (new_count - prev_count) / max(prev_count, 1)
+            if increase < min_increase:
+                break
+        prev_count = new_count
+        all_masks = unique_masks
+        all_scores = unique_scores
+        all_sources = unique_sources
+    return unique_masks, unique_scores, unique_sources
+
+
 def run_inference(
     dataset_name,
     output_dir,
@@ -260,6 +315,7 @@ def run_inference(
     draw_id=False,
     dataset_format="json",
     rcnn=50,  # can be 50, 101, or "both"
+    pass_mode="single",  # <-- NEW ARGUMENT: "single" or "multi"
 ):
     """
     Runs inference on a dataset and saves the results.
@@ -344,40 +400,64 @@ def run_inference(
         all_scores = []
         all_sources = []
 
-        for pred_idx, predictor in enumerate(predictors):
-            outputs = predictor(image)
-            masks = postprocess_masks(
-                np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
-                outputs["instances"].to("cpu")._fields["scores"].numpy(),
-                image,
-            )
-            scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
-            logger_msg = (
-                f"Predictor {pred_idx} ({'R50' if len(predictors)==2 and pred_idx==0 else 'R101' if len(predictors)==2 and pred_idx==1 else rcnn}): "
-                f"found {len(masks) if masks is not None else 0} masks for image {name}"
-            )
-            system_logger.info(logger_msg)
-            if masks:
-                for i, mask in enumerate(masks):
-                    all_masks.append(mask)
-                    all_scores.append(scores[i])
-                    all_sources.append(pred_idx)
-
-        # Sort by score (descending)
-        sorted_indices = np.argsort(all_scores)[::-1]
-        all_masks = [all_masks[i] for i in sorted_indices]
-        all_scores = [all_scores[i] for i in sorted_indices]
-        all_sources = [all_sources[i] for i in sorted_indices]
-
-        # Deduplicate
-        unique_masks = []
-        unique_scores = []
-        unique_sources = []
-        for i, mask in enumerate(all_masks):
-            if not any(iou(mask, um) > 0.7 for um in unique_masks):
-                unique_masks.append(mask)
-                unique_scores.append(all_scores[i])
-                unique_sources.append(all_sources[i])
+        if rcnn == "combo":
+            if pass_mode == "multi":
+                unique_masks, unique_scores, unique_sources = iterative_combo_predictors(
+                    predictors, image, iou_threshold=0.7, min_increase=0.10, max_iters=10
+                )
+            else:  # single pass (default/original)
+                all_masks = []
+                all_scores = []
+                all_sources = []
+                for pred_idx, predictor in enumerate(predictors):
+                    outputs = predictor(image)
+                    masks = postprocess_masks(
+                        np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
+                        outputs["instances"].to("cpu")._fields["scores"].numpy(),
+                        image,
+                    )
+                    scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
+                    if masks:
+                        for i, mask in enumerate(masks):
+                            all_masks.append(mask)
+                            all_scores.append(scores[i])
+                            all_sources.append(pred_idx)
+                # Deduplicate as before
+                unique_masks = []
+                unique_scores = []
+                unique_sources = []
+                for i, mask in enumerate(all_masks):
+                    if not any(iou(mask, um) > 0.7 for um in unique_masks):
+                        unique_masks.append(mask)
+                        unique_scores.append(all_scores[i])
+                        unique_sources.append(all_sources[i])
+        else:
+            # ...existing single-model logic...
+            all_masks = []
+            all_scores = []
+            all_sources = []
+            for pred_idx, predictor in enumerate(predictors):
+                outputs = predictor(image)
+                masks = postprocess_masks(
+                    np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
+                    outputs["instances"].to("cpu")._fields["scores"].numpy(),
+                    image,
+                )
+                scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
+                if masks:
+                    for i, mask in enumerate(masks):
+                        all_masks.append(mask)
+                        all_scores.append(scores[i])
+                        all_sources.append(pred_idx)
+            # Deduplicate as before
+            unique_masks = []
+            unique_scores = []
+            unique_sources = []
+            for i, mask in enumerate(all_masks):
+                if not any(iou(mask, um) > 0.7 for um in unique_masks):
+                    unique_masks.append(mask)
+                    unique_scores.append(all_scores[i])
+                    unique_sources.append(all_sources[i])
 
         system_logger.info(
             f"After deduplication: {len(unique_masks)} unique masks for image {name} "
