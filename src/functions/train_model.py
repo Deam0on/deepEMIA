@@ -200,10 +200,13 @@ def train_on_dataset(
             f"Num Classes={cfg.MODEL.ROI_HEADS.NUM_CLASSES}, "
             f"Device={cfg.MODEL.DEVICE}"
         )
-        trainer = AugTrainer(cfg, augment=augment)
-        trainer.build_train_loader = lambda: build_detection_train_loader(
-            cfg, mapper=lambda d: custom_mapper(d, augment=augment)
-        )
+        if augment:
+            trainer = AugTrainer(cfg, augment=augment)
+            trainer.build_train_loader = lambda: build_detection_train_loader(
+                cfg, mapper=lambda d: custom_mapper(d, augment=augment)
+            )
+        else:
+            trainer = DefaultTrainer(cfg)
         trainer.resume_or_load(resume=False)
         trainer.train()
 
