@@ -93,8 +93,8 @@ The pipeline is suitable for scientific and industrial applications requiring re
 1. **Clone the repository:**
 
    ```sh
-   git clone https://github.com/yourusername/uw-com-vision.git
-   cd uw-com-vision
+   git clone https://github.com/yourusername/deepEMIA.git
+   cd deepEMIA
    ```
 
 2. **Install dependencies:**
@@ -127,10 +127,10 @@ Example:
 ```yaml
 bucket: your-bucket-name
 paths:
-  main_script: "~/uw-com-vision/main.py"
+  main_script: "~/deepEMIA/main.py"
   split_dir: "~/split_dir"
-  category_json: "~/uw-com-vision/dataset_info.json"
-  eta_file: "~/uw-com-vision/config/eta_data.json"
+  category_json: "~/deepEMIA/dataset_info.json"
+  eta_file: "~/deepEMIA/config/eta_data.json"
   local_dataset_root: "~"
 scale_bar_rois:
   default:
@@ -311,4 +311,4 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 
 ## Support
 
-For questions, bug reports, or feature requests, please open an issue in the [GitHub repository](https://github.com/yourusername/uw-com-vision/issues).
+For questions, bug reports, or feature requests, please open an issue in the [GitHub repository](https://github.com/yourusername/deepEMIA/issues).

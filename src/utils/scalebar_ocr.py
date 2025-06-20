@@ -30,7 +30,7 @@ def detect_scale_bar(
         - microns_per_pixel (float): The conversion factor from pixels to microns
     """
     # --- Load thresholds from config if available ---
-    config_path = Path.home() / "uw-com-vision" / "config" / "config.yaml"
+    config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
     if config_path.exists():
         try:
             with open(config_path, "r") as f:

@@ -1,11 +1,11 @@
 bucket: nn-uct
 paths:
-  main_script: "~/uw-com-vision/main.py"
+  main_script: "~/deepEMIA/main.py"
   split_dir: "~/split_dir"
-  category_json: "~/uw-com-vision/dataset_info.json"
-  eta_file: "~/uw-com-vision/config/eta_data.json"
+  category_json: "~/deepEMIA/dataset_info.json"
+  eta_file: "~/deepEMIA/config/eta_data.json"
   logs_dir: "~/logs"
-  output_dir: "~/uw-com-vision/output"
+  output_dir: "~/deepEMIA/output"
   local_dataset_root: "~"
 scale_bar_rois:
   default:

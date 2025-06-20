@@ -1,6 +1,6 @@
+import torch
 from detectron2.data import detection_utils as utils
 from detectron2.data import transforms as T
-import torch
 
 
 def custom_mapper(dataset_dict, augment=False):
