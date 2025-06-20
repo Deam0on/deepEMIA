@@ -208,7 +208,12 @@ For more details, see the README or documentation.
         nargs="+",
         choices=["single", "multi"],
         default=["single"],
-        help="Inference pass mode: 'single' for one pass, 'multi [max_iters]' for iterative deduplication (optionally specify max iters, e.g. --pass multi 5)",
+        help=(
+            "Inference pass mode:\n"
+            "  'single' : One pass per image (default).\n"
+            "  'multi [max_iters]' : Iterative deduplication, repeat until <10% new masks or max_iters (default 10).\n"
+            "    Example: --pass multi 5"
+        ),
     )
 
     args = parser.parse_args()

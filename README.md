@@ -14,6 +14,8 @@ A modular, end-to-end computer vision pipeline for scientific image analysis, fe
   - [Web Interface](#web-interface)
 - [Google Cloud Storage Integration](#google-cloud-storage-integration)
 - [Extending the Pipeline](#extending-the-pipeline)
+- [Logs](#logs)
+- [Web Interface Notes](#web-interface-notes)
 - [Contributing](#contributing)
 - [License](#license)
 - [Support](#support)
@@ -37,6 +39,7 @@ The pipeline is suitable for scientific and industrial applications requiring re
 - **Model Training**: Train instance segmentation models with Detectron2, including CPU-optimized and quantized models for efficient inference.
 - **Evaluation**: COCO-style evaluation with metrics export and optional visualization.
 - **Inference**: Batch inference with measurement extraction (e.g., scale bar detection, geometric analysis), result encoding, and CSV export.
+- **Iterative Inference**: Optionally repeat mask prediction and deduplication until no significant new masks are found, improving recall for challenging images. Control this with `--pass multi [max_iters]`.
 - **Web Interface**: Streamlit-based GUI for dataset management, task execution, progress monitoring, and result visualization/download.
 - **Cloud Integration**: Automated upload/download of datasets and results to/from Google Cloud Storage.
 - **ETA Tracking**: Automatic estimation and tracking of task durations for user feedback.
@@ -59,7 +62,8 @@ The pipeline is suitable for scientific and industrial applications requiring re
 ├── src/
 │   ├── data/
 │   │   ├── datasets.py          # Dataset splitting and registration
-│   │   └── models.py            # Model loading and selection
+│   │   ├── models.py            # Model loading and selection
+│   │   └── custom_mapper.py     # Data augmentation and mapping
 │   ├── functions/
 │   │   ├── train_model.py       # Model training logic
 │   │   ├── evaluate_model.py    # Model evaluation logic
@@ -193,9 +197,20 @@ python main.py --task inference --dataset_name <dataset_name> --threshold 0.65 -
 
 **Additional options:**
 
-- `--download/--no-download`: Download data from GCS before running (default: True)
-- `--upload/--no-upload`: Upload results to GCS after running (default: True)
-- `--id`: Draw instance IDs on inference overlays
+- `--pass single` : (Default) Run a single inference pass per image.
+- `--pass multi [max_iters]` : Run iterative inference, repeating mask prediction and deduplication until the number of unique masks increases by less than 10% (or your configured threshold), or until `max_iters` is reached. For example, `--pass multi 5` limits to 5 iterations (default is 10 if not specified).
+
+**Examples:**
+
+Run inference with iterative deduplication, up to 5 iterations:
+```sh
+python main.py --task inference --dataset_name <dataset_name> --rcnn combo --pass multi 5
+```
+
+Run inference with a single pass (default):
+```sh
+python main.py --task inference --dataset_name <dataset_name> --rcnn combo --pass single
+```
 
 ### RCNN Backbone Selection
 
@@ -217,7 +232,7 @@ Run inference with both backbones and merge results:
 python main.py --task inference --dataset_name <dataset_name> --rcnn combo
 ```
 
-When using `--rcnn combo` for inference, the pipeline will run both models on each image, merge their predictions, and remove duplicates using non-maximum suppression with the default IoU threshold.
+When using `--rcnn combo` for inference, the pipeline will run both models on each image, merge their predictions, and remove duplicates using non-maximum suppression with the default IoU threshold. If `--pass multi` is used, this process is repeated until no significant new masks are found or the maximum number of iterations is reached.
 
 ### Data Augmentation
 
