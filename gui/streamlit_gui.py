@@ -24,15 +24,20 @@ from io import BytesIO
 
 import streamlit as st
 from PIL import Image
-from streamlit_functions import (check_password, contains_errors,
-                                 create_zip_from_gcs, estimate_eta,
-                                 format_and_sort_folders, list_directories,
-                                 list_png_files_in_gcs_folder,
-                                 list_specific_csv_files_in_gcs_folder,
-                                 load_dataset_names_from_gcs,
-                                 save_dataset_names_to_gcs,
-                                 update_progress_bar_and_countdown,
-                                 upload_files_to_gcs)
+from streamlit_functions import (
+    check_password,
+    contains_errors,
+    create_zip_from_gcs,
+    estimate_eta,
+    format_and_sort_folders,
+    list_directories,
+    list_png_files_in_gcs_folder,
+    list_specific_csv_files_in_gcs_folder,
+    load_dataset_names_from_gcs,
+    save_dataset_names_to_gcs,
+    update_progress_bar_and_countdown,
+    upload_files_to_gcs,
+)
 
 from src.utils.config import get_config
 

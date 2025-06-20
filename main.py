@@ -23,8 +23,7 @@ from src.functions.inference import run_inference
 from src.functions.train_model import train_on_dataset
 from src.utils.config import get_config
 from src.utils.eta_utils import update_eta_data
-from src.utils.gcs_utils import (download_data_from_bucket,
-                                 upload_data_to_bucket)
+from src.utils.gcs_utils import download_data_from_bucket, upload_data_to_bucket
 from src.utils.logger_utils import system_logger
 
 config = get_config()
@@ -43,7 +42,7 @@ def setup_config():
     then writes them to config/config.yaml.
     """
     print("=== UW Computer Vision Project Setup ===")
-    config_path = Path.home() / "uw-com-vision" / "config" / "config.yaml"
+    config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
     if config_path.exists():
         overwrite = (
             input(f"Config file already exists at {config_path}. Overwrite? (y/n): ")
@@ -65,10 +64,10 @@ def setup_config():
     config = {
         "bucket": bucket,
         "paths": {
-            "main_script": "~/uw-com-vision/main.py",
+            "main_script": "~/deepEMIA/main.py",
             "split_dir": "~/split_dir",
-            "category_json": "~/uw-com-vision/dataset_info.json",
-            "eta_file": "~/uw-com-vision/config/eta_data.json",
+            "category_json": "~/deepEMIA/dataset_info.json",
+            "eta_file": "~/deepEMIA/config/eta_data.json",
             "local_dataset_root": "~",
         },
         "scale_bar_rois": {
@@ -233,7 +232,7 @@ For more details, see the README or documentation.
         setup_config()
         return
 
-    local_path = Path.home() / "uw-com-vision"
+    local_path = Path.home() / "deepEMIA"
     try:
         subprocess.run(
             [
