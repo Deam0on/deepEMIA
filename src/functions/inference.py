@@ -260,6 +260,8 @@ def iterative_combo_predictors(predictors, image, iou_threshold=0.7, min_increas
     Run both predictors iteratively, deduplicating after each round,
     until the number of unique masks increases by less than min_increase.
     """
+    from src.utils.logger_utils import system_logger  # Import logger
+
     all_masks = []
     all_scores = []
     all_sources = []
@@ -296,6 +298,8 @@ def iterative_combo_predictors(predictors, image, iou_threshold=0.7, min_increas
                 unique_scores.append(all_scores[i])
                 unique_sources.append(all_sources[i])
         new_count = len(unique_masks)
+        added = new_count - prev_count
+        system_logger.info(f"Iteration {iteration + 1}: Added {added} new masks (total: {new_count})")
         if prev_count > 0:
             increase = (new_count - prev_count) / max(prev_count, 1)
             if increase < min_increase:
