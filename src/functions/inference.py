@@ -255,17 +255,18 @@ def iou(mask1, mask2):
     return intersection / union if union > 0 else 0
 
 
-def iterative_combo_predictors(predictors, image, iou_threshold=0.7, min_increase=0.10, max_iters=10):
+def iterative_combo_predictors(predictors, image, iou_threshold=0.7, min_increase=0.25, max_iters=5):
     """
     Run both predictors iteratively, deduplicating after each round,
-    until the number of unique masks increases by less than min_increase.
+    until the number of unique masks increases by less than min_increase,
+    or if two consecutive iterations find no new masks.
     """
-    from src.utils.logger_utils import system_logger  # Import logger
 
     all_masks = []
     all_scores = []
     all_sources = []
     prev_count = 0
+    no_new_mask_iters = 0  # Track consecutive zero-new-mask iterations
 
     for iteration in range(max_iters):
         new_masks = []
@@ -300,6 +301,16 @@ def iterative_combo_predictors(predictors, image, iou_threshold=0.7, min_increas
         new_count = len(unique_masks)
         added = new_count - prev_count
         system_logger.info(f"Iteration {iteration + 1}: Added {added} new masks (total: {new_count})")
+
+        # Stop if two consecutive iterations find no new masks
+        if added == 0:
+            no_new_mask_iters += 1
+        else:
+            no_new_mask_iters = 0
+        if no_new_mask_iters >= 2:
+            system_logger.info("Stopping: No new masks found in two consecutive iterations.")
+            break
+
         if prev_count > 0:
             increase = (new_count - prev_count) / max(prev_count, 1)
             if increase < min_increase:
