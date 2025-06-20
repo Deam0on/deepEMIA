@@ -24,8 +24,11 @@ import torch
 from albumentations.pytorch import ToTensorV2
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
-from detectron2.data import (DatasetCatalog, MetadataCatalog,
-                             build_detection_train_loader)
+from detectron2.data import (
+    DatasetCatalog,
+    MetadataCatalog,
+    build_detection_train_loader,
+)
 from detectron2.engine import DefaultTrainer
 from detectron2.evaluation import COCOEvaluator
 

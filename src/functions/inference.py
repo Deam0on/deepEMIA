@@ -28,14 +28,13 @@ import cv2
 import detectron2.data.transforms as T
 import imutils
 import numpy as np
-import os
-import time
-import cv2
 import pandas as pd
-import csv
 import yaml
-from detectron2.data import (DatasetCatalog, MetadataCatalog,
-                             build_detection_train_loader)
+from detectron2.data import (
+    DatasetCatalog,
+    MetadataCatalog,
+    build_detection_train_loader,
+)
 from detectron2.data import detection_utils as utils
 from detectron2.engine import DefaultTrainer
 from detectron2.utils.visualizer import ColorMode, Visualizer
@@ -48,7 +47,7 @@ from src.utils.measurements import calculate_measurements
 from src.utils.scalebar_ocr import detect_scale_bar
 
 # Load config once at the start of your program
-with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
+with open(Path.home() / "deepEMIA" / "config" / "config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
 # Resolve paths
@@ -223,9 +222,13 @@ def GetInferenceNoID(predictor, im, x_pred, metadata, test_img):
     cv2.imwrite(
         test_img + "_" + str(x_pred) + "__pred.png", out.get_image()[:, :, ::-1]
     )
-    
+
+
 def is_image_file(filename):
-    return filename.lower().endswith(('.tif', '.tiff', '.png', '.jpg', '.jpeg', '.bmp', '.gif'))
+    return filename.lower().endswith(
+        (".tif", ".tiff", ".png", ".jpg", ".jpeg", ".bmp", ".gif")
+    )
+
 
 def GetCounts(predictor, im, TList, PList):
     """
@@ -255,7 +258,9 @@ def iou(mask1, mask2):
     return intersection / union if union > 0 else 0
 
 
-def iterative_combo_predictors(predictors, image, iou_threshold=0.7, min_increase=0.25, max_iters=5):
+def iterative_combo_predictors(
+    predictors, image, iou_threshold=0.7, min_increase=0.25, max_iters=5
+):
     """
     Run both predictors iteratively, deduplicating after each round,
     until the number of unique masks increases by less than min_increase,
@@ -300,7 +305,9 @@ def iterative_combo_predictors(predictors, image, iou_threshold=0.7, min_increas
                 unique_sources.append(all_sources[i])
         new_count = len(unique_masks)
         added = new_count - prev_count
-        system_logger.info(f"Iteration {iteration + 1}: Added {added} new masks (total: {new_count})")
+        system_logger.info(
+            f"Iteration {iteration + 1}: Added {added} new masks (total: {new_count})"
+        )
 
         # Stop if two consecutive iterations find no new masks
         if added == 0:
@@ -308,7 +315,9 @@ def iterative_combo_predictors(predictors, image, iou_threshold=0.7, min_increas
         else:
             no_new_mask_iters = 0
         if no_new_mask_iters >= 2:
-            system_logger.info("Stopping: No new masks found in two consecutive iterations.")
+            system_logger.info(
+                "Stopping: No new masks found in two consecutive iterations."
+            )
             break
 
         if prev_count > 0:
@@ -384,7 +393,9 @@ def run_inference(
     path = output_dir
     os.makedirs(path, exist_ok=True)
     inpath = image_folder_path
-    images_name = [f for f in os.listdir(inpath) if is_image_file(f)]  # <-- changed here
+    images_name = [
+        f for f in os.listdir(inpath) if is_image_file(f)
+    ]  # <-- changed here
 
     Img_ID = []
     EncodedPixels = []
@@ -394,7 +405,7 @@ def run_inference(
     total_images = len(images_name)
     overall_start_time = time.perf_counter()  # Start timing before first mask
 
-    with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
+    with open(Path.home() / "deepEMIA" / "config" / "config.yaml", "r") as f:
         full_config = yaml.safe_load(f)
 
     # Get the specific ROI config for this dataset, or fall back to the default
@@ -410,7 +421,9 @@ def run_inference(
     dedup_results = {}
 
     for idx, name in enumerate(images_name, 1):
-        system_logger.info(f"Preparing masks for image {name} ({idx} out of {total_images})")
+        system_logger.info(
+            f"Preparing masks for image {name} ({idx} out of {total_images})"
+        )
         image = cv2.imread(os.path.join(inpath, name))
         all_masks = []
         all_scores = []
@@ -418,8 +431,14 @@ def run_inference(
 
         if rcnn == "combo":
             if pass_mode == "multi":
-                unique_masks, unique_scores, unique_sources = iterative_combo_predictors(
-                    predictors, image, iou_threshold=0.7, min_increase=0.10, max_iters=max_iters
+                unique_masks, unique_scores, unique_sources = (
+                    iterative_combo_predictors(
+                        predictors,
+                        image,
+                        iou_threshold=0.7,
+                        min_increase=0.10,
+                        max_iters=max_iters,
+                    )
                 )
             else:  # single pass (default/original)
                 all_masks = []
@@ -428,7 +447,9 @@ def run_inference(
                 for pred_idx, predictor in enumerate(predictors):
                     outputs = predictor(image)
                     masks = postprocess_masks(
-                        np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
+                        np.asarray(
+                            outputs["instances"].to("cpu")._fields["pred_masks"]
+                        ),
                         outputs["instances"].to("cpu")._fields["scores"].numpy(),
                         image,
                     )
@@ -491,12 +512,16 @@ def run_inference(
 
         conv = lambda l: " ".join(map(str, l))
         for i, mask in enumerate(unique_masks):
-            Img_ID.append(name.rsplit('.', 1)[0])
+            Img_ID.append(name.rsplit(".", 1)[0])
             EncodedPixels.append(conv(rle_encoding(mask)))
 
-    overall_elapsed = time.perf_counter() - overall_start_time  # End timing after last mask
+    overall_elapsed = (
+        time.perf_counter() - overall_start_time
+    )  # End timing after last mask
     average_time = overall_elapsed / total_images if total_images else 0
-    system_logger.info(f"Average mask generation and deduplication time per image: {average_time:.3f} seconds")
+    system_logger.info(
+        f"Average mask generation and deduplication time per image: {average_time:.3f} seconds"
+    )
 
     # --- Ensure all images were processed ---
     unprocessed = set(images_name) - processed_images
@@ -641,4 +666,3 @@ def run_inference(
 
     average_time = total_time / num_images if num_images else 0
     system_logger.info(f"Average inference time per image: {average_time:.3f} seconds")
-
