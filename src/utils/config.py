@@ -27,7 +27,7 @@ def get_config():
     """
     global _config
     if _config is None:
-        config_path = Path.home() / "uw-com-vision" / "config" / "config.yaml"
+        config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
         try:
             with open(config_path, "r") as f:
                 _config = yaml.safe_load(f)

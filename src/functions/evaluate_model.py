@@ -17,8 +17,7 @@ from pathlib import Path
 
 import cv2
 from detectron2.config import get_cfg
-from detectron2.data import (DatasetCatalog, MetadataCatalog,
-                             build_detection_test_loader)
+from detectron2.data import DatasetCatalog, MetadataCatalog, build_detection_test_loader
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
 from detectron2.utils.visualizer import Visualizer
 
