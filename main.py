@@ -205,13 +205,11 @@ For more details, see the README or documentation.
         "--pass",
         dest="pass_mode",
         nargs="+",
-        choices=["single", "multi"],
         default=["single"],
+        metavar=("MODE", "MAX_ITERS"),
         help=(
-            "Inference pass mode:\n"
-            "  'single' : One pass per image (default).\n"
-            "  'multi [max_iters]' : Iterative deduplication, repeat until <10% new masks or max_iters (default 10).\n"
-            "    Example: --pass multi 5"
+            "Inference pass mode: 'single' for one pass (default), "
+            "'multi [max_iters]' for iterative deduplication (e.g. --pass multi 5)."
         ),
     )
 
