@@ -205,12 +205,24 @@ For more details, see the README or documentation.
     parser.add_argument(
         "--pass",
         dest="pass_mode",
+        nargs="+",
         choices=["single", "multi"],
-        default="single",
-        help="Inference pass mode: 'single' for one pass, 'multi' for iterative deduplication",
+        default=["single"],
+        help="Inference pass mode: 'single' for one pass, 'multi [max_iters]' for iterative deduplication (optionally specify max iters, e.g. --pass multi 5)",
     )
 
     args = parser.parse_args()
+
+    # Parse pass_mode and max_iters
+    if args.pass_mode[0] == "multi":
+        pass_mode = "multi"
+        try:
+            max_iters = int(args.pass_mode[1])
+        except (IndexError, ValueError):
+            max_iters = 10  # Default if not provided
+    else:
+        pass_mode = "single"
+        max_iters = 1  # Not used in single mode
 
     if args.task == "setup":
         setup_config()
@@ -320,7 +332,8 @@ For more details, see the README or documentation.
             draw_id=args.draw_id,
             dataset_format=args.dataset_format,
             rcnn=args.rcnn,
-            pass_mode=args.pass_mode,  # <-- Pass the argument here
+            pass_mode=pass_mode,
+            max_iters=max_iters,  # <-- Pass max_iters to run_inference
         )
 
         task_end_time = datetime.now()

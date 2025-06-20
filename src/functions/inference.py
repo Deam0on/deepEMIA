@@ -329,8 +329,9 @@ def run_inference(
     threshold=0.65,
     draw_id=False,
     dataset_format="json",
-    rcnn=50,  # can be 50, 101, or "both"
-    pass_mode="single",  # <-- NEW ARGUMENT: "single" or "multi"
+    rcnn=50,
+    pass_mode="single",
+    max_iters=10,  # <-- Add this argument
 ):
     """
     Runs inference on a dataset and saves the results.
@@ -418,7 +419,7 @@ def run_inference(
         if rcnn == "combo":
             if pass_mode == "multi":
                 unique_masks, unique_scores, unique_sources = iterative_combo_predictors(
-                    predictors, image, iou_threshold=0.7, min_increase=0.10, max_iters=10
+                    predictors, image, iou_threshold=0.7, min_increase=0.10, max_iters=max_iters
                 )
             else:  # single pass (default/original)
                 all_masks = []
