@@ -21,13 +21,14 @@ import shapely.affinity
 import shapely.geometry
 import yaml
 from detectron2.data import DatasetCatalog, MetadataCatalog
-from detectron2.structures import BoxMode
 from detectron2.data.datasets import register_coco_instances
+from detectron2.structures import BoxMode
 from sklearn.model_selection import train_test_split
 
-# Load config once at the start of your program
-with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+from src.utils.config import get_config
+from src.utils.logger_utils import system_logger
+
+config = get_config()
 
 # Constant paths
 SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
@@ -47,30 +48,17 @@ def split_dataset(img_dir, dataset_name, test_size=0.2, seed=42):
     Returns:
     - tuple: (train_files, test_files) Lists of training and testing label files
     """
-    # Set the random seed for reproducibility
     random.seed(seed)
-
-    # List all label files in the image directory
     label_files = [f for f in os.listdir(img_dir) if f.endswith(".json")]
-
-    # Split the label files into training and testing sets
     train_files, test_files = train_test_split(
         label_files, test_size=test_size, random_state=seed
     )
-
-    # Create directory to save the split information if it doesn't exist
     os.makedirs(SPLIT_DIR, exist_ok=True)
-
-    # Path to save the split JSON file
     split_file = os.path.join(SPLIT_DIR, f"{dataset_name}_split.json")
     split_data = {"train": train_files, "test": test_files}
-
-    # Save the split data to a JSON file
     with open(split_file, "w") as f:
         json.dump(split_data, f)
-
-    print(f"Training & Testing data successfully split into {split_file}")
-
+    system_logger.info(f"Training & Testing data successfully split into {split_file}")
     return train_files, test_files
 
 
@@ -101,37 +89,30 @@ def register_datasets(dataset_info, dataset_name, test_size=0.2, dataset_format=
     Raises:
     - ValueError: If the dataset name is not found in dataset_info
     """
-
     if dataset_format == "coco":
-        print(f"Registering COCO dataset: {dataset_name}")
-
-        # Define paths based on the standard COCO directory structure
+        system_logger.info(f"Registering COCO dataset: {dataset_name}")
         base_path = os.path.join(os.path.expanduser("~"), "DATASET", dataset_name)
         train_json_path = os.path.join(base_path, "annotations", "instances_train.json")
         train_images_path = os.path.join(base_path, "train")
         test_json_path = os.path.join(base_path, "annotations", "instances_test.json")
         test_images_path = os.path.join(base_path, "test")
-
-        # Register the training and testing sets using Detectron2's built-in function
         register_coco_instances(
             f"{dataset_name}_train", {}, train_json_path, train_images_path
         )
         register_coco_instances(
             f"{dataset_name}_test", {}, test_json_path, test_images_path
         )
-
-        print("COCO dataset registration complete.")
+        system_logger.info("COCO dataset registration complete.")
 
     elif dataset_format == "json":
-        print(f"Registering custom JSON dataset: {dataset_name}")
-
-        # This is your OLD logic, which you keep for backwards compatibility
+        system_logger.info(f"Registering custom JSON dataset: {dataset_name}")
         if dataset_name not in dataset_info:
             raise ValueError(f"Dataset '{dataset_name}' not found in dataset_info.")
 
         img_dir, label_dir, thing_classes = dataset_info[dataset_name]
-
-        print(f"Processing dataset: {dataset_name}, Info: {dataset_info[dataset_name]}")
+        system_logger.info(
+            f"Processing dataset: {dataset_name}, Info: {dataset_info[dataset_name]}"
+        )
 
         split_file = os.path.join(SPLIT_DIR, f"{dataset_name}_split.json")
         category_key = dataset_name
@@ -149,7 +130,7 @@ def register_datasets(dataset_info, dataset_name, test_size=0.2, dataset_format=
             os.makedirs(SPLIT_DIR, exist_ok=True)
             with open(split_file, "w") as f:
                 json.dump(split_data, f)
-            print(f"Split created and saved at {split_file}")
+            system_logger.info(f"Split created and saved at {split_file}")
 
         DatasetCatalog.register(
             f"{dataset_name}_train",
@@ -166,7 +147,7 @@ def register_datasets(dataset_info, dataset_name, test_size=0.2, dataset_format=
             ),
         )
         MetadataCatalog.get(f"{dataset_name}_test").set(thing_classes=thing_classes)
-        print("Custom JSON dataset registration complete.")
+        system_logger.info("Custom JSON dataset registration complete.")
 
     else:
         raise ValueError(f"Unknown dataset_format: {dataset_format}")
@@ -189,18 +170,13 @@ def get_split_dicts(img_dir, label_dir, files, category_json, category_key):
     Raises:
     - ValueError: If the category key is not found in the JSON file
     """
-    # Load category names and create a mapping to category IDs
     dataset_info = read_dataset_info(category_json)
-
     if category_key not in dataset_info:
         raise ValueError(f"Category key '{category_key}' not found in JSON")
 
-    category_names = dataset_info[category_key][
-        2
-    ]  # Extract category names from the JSON
+    category_names = dataset_info[category_key][2]
     category_name_to_id = {name: idx for idx, name in enumerate(category_names)}
-
-    print(f"Category Mapping: {category_name_to_id}")
+    system_logger.info(f"Category Mapping: {category_name_to_id}")
 
     dataset_dicts = []
     for idx, file in enumerate(files):
@@ -248,7 +224,7 @@ def get_split_dicts(img_dir, label_dir, files, category_json, category_key):
             if categoryName in category_name_to_id:
                 category_id = category_name_to_id[categoryName]
             else:
-                print(f"Warning: Category Name Not Found: {categoryName}")
+                system_logger.warning(f"Category Name Not Found: {categoryName}")
                 continue
 
             obj = {
@@ -275,9 +251,8 @@ def read_dataset_info(file_path):
     """
     with open(file_path, "r") as file:
         data = json.load(file)
-        # Convert list values back to tuples for consistency with the original data
         dataset_info = {
             k: tuple(v) if isinstance(v, list) else v for k, v in data.items()
         }
-        print("Dataset Info:", dataset_info)
+        system_logger.info(f"Dataset Info: {dataset_info}")
     return dataset_info

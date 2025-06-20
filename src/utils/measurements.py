@@ -1,7 +1,20 @@
+"""
+Measurement Utilities
+
+This module provides utility functions for geometric and color measurements,
+including midpoint calculation, color conversions, wavelength estimation, and
+arrow detection in images.
+"""
+
 import cv2
+import numpy as np
+from imutils import perspective
+from scipy.spatial import distance as dist
+
+from src.utils.logger_utils import system_logger
 
 
-def midpoint(ptA, ptB):
+def midpoint(ptA: tuple, ptB: tuple) -> tuple:
     """
     Calculates the midpoint between two points.
 
@@ -15,7 +28,7 @@ def midpoint(ptA, ptB):
     return ((ptA[0] + ptB[0]) * 0.5, (ptA[1] + ptB[1]) * 0.5)
 
 
-def rgb_to_hsv(r, g, b):
+def rgb_to_hsv(r: int, g: int, b: int) -> tuple:
     """
     Converts RGB color to HSV.
 
@@ -63,7 +76,7 @@ def rgb_to_hsv(r, g, b):
     return h, s, v
 
 
-def hue_to_wavelength(hue):
+def hue_to_wavelength(hue: float) -> float:
     """
     Converts hue to wavelength in nanometers.
 
@@ -80,7 +93,7 @@ def hue_to_wavelength(hue):
     return wavelength
 
 
-def rgb_to_wavelength(r, g, b):
+def rgb_to_wavelength(r: int, g: int, b: int) -> float:
     """
     Converts RGB color to wavelength.
 
@@ -97,7 +110,7 @@ def rgb_to_wavelength(r, g, b):
     return wavelength
 
 
-def detect_arrows(image):
+def detect_arrows(image: np.ndarray) -> list:
     """
     Detects arrows in the image.
 
@@ -129,3 +142,93 @@ def detect_arrows(image):
         flow_vectors.append(direction)
 
     return flow_vectors
+
+
+def calculate_measurements(c, single_im_mask, um_pix=1.0, pixelsPerMetric=1):
+    """
+    Calculates geometric measurements for a given contour and mask.
+
+    Parameters:
+    - c: Contour (numpy array)
+    - single_im_mask: Binary mask (numpy array)
+    - um_pix: Microns per pixel (float)
+    - pixelsPerMetric: Scaling factor (float)
+
+    Returns:
+    - dict: All calculated measurements
+    """
+    area = cv2.contourArea(c)
+    perimeter = cv2.arcLength(c, True)
+
+    orig = single_im_mask.copy()
+    box = cv2.minAreaRect(c)
+    box = cv2.boxPoints(box)
+    box = np.array(box, dtype="int")
+    box = perspective.order_points(box)
+    (tl, tr, br, bl) = box
+    (tltrX, tltrY) = midpoint(tl, tr)
+    (blbrX, blbrY) = midpoint(bl, br)
+    (tlblX, tlblY) = midpoint(tl, bl)
+    (trbrX, trbrY) = midpoint(tr, br)
+    dA = dist.euclidean((tltrX, tltrY), (blbrX, blbrY))
+    dB = dist.euclidean((tlblX, tlblY), (trbrX, trbrY))
+    dimA = dA / pixelsPerMetric
+    dimB = dB / pixelsPerMetric
+
+    dimArea = area / pixelsPerMetric
+    dimPerimeter = perimeter / pixelsPerMetric
+    diaFeret = max(dimA, dimB)
+    if (dimA and dimB) != 0:
+        Aspect_Ratio = max(dimB, dimA) / min(dimA, dimB)
+    else:
+        Aspect_Ratio = 0
+    Length = min(dimA, dimB) * um_pix
+    Width = max(dimA, dimB) * um_pix
+
+    CircularED = np.sqrt(4 * area / np.pi) * um_pix
+    Chords = cv2.arcLength(c, True) * um_pix
+    Roundness = 1 / Aspect_Ratio if Aspect_Ratio != 0 else 0
+    Sphericity = (
+        (2 * np.sqrt(np.pi * dimArea)) / dimPerimeter * um_pix
+        if dimPerimeter != 0
+        else 0
+    )
+    Circularity = (
+        4 * np.pi * (dimArea / (dimPerimeter) ** 2) * um_pix if dimPerimeter != 0 else 0
+    )
+    Feret_diam = diaFeret * um_pix
+
+    # Ellipse fit
+    if len(c) >= 5:
+        ellipse = cv2.fitEllipse(c)
+        (x, y), (major_axis, minor_axis), angle = ellipse
+
+        if major_axis > minor_axis:
+            a = major_axis / 2.0
+            b = minor_axis / 2.0
+        else:
+            a = minor_axis / 2.0
+            b = major_axis / 2.0
+        eccentricity = np.sqrt(1 - (b**2 / a**2)) if a != 0 else 0
+
+        major_axis_length = major_axis / pixelsPerMetric * um_pix
+        minor_axis_length = minor_axis / pixelsPerMetric * um_pix
+    else:
+        eccentricity = 0
+        major_axis_length = 0
+        minor_axis_length = 0
+
+    return {
+        "major_axis_length": major_axis_length,
+        "minor_axis_length": minor_axis_length,
+        "eccentricity": eccentricity,
+        "Length": Length,
+        "Width": Width,
+        "CircularED": CircularED,
+        "Aspect_Ratio": Aspect_Ratio,
+        "Circularity": Circularity,
+        "Chords": Chords,
+        "Feret_diam": Feret_diam,
+        "Roundness": Roundness,
+        "Sphericity": Sphericity,
+    }

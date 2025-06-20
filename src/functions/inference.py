@@ -28,29 +28,23 @@ import cv2
 import detectron2.data.transforms as T
 import imutils
 import numpy as np
+import os
+import time
+import cv2
 import pandas as pd
-import torch
+import csv
 import yaml
-from detectron2.data import MetadataCatalog, build_detection_train_loader, DatasetCatalog
+from detectron2.data import (DatasetCatalog, MetadataCatalog,
+                             build_detection_train_loader)
 from detectron2.data import detection_utils as utils
 from detectron2.engine import DefaultTrainer
 from detectron2.utils.visualizer import ColorMode, Visualizer
-from imutils import perspective
-from scipy.spatial import distance as dist
 
-from src.data.datasets import (
-    read_dataset_info,
-    register_datasets,
-)
-from src.data.models import (
-    choose_and_use_model,
-    get_trained_model_paths,
-)
-from src.utils.mask_utils import (
-    postprocess_masks,
-    rle_encoding,
-)
-from src.utils.measurements import midpoint
+from src.data.datasets import read_dataset_info, register_datasets
+from src.data.models import choose_and_use_model, get_trained_model_paths
+from src.utils.logger_utils import system_logger
+from src.utils.mask_utils import postprocess_masks, rle_encoding
+from src.utils.measurements import calculate_measurements
 from src.utils.scalebar_ocr import detect_scale_bar
 
 # Load config once at the start of your program
@@ -60,6 +54,7 @@ with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
 # Resolve paths
 SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
 CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
+local_dataset_root = Path(config["paths"]["local_dataset_root"]).expanduser().resolve()
 
 
 def custom_mapper(dataset_dicts):
@@ -228,7 +223,9 @@ def GetInferenceNoID(predictor, im, x_pred, metadata, test_img):
     cv2.imwrite(
         test_img + "_" + str(x_pred) + "__pred.png", out.get_image()[:, :, ::-1]
     )
-
+    
+def is_image_file(filename):
+    return filename.lower().endswith(('.tif', '.tiff', '.png', '.jpg', '.jpeg', '.bmp', '.gif'))
 
 def GetCounts(predictor, im, TList, PList):
     """
@@ -252,13 +249,89 @@ def GetCounts(predictor, im, TList, PList):
     PList.append(PCount)
 
 
+def iou(mask1, mask2):
+    intersection = np.logical_and(mask1, mask2).sum()
+    union = np.logical_or(mask1, mask2).sum()
+    return intersection / union if union > 0 else 0
+
+
+def iterative_combo_predictors(predictors, image, iou_threshold=0.7, min_increase=0.25, max_iters=5):
+    """
+    Run both predictors iteratively, deduplicating after each round,
+    until the number of unique masks increases by less than min_increase,
+    or if two consecutive iterations find no new masks.
+    """
+
+    all_masks = []
+    all_scores = []
+    all_sources = []
+    prev_count = 0
+    no_new_mask_iters = 0  # Track consecutive zero-new-mask iterations
+
+    for iteration in range(max_iters):
+        new_masks = []
+        new_scores = []
+        new_sources = []
+        for pred_idx, predictor in enumerate(predictors):
+            outputs = predictor(image)
+            masks = postprocess_masks(
+                np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
+                outputs["instances"].to("cpu")._fields["scores"].numpy(),
+                image,
+            )
+            scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
+            if masks:
+                for i, mask in enumerate(masks):
+                    new_masks.append(mask)
+                    new_scores.append(scores[i])
+                    new_sources.append(pred_idx)
+        # Combine with previous masks
+        all_masks.extend(new_masks)
+        all_scores.extend(new_scores)
+        all_sources.extend(new_sources)
+        # Deduplicate
+        unique_masks = []
+        unique_scores = []
+        unique_sources = []
+        for i, mask in enumerate(all_masks):
+            if not any(iou(mask, um) > iou_threshold for um in unique_masks):
+                unique_masks.append(mask)
+                unique_scores.append(all_scores[i])
+                unique_sources.append(all_sources[i])
+        new_count = len(unique_masks)
+        added = new_count - prev_count
+        system_logger.info(f"Iteration {iteration + 1}: Added {added} new masks (total: {new_count})")
+
+        # Stop if two consecutive iterations find no new masks
+        if added == 0:
+            no_new_mask_iters += 1
+        else:
+            no_new_mask_iters = 0
+        if no_new_mask_iters >= 2:
+            system_logger.info("Stopping: No new masks found in two consecutive iterations.")
+            break
+
+        if prev_count > 0:
+            increase = (new_count - prev_count) / max(prev_count, 1)
+            if increase < min_increase:
+                break
+        prev_count = new_count
+        all_masks = unique_masks
+        all_scores = unique_scores
+        all_sources = unique_sources
+    return unique_masks, unique_scores, unique_sources
+
+
 def run_inference(
     dataset_name,
     output_dir,
-    visualize=False,
+    visualize=True,
     threshold=0.65,
     draw_id=False,
     dataset_format="json",
+    rcnn=50,
+    pass_mode="single",
+    max_iters=10,  # <-- Add this argument
 ):
     """
     Runs inference on a dataset and saves the results.
@@ -268,6 +341,7 @@ def run_inference(
     - output_dir (str): Directory to save results
     - visualize (bool): Whether to generate visualizations
     - threshold (float): Confidence threshold for predictions
+    - rcnn (int): RCNN backbone, 50 or 101
 
     The function:
     1. Loads the model and dataset
@@ -284,19 +358,25 @@ def run_inference(
 
     # This forces the dataset to be loaded and the metadata to be populated.
     # It's a robust way to ensure the catalog is ready.
-    print("Forcing metadata population from DatasetCatalog...")
+    system_logger.info("Forcing metadata population from DatasetCatalog...")
     d = DatasetCatalog.get(f"{dataset_name}_train")
     metadata = MetadataCatalog.get(f"{dataset_name}_train")
-    print("Metadata populated successfully.")
+    system_logger.info("Metadata populated successfully.")
 
-    trained_model_paths = get_trained_model_paths(SPLIT_DIR)
-    selected_model_dataset = dataset_name
-    
-    predictor, _ = choose_and_use_model(
-        trained_model_paths, selected_model_dataset, threshold, metadata
-    )
-
-    # metadata = MetadataCatalog.get(f"{dataset_name}_train")
+    if rcnn == "combo":
+        predictors = []
+        for r in [50, 101]:
+            trained_model_paths = get_trained_model_paths(SPLIT_DIR, r)
+            predictor, _ = choose_and_use_model(
+                trained_model_paths, dataset_name, threshold, metadata, r
+            )
+            predictors.append(predictor)
+    else:
+        trained_model_paths = get_trained_model_paths(SPLIT_DIR, rcnn)
+        predictor, _ = choose_and_use_model(
+            trained_model_paths, dataset_name, threshold, metadata, rcnn
+        )
+        predictors = [predictor]
 
     image_folder_path = get_image_folder_path()
 
@@ -304,10 +384,15 @@ def run_inference(
     path = output_dir
     os.makedirs(path, exist_ok=True)
     inpath = image_folder_path
-    images_name = [f for f in os.listdir(inpath) if f.endswith(".tif")]
+    images_name = [f for f in os.listdir(inpath) if is_image_file(f)]  # <-- changed here
 
     Img_ID = []
     EncodedPixels = []
+
+    # --- NEW: Track processed images and timing ---
+    processed_images = set()
+    total_images = len(images_name)
+    overall_start_time = time.perf_counter()  # Start timing before first mask
 
     with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
         full_config = yaml.safe_load(f)
@@ -315,24 +400,110 @@ def run_inference(
     # Get the specific ROI config for this dataset, or fall back to the default
     roi_profiles = full_config.get("scale_bar_rois", {})
     roi_config = roi_profiles.get(dataset_name, roi_profiles["default"])
-    print(f"Using scale bar ROI profile for '{dataset_name}': {roi_config}")
+    system_logger.info(
+        f"Using scale bar ROI profile for '{dataset_name}': {roi_config}"
+    )
 
     conv = lambda l: " ".join(map(str, l))
 
-    for name in images_name:
-        print(f"Preparing masks for image {name}")
+    # Store deduplicated masks for each image
+    dedup_results = {}
+
+    for idx, name in enumerate(images_name, 1):
+        system_logger.info(f"Preparing masks for image {name} ({idx} out of {total_images})")
         image = cv2.imread(os.path.join(inpath, name))
-        outputs = predictor(image)
-        masks = postprocess_masks(
-            np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
-            outputs["instances"].to("cpu")._fields["scores"].numpy(),
-            image,
+        all_masks = []
+        all_scores = []
+        all_sources = []
+
+        if rcnn == "combo":
+            if pass_mode == "multi":
+                unique_masks, unique_scores, unique_sources = iterative_combo_predictors(
+                    predictors, image, iou_threshold=0.7, min_increase=0.10, max_iters=max_iters
+                )
+            else:  # single pass (default/original)
+                all_masks = []
+                all_scores = []
+                all_sources = []
+                for pred_idx, predictor in enumerate(predictors):
+                    outputs = predictor(image)
+                    masks = postprocess_masks(
+                        np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
+                        outputs["instances"].to("cpu")._fields["scores"].numpy(),
+                        image,
+                    )
+                    scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
+                    if masks:
+                        for i, mask in enumerate(masks):
+                            all_masks.append(mask)
+                            all_scores.append(scores[i])
+                            all_sources.append(pred_idx)
+                # Deduplicate as before
+                unique_masks = []
+                unique_scores = []
+                unique_sources = []
+                for i, mask in enumerate(all_masks):
+                    if not any(iou(mask, um) > 0.7 for um in unique_masks):
+                        unique_masks.append(mask)
+                        unique_scores.append(all_scores[i])
+                        unique_sources.append(all_sources[i])
+        else:
+            # ...existing single-model logic...
+            all_masks = []
+            all_scores = []
+            all_sources = []
+            for pred_idx, predictor in enumerate(predictors):
+                outputs = predictor(image)
+                masks = postprocess_masks(
+                    np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
+                    outputs["instances"].to("cpu")._fields["scores"].numpy(),
+                    image,
+                )
+                scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
+                if masks:
+                    for i, mask in enumerate(masks):
+                        all_masks.append(mask)
+                        all_scores.append(scores[i])
+                        all_sources.append(pred_idx)
+            # Deduplicate as before
+            unique_masks = []
+            unique_scores = []
+            unique_sources = []
+            for i, mask in enumerate(all_masks):
+                if not any(iou(mask, um) > 0.7 for um in unique_masks):
+                    unique_masks.append(mask)
+                    unique_scores.append(all_scores[i])
+                    unique_sources.append(all_sources[i])
+
+        system_logger.info(
+            f"After deduplication: {len(unique_masks)} unique masks for image {name} "
+            f"(kept: {unique_sources.count(0)} from R50, {unique_sources.count(1)} from R101)"
         )
 
-        if masks:
-            for i in range(len(masks)):
-                Img_ID.append(name.replace(".tif", ""))
-                EncodedPixels.append(conv(rle_encoding(masks[i])))
+        # Save for later use
+        dedup_results[name] = {
+            "masks": unique_masks,
+            "scores": unique_scores,
+            "sources": unique_sources,
+        }
+
+        processed_images.add(name)
+
+        conv = lambda l: " ".join(map(str, l))
+        for i, mask in enumerate(unique_masks):
+            Img_ID.append(name.rsplit('.', 1)[0])
+            EncodedPixels.append(conv(rle_encoding(mask)))
+
+    overall_elapsed = time.perf_counter() - overall_start_time  # End timing after last mask
+    average_time = overall_elapsed / total_images if total_images else 0
+    system_logger.info(f"Average mask generation and deduplication time per image: {average_time:.3f} seconds")
+
+    # --- Ensure all images were processed ---
+    unprocessed = set(images_name) - processed_images
+    if unprocessed:
+        system_logger.warning(f"The following images were not processed: {unprocessed}")
+    else:
+        system_logger.info("All images in the INFERENCE folder were processed.")
 
     df = pd.DataFrame({"ImageId": Img_ID, "EncodedPixels": EncodedPixels})
     df.to_csv(os.path.join(path, "R50_flip_results.csv"), index=False, sep=",")
@@ -373,39 +544,56 @@ def run_inference(
 
             for idx, test_img in enumerate(image_list, 1):
                 start_time = time.perf_counter()
-                print(f"Inferencing image {idx} out of {num_images}")
+                system_logger.info(f"Inferencing image {idx} out of {num_images}")
 
                 input_path = os.path.join(test_img_path, test_img)
                 im = cv2.imread(input_path)
 
                 psum, um_pix = detect_scale_bar(im, roi_config)
 
-                outputs = predictor(im)
-                inst_out = outputs["instances"]
-                filtered_instances = inst_out[inst_out.pred_classes == x_pred].to("cpu")
+                # Use deduplicated masks for this image
+                masks = dedup_results.get(test_img, {}).get("masks", [])
+                if not masks:
+                    continue
 
-                if draw_id:
-                    GetInference(im, filtered_instances, metadata, test_img, x_pred)
-                else:
-                    GetInferenceNoID(predictor, im, x_pred, metadata, test_img)
-                GetCounts(predictor, im, TList, PList)
+                # --- Visualization: Save overlay image with deduplicated masks ---
+                if visualize:
+                    vis_img = im.copy()
+                    color = (0, 255, 0)
+                    for i, mask in enumerate(masks):
+                        # Create colored overlay for each mask
+                        colored_mask = np.zeros_like(vis_img)
+                        colored_mask[mask.astype(bool)] = color
+                        vis_img = cv2.addWeighted(vis_img, 1.0, colored_mask, 0.5, 0)
+                        # Optionally, draw contours and label
+                        contours, _ = cv2.findContours(
+                            mask.astype(np.uint8),
+                            cv2.RETR_EXTERNAL,
+                            cv2.CHAIN_APPROX_SIMPLE,
+                        )
+                        cv2.drawContours(vis_img, contours, -1, (0, 0, 255), 1)
+                        # Draw instance ID at centroid
+                        M = cv2.moments(mask.astype(np.uint8))
+                        if M["m00"] > 0:
+                            cX = int(M["m10"] / M["m00"])
+                            cY = int(M["m01"] / M["m00"])
+                            cv2.putText(
+                                vis_img,
+                                str(i + 1),
+                                (cX, cY),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.5,
+                                (255, 0, 0),
+                                1,
+                                cv2.LINE_AA,
+                            )
+                    vis_save_path = os.path.join(
+                        local_dataset_root, f"{test_img}_class_{x_pred}_pred.png"
+                    )
+                    cv2.imwrite(vis_save_path, vis_img)
 
-                # mask_array = filtered_instances.pred_masks.to("cpu").numpy()
-                # num_instances = mask_array.shape[0]
-                # mask_array = np.moveaxis(mask_array, 0, -1)
-
-                pred_masks = filtered_instances.pred_masks.numpy()
-                pred_boxes = filtered_instances.pred_boxes.tensor.numpy()
-                scores = filtered_instances.scores.numpy()
-                num_instances = len(filtered_instances)
-
-                output = np.zeros_like(im)
-
-                for i in range(num_instances):
-                    instance_id = i + 1
-                    binary_mask = (pred_masks[i] > 0).astype(
-                        np.uint8
-                    ) * 255  # ensure binary uint8
+                for instance_id, mask in enumerate(masks, 1):
+                    binary_mask = (mask > 0).astype(np.uint8) * 255
                     single_im_mask = binary_mask.copy()
                     mask_3ch = np.stack([single_im_mask] * 3, axis=-1)
                     mask_filename = os.path.join(output_dir, f"mask_{instance_id}.jpg")
@@ -420,88 +608,37 @@ def run_inference(
                         pixelsPerMetric = 1
                         if cv2.contourArea(c) < 100:
                             continue
-                        area = cv2.contourArea(c)
-                        perimeter = cv2.arcLength(c, True)
 
-                        orig = single_im_mask.copy()
-                        box = cv2.minAreaRect(c)
-                        box = (
-                            cv2.boxPoints(box)
-                            if imutils.is_cv2()
-                            else cv2.boxPoints(box)
+                        measurements = calculate_measurements(
+                            c,
+                            single_im_mask,
+                            um_pix=um_pix,
+                            pixelsPerMetric=pixelsPerMetric,
                         )
-                        box = np.array(box, dtype="int")
-                        box = perspective.order_points(box)
-                        cv2.drawContours(orig, [box.astype("int")], -1, (0, 255, 0), 2)
-                        for x, y in box:
-                            cv2.circle(orig, (int(x), int(y)), 5, (0, 0, 255), -1)
-                        (tl, tr, br, bl) = box
-                        (tltrX, tltrY) = midpoint(tl, tr)
-                        (blbrX, blbrY) = midpoint(bl, br)
-                        (tlblX, tlblY) = midpoint(tl, bl)
-                        (trbrX, trbrY) = midpoint(tr, br)
-                        dA = dist.euclidean((tltrX, tltrY), (blbrX, blbrY))
-                        dB = dist.euclidean((tlblX, tlblY), (trbrX, trbrY))
-                        dimA = dA / pixelsPerMetric
-                        dimB = dB / pixelsPerMetric
-
-                        dimArea = area / pixelsPerMetric
-                        dimPerimeter = perimeter / pixelsPerMetric
-                        diaFeret = max(dimA, dimB)
-                        if (dimA and dimB) != 0:
-                            Aspect_Ratio = max(dimB, dimA) / min(dimA, dimB)
-                        else:
-                            Aspect_Ratio = 0
-                        Length = min(dimA, dimB) * um_pix
-                        Width = max(dimA, dimB) * um_pix
-
-                        CircularED = np.sqrt(4 * area / np.pi) * um_pix
-                        Chords = cv2.arcLength(c, True) * um_pix
-                        Roundness = 1 / Aspect_Ratio if Aspect_Ratio != 0 else 0
-                        Sphericity = (
-                            (2 * np.sqrt(np.pi * dimArea)) / dimPerimeter * um_pix
-                        )
-                        Circularity = (
-                            4 * np.pi * (dimArea / (dimPerimeter) ** 2) * um_pix
-                        )
-                        Feret_diam = diaFeret * um_pix
-
-                        ellipse = cv2.fitEllipse(c)
-                        (x, y), (major_axis, minor_axis), angle = ellipse
-
-                        if major_axis > minor_axis:
-                            a = major_axis / 2.0
-                            b = minor_axis / 2.0
-                        else:
-                            a = minor_axis / 2.0
-                            b = major_axis / 2.0
-                        eccentricity = np.sqrt(1 - (b**2 / a**2))
-
-                        major_axis_length = major_axis / pixelsPerMetric * um_pix
-                        minor_axis_length = minor_axis / pixelsPerMetric * um_pix
 
                         csvwriter.writerow(
                             [
                                 instance_id,
-                                major_axis_length,
-                                minor_axis_length,
-                                eccentricity,
-                                Length,
-                                Width,
-                                CircularED,
-                                Aspect_Ratio,
-                                Circularity,
-                                Chords,
-                                Feret_diam,
-                                Roundness,
-                                Sphericity,
+                                measurements["major_axis_length"],
+                                measurements["minor_axis_length"],
+                                measurements["eccentricity"],
+                                measurements["Length"],
+                                measurements["Width"],
+                                measurements["CircularED"],
+                                measurements["Aspect_Ratio"],
+                                measurements["Circularity"],
+                                measurements["Chords"],
+                                measurements["Feret_diam"],
+                                measurements["Roundness"],
+                                measurements["Sphericity"],
                                 psum,
                                 test_img,
                             ]
                         )
                 elapsed = time.perf_counter() - start_time
                 total_time += elapsed
-                print(f"Time taken for image {idx}: {elapsed:.3f} seconds")
+                system_logger.info(f"Time taken for image {idx}: {elapsed:.3f} seconds")
 
     average_time = total_time / num_images if num_images else 0
-    print(f"Average inference time per image: {average_time:.3f} seconds")
+    system_logger.info(f"Average inference time per image: {average_time:.3f} seconds")
+

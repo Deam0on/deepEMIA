@@ -16,31 +16,31 @@ import os
 from pathlib import Path
 
 import cv2
-import yaml
 from detectron2.config import get_cfg
-from detectron2.data import DatasetCatalog, MetadataCatalog, build_detection_test_loader
+from detectron2.data import (DatasetCatalog, MetadataCatalog,
+                             build_detection_test_loader)
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
 from detectron2.utils.visualizer import Visualizer
 
-from src.data.datasets import (
-    read_dataset_info,
-    register_datasets,
-)
-from src.data.models import (
-    choose_and_use_model,
-    get_trained_model_paths,
-)
+from src.data.datasets import read_dataset_info, register_datasets
+from src.data.models import choose_and_use_model, get_trained_model_paths
+from src.utils.config import get_config
+from src.utils.logger_utils import system_logger
 
-# Load config once at the start of your program
-with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+config = get_config()
 
 # Constant paths
 SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
 CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
 
 
-def evaluate_model(dataset_name, output_dir, visualize=False, dataset_format="json"):
+def evaluate_model(
+    dataset_name: str,
+    output_dir: str,
+    visualize: bool = False,
+    dataset_format: str = "json",
+    rcnn: int = 101,
+) -> None:
     """
     Evaluates the model on the specified dataset and optionally visualizes predictions.
 
@@ -48,6 +48,7 @@ def evaluate_model(dataset_name, output_dir, visualize=False, dataset_format="js
     - dataset_name (str): Name of the dataset to evaluate
     - output_dir (str): Directory to save evaluation results and visualizations
     - visualize (bool): Whether to generate and save prediction visualizations
+    - dataset_format (str): Annotation format
 
     The function performs:
     1. Dataset registration and model loading
@@ -71,7 +72,7 @@ def evaluate_model(dataset_name, output_dir, visualize=False, dataset_format="js
     threshold = 0.45
 
     # Choose and load the model
-    predictor = choose_and_use_model(trained_model_paths, dataset_name, threshold)
+    predictor = choose_and_use_model(trained_model_paths, dataset_name, threshold, rcnn)
 
     # Initialize configuration
     cfg = get_cfg()
@@ -80,19 +81,19 @@ def evaluate_model(dataset_name, output_dir, visualize=False, dataset_format="js
     evaluator = COCOEvaluator(f"{dataset_name}_test", cfg, False, output_dir=output_dir)
 
     # Ensure no cached data is used
-    coco_format_cache = os.path.join(SPLIT_DIR, f"{dataset_name}_test_coco_format.json")
-    if os.path.exists(coco_format_cache):
-        os.remove(coco_format_cache)
+    coco_format_cache = SPLIT_DIR / f"{dataset_name}_test_coco_format.json"
+    if coco_format_cache.exists():
+        coco_format_cache.unlink()
 
     # Build the validation data loader
     val_loader = build_detection_test_loader(cfg, f"{dataset_name}_test")
 
     # Perform inference and evaluate
     metrics = inference_on_dataset(predictor.model, val_loader, evaluator)
-    print(f"Evaluation metrics: {metrics}")
+    system_logger.info(f"Evaluation metrics: {metrics}")
 
     # Save metrics to CSV
-    csv_path = os.path.join(output_dir, "metrics.csv")
+    csv_path = Path(output_dir) / "metrics.csv"
     os.makedirs(output_dir, exist_ok=True)
     with open(csv_path, mode="w", newline="") as csv_file:
         fieldnames = ["metric", "value"]
@@ -101,15 +102,14 @@ def evaluate_model(dataset_name, output_dir, visualize=False, dataset_format="js
         for key, value in metrics.items():
             writer.writerow({"metric": key, "value": value})
 
-    print(f"Metrics saved to {csv_path}")
+    system_logger.info(f"Metrics saved to {csv_path}")
 
     # Visualize predictions if requested
     if visualize:
-        # visualize_predictions(predictor, dataset_name, output_dir)
-        pass
+        visualize_predictions(predictor, dataset_name, output_dir)
 
 
-def visualize_predictions(predictor, dataset_name, output_dir):
+def visualize_predictions(predictor, dataset_name: str, output_dir: str) -> None:
     """
     Visualizes predictions made by the model on the test dataset.
 
@@ -143,4 +143,4 @@ def visualize_predictions(predictor, dataset_name, output_dir):
         os.makedirs(output_dir, exist_ok=True)
         vis_path = os.path.join(output_dir, os.path.basename(d["file_name"]))
         cv2.imwrite(vis_path, vis_output)
-        print(f"Saved visualization to {vis_path}")
+        system_logger.info(f"Saved visualization to {vis_path}")

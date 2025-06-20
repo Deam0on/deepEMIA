@@ -1,41 +1,38 @@
 """
-Streamlit web interface for the UW Computer Vision project.
+Streamlit utility functions for the UW Computer Vision project.
 
-This module provides a user-friendly web interface for:
-- Dataset management
-- Model training and evaluation
-- Running inference
-- Visualizing results
-- Downloading predictions and visualizations
+This module provides backend utilities for the Streamlit GUI, including:
+- Dataset management in Google Cloud Storage (GCS)
+- File upload/download and zipping from GCS
+- Progress and ETA estimation
+- Password protection for admin features
+- Utility functions for listing and formatting GCS contents
 
-The interface integrates with Google Cloud Storage for data management and
-provides real-time progress tracking and ETA estimation.
+All functions are designed to integrate seamlessly with the Streamlit frontend.
 """
 
 import json
 import os
 import subprocess
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+import time
 import zipfile
 from datetime import datetime
-from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import streamlit as st
-import yaml
 from google.api_core import page_iterator
 from google.cloud import storage
-from PIL import Image
 
-# Add these lines at the beginning of the script
 ADMIN_PASSWORD = "admin"
 
-# Load config once at the start of your program
-with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+from src.utils.config import get_config
 
-# Load bucket name from config.yaml
-with open(Path.home() / "uw-com-vision" / "config" / "config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+config = get_config()
 bucket = config["bucket"]
 
 # Absolute path to main.py
@@ -48,6 +45,20 @@ GCS_DATASET_FOLDER = "DATASET"
 GCS_INFERENCE_FOLDER = "DATASET/INFERENCE"
 GCS_ARCHIVE_FOLDER = "Archive"
 GCS_DATASET_INFO_PATH = "dataset_info.json"
+
+
+def update_progress_bar_and_countdown(
+    start_time, eta, phase, progress_bar, countdown_placeholder, total_eta, process=None
+):
+    """Update a progress bar and countdown timer for a given phase."""
+    elapsed = 0
+    while elapsed < eta:
+        percent = min((elapsed + 1) / total_eta, 1.0)
+        progress_bar.progress(percent)
+        countdown_placeholder.info(f"{phase}... {int(eta - elapsed)}s remaining")
+        time.sleep(1)
+        elapsed += 1
+    countdown_placeholder.empty()
 
 
 def create_zip_from_gcs(bucket_name, folder, zip_name="archive.zip"):
@@ -99,7 +110,6 @@ def check_password():
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # First run, show input for password
         st.text_input(
             "Password", type="password", on_change=password_entered, key="password"
         )
@@ -330,7 +340,7 @@ def estimate_eta(task, num_images=0):
     - num_images (int): Number of images for inference task
 
     Returns:
-    - float: Estimated time remaining in seconds
+    - tuple: (download_eta, task_eta, upload_eta)
     """
     data = read_eta_data()
     if task == "inference":
@@ -348,13 +358,12 @@ def estimate_eta(task, num_images=0):
 
 def read_eta_data():
     """
-    Updates the progress bar and countdown timer.
+    Reads ETA data from the ETA file.
 
-    Parameters:
-    - start_time (datetime): Start time of the task
-    - eta (float): Estimated time remaining in seconds
-    - phase (str): Current phase of the task
+    Returns:
+    - dict: ETA data if file exists, else empty dict
     """
     if os.path.exists(ETA_FILE):
         with open(ETA_FILE, "r") as file:
             return json.load(file)
+    return {}
