@@ -256,11 +256,14 @@ def optimize_hyperparameters(
     )
     system_logger.info(f"Best trial: {study.best_trial.value}")
     system_logger.info(f"Best params: {study.best_trial.params}")
+    system_logger.info(f"Best hyperparameters saved to {best_params_path}")
     # Save best params
     best_params_path = os.path.join(output_dir, dataset_name, "best_hparams.yaml")
     with open(best_params_path, "w") as f:
         yaml.dump(study.best_trial.params, f)
     system_logger.info(f"Best hyperparameters saved to {best_params_path}")
+    for t in study.trials:
+        system_logger.info(f"Trial {t.number}: value={t.value}, params={t.params}")
     return study.best_trial
 
 
