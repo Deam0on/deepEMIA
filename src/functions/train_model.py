@@ -223,7 +223,6 @@ def optuna_objective(trial, dataset_name, output_dir, backbone="R50", augment=Fa
     config_file = "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml" if backbone == "R50" else "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
     model_suffix = backbone.lower()
 
-    params = load_rcnn_hyperparameters(backbone, use_best=True)
     ap = train_with_backbone(
         backbone_name=backbone,
         config_file=config_file,
@@ -231,11 +230,11 @@ def optuna_objective(trial, dataset_name, output_dir, backbone="R50", augment=Fa
         dataset_name=dataset_name,
         output_dir=output_dir,
         augment=augment,
-        base_lr=params.get("base_lr", 0.0001),
-        ims_per_batch=params.get("ims_per_batch", 2),
-        warmup_iters=params.get("warmup_iters", 1000),
-        gamma=params.get("gamma", 0.1),
-        batch_size_per_image=params.get("batch_size_per_image", 64),
+        base_lr=base_lr,
+        ims_per_batch=ims_per_batch,
+        warmup_iters=warmup_iters,
+        gamma=gamma,
+        batch_size_per_image=batch_size_per_image,
         return_metric=True,
     )
     return ap
@@ -257,7 +256,6 @@ def optimize_hyperparameters(
     )
     system_logger.info(f"Best trial: {study.best_trial.value}")
     system_logger.info(f"Best params: {study.best_trial.params}")
-    system_logger.info(f"Best hyperparameters saved to {best_params_path}")
     # Save best params
     for t in study.trials:
         system_logger.info(f"Trial {t.number}: value={t.value}, params={t.params}")
