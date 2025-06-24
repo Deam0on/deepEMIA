@@ -663,9 +663,9 @@ def run_inference(
                                 measurements["Feret_diam"],
                                 measurements["Roundness"],
                                 measurements["Sphericity"],
-                                measurements["Contrast d10"],
-                                measurements["Contrast d50"],  
-                                measurements["Contrast d90"],
+                                measurements["contrast_d10"],
+                                measurements["contrast_d50"],  
+                                measurements["contrast_d90"],
                                 psum,
                                 test_img,   
                             ]
