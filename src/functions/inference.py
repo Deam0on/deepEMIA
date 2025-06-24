@@ -50,6 +50,8 @@ from src.utils.scalebar_ocr import detect_scale_bar
 with open(Path.home() / "deepEMIA" / "config" / "config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
+measure_contrast_distribution = config.get("measure_contrast_distribution", False)
+
 # Resolve paths
 SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
 CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
@@ -558,6 +560,9 @@ def run_inference(
                     "Ferret diameter",
                     "Roundness",
                     "Sphericity",
+                    "Contrast d10",
+                    "Contrast d50",
+                    "Contrast d90",
                     "Detected scale bar",
                     "File name",
                 ]
@@ -639,6 +644,8 @@ def run_inference(
                             single_im_mask,
                             um_pix=um_pix,
                             pixelsPerMetric=pixelsPerMetric,
+                            original_image=im,
+                            measure_contrast_distribution=measure_contrast_distribution,  # <-- use config value
                         )
 
                         csvwriter.writerow(
@@ -656,8 +663,11 @@ def run_inference(
                                 measurements["Feret_diam"],
                                 measurements["Roundness"],
                                 measurements["Sphericity"],
+                                measurements["contrast_d10"],
+                                measurements["contrast_d50"],  
+                                measurements["contrast_d90"],
                                 psum,
-                                test_img,
+                                test_img,   
                             ]
                         )
                 elapsed = time.perf_counter() - start_time
