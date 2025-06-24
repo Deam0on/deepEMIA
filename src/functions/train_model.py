@@ -223,6 +223,7 @@ def optuna_objective(trial, dataset_name, output_dir, backbone="R50", augment=Fa
     config_file = "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml" if backbone == "R50" else "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
     model_suffix = backbone.lower()
 
+    params = load_rcnn_hyperparameters(backbone, use_best=True)
     ap = train_with_backbone(
         backbone_name=backbone,
         config_file=config_file,
@@ -230,11 +231,11 @@ def optuna_objective(trial, dataset_name, output_dir, backbone="R50", augment=Fa
         dataset_name=dataset_name,
         output_dir=output_dir,
         augment=augment,
-        base_lr=base_lr,
-        ims_per_batch=ims_per_batch,
-        warmup_iters=warmup_iters,
-        gamma=gamma,
-        batch_size_per_image=batch_size_per_image,
+        base_lr=params.get("base_lr", 0.0001),
+        ims_per_batch=params.get("ims_per_batch", 2),
+        warmup_iters=params.get("warmup_iters", 1000),
+        gamma=params.get("gamma", 0.1),
+        batch_size_per_image=params.get("batch_size_per_image", 64),
         return_metric=True,
     )
     return ap
@@ -258,12 +259,10 @@ def optimize_hyperparameters(
     system_logger.info(f"Best params: {study.best_trial.params}")
     system_logger.info(f"Best hyperparameters saved to {best_params_path}")
     # Save best params
-    best_params_path = os.path.join(output_dir, dataset_name, "best_hparams.yaml")
-    with open(best_params_path, "w") as f:
-        yaml.dump(study.best_trial.params, f)
-    system_logger.info(f"Best hyperparameters saved to {best_params_path}")
     for t in study.trials:
         system_logger.info(f"Trial {t.number}: value={t.value}, params={t.params}")
+    save_best_rcnn_hyperparameters(backbone, study.best_trial.params)
+    system_logger.info(f"Best hyperparameters for {backbone} saved to config/config.yaml")
     return study.best_trial
 
 
@@ -319,6 +318,7 @@ def train_on_dataset(
         return
 
     def _train(backbone_name, config_file, model_suffix):
+        params = load_rcnn_hyperparameters(backbone_name, use_best=True)
         train_with_backbone(
             backbone_name=backbone_name,
             config_file=config_file,
@@ -326,6 +326,11 @@ def train_on_dataset(
             dataset_name=dataset_name,
             output_dir=output_dir,
             augment=augment,
+            base_lr=params.get("base_lr", 0.0001),
+            ims_per_batch=params.get("ims_per_batch", 2),
+            warmup_iters=params.get("warmup_iters", 1000),
+            gamma=params.get("gamma", 0.1),
+            batch_size_per_image=params.get("batch_size_per_image", 64),
         )
 
     if rcnn == "50":
@@ -337,3 +342,25 @@ def train_on_dataset(
         _train("R101", "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml", "r101")
     else:
         raise ValueError("Invalid value for rcnn. Choose from '50', '101', or 'combo'.")
+
+def load_rcnn_hyperparameters(rcnn_type, use_best=True):
+    config_path = Path("config/config.yaml")
+    with open(config_path, "r") as f:
+        config_data = yaml.safe_load(f)
+    section = "best" if use_best and config_data.get("rcnn_hyperparameters", {}).get("best", {}).get(rcnn_type) else "default"
+    params = config_data["rcnn_hyperparameters"][section][rcnn_type]
+    return params
+
+def save_best_rcnn_hyperparameters(rcnn_type, best_params):
+    config_path = Path("config/config.yaml")
+    with open(config_path, "r") as f:
+        config_data = yaml.safe_load(f)
+    # Save current best as backup if not present
+    if "rcnn_hyperparameters" not in config_data:
+        config_data["rcnn_hyperparameters"] = {"default": {}, "best": {}}
+    if rcnn_type not in config_data["rcnn_hyperparameters"]["default"]:
+        config_data["rcnn_hyperparameters"]["default"][rcnn_type] = best_params
+    # Save best params
+    config_data["rcnn_hyperparameters"]["best"][rcnn_type] = best_params
+    with open(config_path, "w") as f:
+        yaml.safe_dump(config_data, f)

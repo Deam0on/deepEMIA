@@ -17,3 +17,20 @@ scalebar_thresholds:
   intensity: 150
   proximity: 50
 admin_password: "admin"
+rcnn_hyperparameters:
+  default:
+    R50:
+      base_lr: 0.00025
+      ims_per_batch: 2
+      warmup_iters: 1000
+      gamma: 0.1
+      batch_size_per_image: 64
+    R101:
+      base_lr: 0.00025
+      ims_per_batch: 2
+      warmup_iters: 1000
+      gamma: 0.1
+      batch_size_per_image: 64
+  best:
+    R50: {}
+    R101: {}
