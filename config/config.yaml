@@ -17,3 +17,4 @@ scalebar_thresholds:
   intensity: 150
   proximity: 50
 admin_password: "admin"
+measure_contrast_distribution: false

@@ -144,7 +144,10 @@ def detect_arrows(image: np.ndarray) -> list:
     return flow_vectors
 
 
-def calculate_measurements(c, single_im_mask, um_pix=1.0, pixelsPerMetric=1):
+def calculate_measurements(
+    c, single_im_mask, um_pix=1.0, pixelsPerMetric=1, 
+    original_image=None, measure_contrast_distribution=False
+):
     """
     Calculates geometric measurements for a given contour and mask.
 
@@ -218,6 +221,26 @@ def calculate_measurements(c, single_im_mask, um_pix=1.0, pixelsPerMetric=1):
         major_axis_length = 0
         minor_axis_length = 0
 
+    contrast_d10 = contrast_d50 = contrast_d90 = None
+    if measure_contrast_distribution and original_image is not None:
+        # Mask the original image to get pixel intensities inside the particle
+        if len(original_image.shape) == 3:
+            # If image is color, convert to grayscale for contrast analysis
+            gray = cv2.cvtColor(original_image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = original_image.copy()
+        particle_pixels = gray[single_im_mask > 0]
+        if len(particle_pixels) > 0:
+            # Compute histogram (0-255)
+            hist, bin_edges = np.histogram(particle_pixels, bins=256, range=(0, 255), density=True)
+            cdf = np.cumsum(hist)
+            cdf /= cdf[-1]  # Normalize to 1
+
+            # Find d10, d50, d90 (intensity values at 10%, 50%, 90% cumulative area)
+            contrast_d10 = np.interp(0.10, cdf, bin_edges[:-1])
+            contrast_d50 = np.interp(0.50, cdf, bin_edges[:-1])
+            contrast_d90 = np.interp(0.90, cdf, bin_edges[:-1])
+
     return {
         "major_axis_length": major_axis_length,
         "minor_axis_length": minor_axis_length,
@@ -231,4 +254,7 @@ def calculate_measurements(c, single_im_mask, um_pix=1.0, pixelsPerMetric=1):
         "Feret_diam": Feret_diam,
         "Roundness": Roundness,
         "Sphericity": Sphericity,
+        "contrast_d10": contrast_d10,
+        "contrast_d50": contrast_d50,
+        "contrast_d90": contrast_d90,
     }
