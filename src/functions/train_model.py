@@ -344,14 +344,16 @@ def train_on_dataset(
         raise ValueError("Invalid value for rcnn. Choose from '50', '101', or 'combo'.")
 
 def load_rcnn_hyperparameters(rcnn_type, use_best=True):
-    with open(config, "r") as f:
+    config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
+    with open(config_path, "r") as f:
         config_data = yaml.safe_load(f)
     section = "best" if use_best and config_data.get("rcnn_hyperparameters", {}).get("best", {}).get(rcnn_type) else "default"
     params = config_data["rcnn_hyperparameters"][section][rcnn_type]
     return params
 
 def save_best_rcnn_hyperparameters(rcnn_type, best_params):
-    with open(config, "r") as f:
+    config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
+    with open(config_path, "r") as f:
         config_data = yaml.safe_load(f)
     # Save current best as backup if not present
     if "rcnn_hyperparameters" not in config_data:
@@ -360,5 +362,5 @@ def save_best_rcnn_hyperparameters(rcnn_type, best_params):
         config_data["rcnn_hyperparameters"]["default"][rcnn_type] = best_params
     # Save best params
     config_data["rcnn_hyperparameters"]["best"][rcnn_type] = best_params
-    with open(config, "w") as f:
+    with open(config_path, "w") as f:
         yaml.safe_dump(config_data, f)
