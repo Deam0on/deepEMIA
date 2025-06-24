@@ -89,11 +89,6 @@ def setup_config():
 def main():
     """
     Main function that parses command line arguments and executes the requested task.
-
-    Handles:
-    - Data download/upload from/to Google Cloud Storage
-    - Progress tracking and ETA estimation
-    - Task execution with appropriate parameters
     """
     parser = argparse.ArgumentParser(
         description="Computer Vision Pipeline: Prepare data, train, evaluate, and run inference.",
@@ -201,6 +196,18 @@ For more details, see the README or documentation.
         action="store_true",
         help="Enable data augmentation during training (applies to both images and annotations).",
     )
+    # --- Optuna HPO flags ---
+    parser.add_argument(
+        "--optimize",
+        action="store_true",
+        help="Run Optuna hyperparameter optimization during training.",
+    )
+    parser.add_argument(
+        "--n-trials",
+        type=int,
+        default=10,
+        help="Number of Optuna trials for hyperparameter optimization (default: 10).",
+    )
     parser.add_argument(
         "--pass",
         dest="pass_mode",
@@ -268,7 +275,7 @@ For more details, see the README or documentation.
         system_logger.info(f"Downloading training data for {args.dataset_name}...")
         download_time_taken = download_data_from_bucket()
 
-        # Train
+        # Train or optimize
         system_logger.info(
             f"Training model on dataset {args.dataset_name} using '{args.dataset_format}' format and RCNN {args.rcnn}..."
         )
@@ -278,6 +285,8 @@ For more details, see the README or documentation.
             dataset_format=args.dataset_format,
             rcnn=args.rcnn,
             augment=args.augment,
+            optimize=args.optimize,
+            n_trials=args.n_trials,
         )
 
         # Delete dataset after training
