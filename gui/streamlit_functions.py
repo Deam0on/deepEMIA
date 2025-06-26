@@ -27,13 +27,24 @@ from tempfile import TemporaryDirectory
 import streamlit as st
 from google.api_core import page_iterator
 from google.cloud import storage
-
-ADMIN_PASSWORD = "admin"
+import hashlib
 
 from src.utils.config import get_config
+from src.utils.logger_utils import system_logger
 
 config = get_config()
 bucket = config["bucket"]
+
+# Secure password handling
+def verify_admin_password(input_password):
+    """Verify admin password using environment variable hash."""
+    stored_hash = os.environ.get('ADMIN_PASSWORD_HASH')
+    if not stored_hash:
+        # Fallback for development - hash of "admin"
+        stored_hash = "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918"
+    
+    input_hash = hashlib.sha256(input_password.encode()).hexdigest()
+    return stored_hash == input_hash
 
 # Absolute path to main.py
 MAIN_SCRIPT_PATH = Path(config["paths"]["main_script"]).expanduser().resolve()
@@ -103,7 +114,7 @@ def check_password():
     """
 
     def password_entered():
-        if st.session_state["password"] == ADMIN_PASSWORD:
+        if verify_admin_password(st.session_state["password"]):
             st.session_state["password_correct"] = True
             del st.session_state["password"]
         else:
@@ -177,18 +188,34 @@ def run_command(command):
     Returns:
     - tuple: (stdout, stderr, success_flag)
     """
-    process = subprocess.Popen(
-        command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-    )
     stdout, stderr = [], []
-    while process.poll() is None:
-        output = process.stdout.readline()
-        if output:
-            stdout.append(output.strip())
-    process.stdout.close()
-    stderr_output = process.stderr.read()
-    process.stderr.close()
-    return "\n".join(stdout), stderr_output, process.returncode == 0
+    process = None
+    try:
+        process = subprocess.Popen(
+            command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        while process.poll() is None:
+            output = process.stdout.readline()
+            if output:
+                stdout.append(output.strip())
+        
+        # Ensure process has finished and get remaining output
+        remaining_stdout, stderr_output = process.communicate()
+        if remaining_stdout:
+            stdout.extend(remaining_stdout.strip().split('\n'))
+            
+        return "\n".join(stdout), stderr_output, process.returncode == 0
+    except Exception as e:
+        return "", f"Process execution failed: {str(e)}", False
+    finally:
+        if process and process.poll() is None:
+            try:
+                process.terminate()
+                process.wait(timeout=5)  # Wait up to 5 seconds for graceful termination
+            except subprocess.TimeoutExpired:
+                process.kill()  # Force kill if terminate doesn't work
+            except Exception as e:
+                system_logger.error(f"Error cleaning up subprocess: {e}")
 
 
 def list_png_files_in_gcs_folder(bucket_name, folder):

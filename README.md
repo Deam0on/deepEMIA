@@ -1,21 +1,21 @@
 # Deep-Learning (primarily Electron Microscopy) Image Analysis Tool
 
-A modular, end-to-end computer vision pipeline for scientific image analysis, featuring dataset management, model training, evaluation, inference, and a Streamlit-based web interface. The project is designed for extensibility, reproducibility, and integration with Google Cloud Storage.
+A modular, end-to-end computer vision pipeline for scientific image analysis, featuring dataset management, model training, evaluation, inference, and a Streamlit-based web interface. The project is designed for extensibility, reproducibility, security, and integration with Google Cloud Storage.
 
 ## Table of Contents
 
 - [Overview](#overview)
 - [Features](#features)
-- [Project Structure](#project-structure)
+- [Security Features](#security-features)
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Usage](#usage)
+  - [Interactive CLI Wizard](#interactive-cli-wizard)
   - [Command Line Interface](#command-line-interface)
   - [Web Interface](#web-interface)
-- [Google Cloud Storage Integration](#google-cloud-storage-integration)
-- [Extending the Pipeline](#extending-the-pipeline)
-- [Logs](#logs)
-- [Web Interface Notes](#web-interface-notes)
+- [First-Time Setup](#first-time-setup)
+- [Security Considerations](#security-considerations)
+- [Error Handling and Reliability](#error-handling-and-reliability)
 - [Contributing](#contributing)
 - [License](#license)
 - [Support](#support)
@@ -28,101 +28,250 @@ This repository provides a robust pipeline for computer vision tasks, including:
 - Model training and quantization (Detectron2, PyTorch)
 - Model evaluation and metrics reporting
 - Inference on new images with advanced measurement and analysis
+- Interactive CLI wizard for easy operation
 - Web-based interface for streamlined workflow management
 - Integration with Google Cloud Storage for scalable data management
 
-The pipeline is suitable for scientific and industrial applications requiring reproducible, automated image analysis.
+The pipeline is suitable for scientific and industrial applications requiring reproducible, automated image analysis with enterprise-grade security features.
 
 ## Features
 
 - **Dataset Management**: Prepare, split, and register datasets in custom or COCO format. Supports per-image JSON and COCO-style annotations.
 - **Model Training**: Train instance segmentation models with Detectron2, including CPU-optimized and quantized models for efficient inference.
+- **Hyperparameter Optimization**: Automated hyperparameter tuning using Optuna with configuration persistence.
 - **Evaluation**: COCO-style evaluation with metrics export and optional visualization.
-- **Inference**: Batch inference with measurement extraction (e.g., scale bar detection, geometric analysis), result encoding, and CSV export.
-- **Iterative Inference**: Optionally repeat mask prediction and deduplication until no significant new masks are found, improving recall for challenging images. Control this with `--pass multi [max_iters]`.
-- **Web Interface**: Streamlit-based GUI for dataset management, task execution, progress monitoring, and result visualization/download.
-- **Cloud Integration**: Automated upload/download of datasets and results to/from Google Cloud Storage.
-- **ETA Tracking**: Automatic estimation and tracking of task durations for user feedback.
-- **Extensibility**: Modular codebase for easy extension and adaptation to new tasks or data formats.
+- **Interactive CLI Wizard**: User-friendly command-line interface with guided workflows.
+- **Advanced Measurements**: Geometric analysis with optional contrast distribution measurements for particle analysis.
+- **Security Features**: Secure password handling, path validation, and input sanitization.
+- **Error Handling**: Comprehensive error handling with retry logic and detailed logging.
 
-## Project Structure
+## Security Features
 
-```
-.
-├── main.py                      # Main pipeline script (CLI entry point)
-├── requirements.txt             # Python dependencies
-├── README.md                    # Project documentation
-├── LICENSE                      # License file
-├── config/
-│   ├── config.yaml              # Main configuration file (paths, bucket, etc.)
-│   └── eta_data.json            # Timing/ETA tracking data
-├── gui/
-│   ├── streamlit_gui.py         # Streamlit web interface
-│   └── streamlit_functions.py   # Streamlit utility functions
-├── src/
-│   ├── data/
-│   │   ├── datasets.py          # Dataset splitting and registration
-│   │   ├── models.py            # Model loading and selection
-│   │   └── custom_mapper.py     # Data augmentation and mapping
-│   ├── functions/
-│   │   ├── train_model.py       # Model training logic
-│   │   ├── evaluate_model.py    # Model evaluation logic
-│   │   └── inference.py         # Inference and measurement extraction
-│   └── utils/
-│       ├── eta_utils.py         # ETA/time tracking utilities
-│       ├── gcs_utils.py         # Google Cloud Storage utilities
-│       ├── mask_utils.py        # Mask encoding/decoding and postprocessing
-│       ├── measurements.py      # Measurement and color utilities
-│       └── scalebar_ocr.py      # Scale bar detection via OCR
-└── .github/
-    └── ISSUE_TEMPLATE/          # GitHub issue templates
-```
+### Authentication
+- **Secure Password Handling**: Uses environment variable hashes instead of plaintext passwords
+- **Environment Variable**: Set `ADMIN_PASSWORD_HASH` environment variable with SHA256 hash of your admin password
+
+### File Security
+- **Path Validation**: All file operations validate paths to prevent directory traversal attacks
+- **Safe File Operations**: Utility functions for secure file manipulation within allowed directories
+- **Configuration Validation**: Schema validation for configuration files
+
+### Network Security
+- **Retry Logic**: Robust network operations with exponential backoff
+- **Timeout Handling**: Configurable timeouts for all network operations
+- **Error Recovery**: Graceful handling of network failures
 
 ## Installation
 
 ### Prerequisites
+- Python 3.8 or higher
+- Google Cloud SDK (for GCS integration)
+- CUDA-compatible GPU (optional, for training acceleration)
 
-- Python 3.8 or newer
-- Google Cloud SDK (for `gsutil` and authentication)
-- [PyTorch](https://pytorch.org/) (CPU or CUDA version as appropriate)
-- [Detectron2](https://github.com/facebookresearch/detectron2) (installed via requirements)
-- Google Cloud credentials configured (for GCS access)
-
-### Steps
-
-1. **Clone the repository:**
-
-   ```sh
-   git clone https://github.com/yourusername/deepEMIA.git
-   cd deepEMIA
+### Setup
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-username/uw-com-vision.git
+   cd uw-com-vision
    ```
 
-2. **Install dependencies:**
-
-   ```sh
+2. Install dependencies:
+   ```bash
    pip install -r requirements.txt
    ```
 
-3. **Configure Google Cloud Storage:**
+3. Set up security:
+   ```bash
+   # Generate admin password hash (replace 'your_secure_password' with your actual password)
+   export ADMIN_PASSWORD_HASH=$(echo -n 'your_secure_password' | sha256sum | cut -d' ' -f1)
+   ```
 
-   - Set up your GCS credentials (e.g., `gcloud auth application-default login`)
-   - Edit `config/config.yaml` to set your bucket name and paths as needed.
-
-4. **Prepare your dataset:**
-
-   - Place your images and annotation files in the appropriate directory structure.
-   - Update or create `dataset_info.json` to describe your datasets and classes.
+4. Run initial setup:
+   ```bash
+   python cli_main.py  # Use interactive wizard
+   # or
+   python main.py --task setup --dataset_name dummy
+   ```
 
 ## Configuration
 
-All configuration is managed via [`config/config.yaml`](config/config.yaml):
+### Security Configuration
+The project uses secure configuration management:
 
-- `bucket`: Name of your GCS bucket
-- `paths`: Paths for scripts, splits, category info, ETA file, and dataset root
-- `scale_bar_rois`: Default and per-dataset ROI settings for scale bar detection
-- `admin_password`: Password for accessing admin features in the web interface. Placeholder for now, will be re-done with fernet.crypto
+- **Password Security**: Admin passwords are stored as environment variable hashes
+- **Path Validation**: All file paths are validated against allowed directories
+- **Configuration Schema**: YAML configuration is validated against a defined schema
 
-Example:
+### Configuration File
+Edit `config/config.yaml` for your environment:
+
+```yaml
+bucket: your-gcs-bucket-name
+paths:
+  main_script: "~/deepEMIA/main.py"
+  split_dir: "~/split_dir"
+  category_json: "~/deepEMIA/dataset_info.json"
+  # ... other paths
+measure_contrast_distribution: false  # Enable for particle analysis
+rcnn_hyperparameters:
+  default:
+    R50:
+      base_lr: 0.00025
+      # ... other hyperparameters
+```
+
+## Usage
+
+### Interactive CLI Wizard
+
+The easiest way to use the pipeline is through the interactive CLI wizard:
+
+```bash
+python cli_main.py
+```
+
+This provides a guided interface for all operations:
+- Dataset selection from available datasets
+- Interactive parameter configuration  
+- Error recovery and retry logic
+- Progress tracking and ETA estimation
+
+### Command Line Interface
+
+For automated workflows, use the direct CLI:
+
+```bash
+# First-time setup
+python main.py --task setup
+
+# Prepare dataset
+python main.py --task prepare --dataset_name polyhipes
+
+# Train model with hyperparameter optimization
+python main.py --task train --dataset_name polyhipes --rcnn combo --optimize --n-trials 10 --augment
+
+# Evaluate model with visualizations
+python main.py --task evaluate --dataset_name polyhipes --visualize --rcnn combo
+
+# Run inference with custom threshold and multi-pass deduplication
+python main.py --task inference --dataset_name polyhipes --threshold 0.7 --visualize --pass multi 5 --id
+```
+
+#### Available CLI Arguments
+
+**Core Arguments:**
+
+- `--task` *(required)*: Task to perform (`prepare`, `train`, `evaluate`, `inference`, `setup`)
+- `--dataset_name` *(required)*: Name of the dataset (e.g., `polyhipes`)
+
+**Model Configuration:**
+
+- `--rcnn`: RCNN backbone (`50`, `101`, `combo`) - default: `101`
+- `--threshold`: Inference confidence threshold - default: `0.65`
+- `--dataset_format`: Dataset format (`json`, `coco`) - default: `json`
+
+**Training Options:**
+
+- `--augment`: Enable data augmentation during training
+- `--optimize`: Run Optuna hyperparameter optimization
+- `--n-trials`: Number of Optuna trials - default: `10`
+
+**Visualization & Output:**
+
+- `--visualize`: Save visualizations of predictions during evaluation/inference
+- `--id`: Draw instance IDs on inference overlays
+
+**Data Transfer:**
+
+- `--download`: Download data from GCS before task - default: `True`
+- `--upload`: Upload results to GCS after task - default: `True`
+
+**Inference Modes:**
+
+- `--pass`: Inference mode (`single` or `multi [max_iters]`) - default: `single`
+  - `single`: One inference pass per image
+  - `multi N`: Iterative deduplication up to N iterations (default: 10)
+
+For complete usage information and examples:
+
+```bash
+python main.py --help
+```
+
+### Web Interface
+
+Launch the Streamlit web interface:
+
+```bash
+streamlit run gui/streamlit_gui.py
+```
+
+## Security Considerations
+
+### Environment Variables
+Set these environment variables for secure operation:
+
+```bash
+export ADMIN_PASSWORD_HASH="your_sha256_hash_here"
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/gcs-key.json"
+```
+
+### File Permissions
+Ensure proper file permissions:
+- Configuration files: 600 (owner read/write only)
+- Log directories: 750 (owner full, group read/execute)
+- Temporary directories: 700 (owner only)
+
+### Network Security
+- Use VPC networks for GCS access when possible
+- Enable GCS audit logging
+- Use service accounts with minimal required permissions
+
+## Error Handling and Reliability
+
+The pipeline includes comprehensive error handling:
+
+- **Retry Logic**: Automatic retry with exponential backoff for network operations
+- **Graceful Degradation**: Fallback options when services are unavailable
+- **Detailed Logging**: Comprehensive logging for debugging and monitoring
+- **Resource Management**: Proper cleanup of processes and file handles
+- **Validation**: Input validation and sanitization throughout the pipeline
+
+## Contributing
+
+Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing.
+
+### Development Setup
+1. Install development dependencies:
+   ```bash
+   pip install -r requirements.txt
+   # Optional: pip install cerberus  # For enhanced configuration validation
+   ```
+
+2. Run security checks:
+   ```bash
+   # Validate configuration
+   python -c "from src.utils.config import get_config; print('Config valid')"
+   ```
+
+3. Follow security best practices:
+   - Never commit passwords or API keys
+   - Use environment variables for sensitive data
+   - Validate all user inputs
+   - Test error handling paths
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+For support, please:
+
+1. Check the logs in `~/logs/` for error details
+2. Verify your configuration with the schema validator
+3. Ensure all environment variables are set correctly
+4. Open an issue on GitHub with relevant log excerpts
 
 ```yaml
 bucket: your-bucket-name
@@ -157,145 +306,7 @@ You will be prompted for:
 
 If a configuration file already exists, you will be asked whether you want to overwrite it.
 
-After setup, you can proceed to use the other tasks (`prepare`, `train`, `evaluate`, `inference`) as described below.
-
-## Usage
-
-### Command Line Interface
-
-The main pipeline is controlled via [`main.py`](main.py):
-
-For a full list of options and usage examples, run:
-
-```sh
-python main.py --help
-```
-
-#### Prepare Dataset
-
-```sh
-python main.py --task prepare --dataset_name <dataset_name>
-```
-
-#### Train Model
-
-```sh
-python main.py --task train --dataset_name <dataset_name> --dataset_format json
-```
-
-#### Evaluate Model
-
-```sh
-python main.py --task evaluate --dataset_name <dataset_name> --visualize
-```
-
-#### Run Inference
-
-```sh
-python main.py --task inference --dataset_name <dataset_name> --threshold 0.65 --visualize
-```
-
-**Additional options:**
-
-- `--pass single` : (Default) Run a single inference pass per image.
-- `--pass multi [max_iters]` : Run iterative inference, repeating mask prediction and deduplication until the number of unique masks increases by less than 10% (or your configured threshold), or until `max_iters` is reached. For example, `--pass multi 5` limits to 5 iterations (default is 10 if not specified).
-
-**Examples:**
-
-Run inference with iterative deduplication, up to 5 iterations:
-```sh
-python main.py --task inference --dataset_name <dataset_name> --rcnn combo --pass multi 5
-```
-
-Run inference with a single pass (default):
-```sh
-python main.py --task inference --dataset_name <dataset_name> --rcnn combo --pass single
-```
-
-### RCNN Backbone Selection
-
-You can specify which Mask R-CNN backbone to use for both training and inference:
-
-- `--rcnn 50` : Use ResNet-50 backbone (better for small particles)
-- `--rcnn 101` : Use ResNet-101 backbone (better for large particles, default)
-- `--rcnn combo` : Use both backbones; for training, both models are trained and saved; for inference, predictions from both models are merged and deduplicated using standard NMS (IoU=0.5).
-
-**Examples:**
-
-Train with both backbones:
-```sh
-python main.py --task train --dataset_name <dataset_name> --rcnn combo
-```
-
-Run inference with both backbones and merge results:
-```sh
-python main.py --task inference --dataset_name <dataset_name> --rcnn combo
-```
-
-When using `--rcnn combo` for inference, the pipeline will run both models on each image, merge their predictions, and remove duplicates using non-maximum suppression with the default IoU threshold. If `--pass multi` is used, this process is repeated until no significant new masks are found or the maximum number of iterations is reached.
-
-### Data Augmentation
-
-You can enable data augmentation during training by adding the `--augment` flag to your command. This will apply random flips, rotations, and brightness changes to both images and their annotations.
-
-**Example:**
-
-```sh
-python main.py --task train --augment
-```
-
-If you omit `--augment`, training will use the original images without augmentation.
-
-### Web Interface
-
-A Streamlit-based web interface is provided for interactive use.
-
-1. **Start the interface:**
-
-   ```sh
-   streamlit run gui/streamlit_gui.py
-   ```
-
-2. **Access in your browser:**
-
-   - Navigate to `http://localhost:8501`
-   - Log in with the admin password (default: `admin`)
-
-3. **Features:**
-
-   - Select and manage datasets
-   - Run pipeline tasks (prepare, train, evaluate, inference)
-   - Upload/download data to/from GCS
-   - Monitor progress and ETA
-   - Visualize and download results
-
-## Google Cloud Storage Integration
-
-- All data and results can be synchronized with your configured GCS bucket.
-- Uploads and downloads are managed automatically via the pipeline and web interface.
-- Archive folders are timestamped for reproducibility and traceability.
-
-## Extending the Pipeline
-
-- **Add new datasets:** Update `dataset_info.json` and place your data in the expected structure.
-- **Add new tasks or models:** Implement new modules in `src/functions/` or `src/data/`.
-- **Customize measurement/extraction:** Extend or modify `src/utils/measurements.py` for geometric and color measurements, or `src/utils/scalebar_ocr.py` for scale bar detection.
-- **Web interface:** Add new features to `gui/streamlit_gui.py` and `gui/streamlit_functions.py`.
-
-## Logs
-
-All pipeline logs are saved in the directory specified by `logs_dir` in your config (default: `~/logs`). After each run, logs are uploaded to your GCS bucket for traceability.
-
-## Web Interface Notes
-
-- The RCNN backbone selector defaults to "Dual model (universal)" for best generalization.
-- The upload section is now at the top for a more intuitive workflow.
-- Only warnings and errors are shown in the error panel for clarity.
-- The log viewer always shows the latest run log.
-
-## Contributing
-
-Contributions are welcome. Please follow these steps:
+After setup, you can proceed to use the other tasks (`prepare`, `train`, `evaluate`, `inference`) as described in the Command Line Interface section above.
 
 1. Fork the repository
 2. Create a feature branch
@@ -304,11 +315,3 @@ Contributions are welcome. Please follow these steps:
 5. Open a Pull Request describing your changes
 
 Please review the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before contributing.
-
-## License
-
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
-
-## Support
-
-For questions, bug reports, or feature requests, please open an issue in the [GitHub repository](https://github.com/yourusername/deepEMIA/issues).
