@@ -1,5 +1,5 @@
 """
-Inference module for the UW Computer Vision project.
+Inference module for the deepEMIA project.
 
 This module handles:
 - Model inference on new images

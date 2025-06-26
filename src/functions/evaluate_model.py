@@ -1,5 +1,5 @@
 """
-Model evaluation module for the UW Computer Vision project.
+Model evaluation module for the deepEMIA project.
 
 This module handles:
 - Model evaluation on test datasets

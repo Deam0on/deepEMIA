@@ -13,6 +13,7 @@ from skimage.measure import label
 from skimage.morphology import dilation, erosion
 
 from src.utils.logger_utils import system_logger
+from src.utils.constants import DefaultThresholds
 
 
 def binary_mask_to_rle(binary_mask: np.ndarray) -> dict:
@@ -95,7 +96,7 @@ def rle_encoding(x):
     return run_lengths
 
 
-def postprocess_masks(ori_mask, ori_score, image, min_crys_size=2):
+def postprocess_masks(ori_mask, ori_score, image, min_crys_size=None):
     """
     Post-processes masks by removing overlaps, filling small holes, and smoothing boundaries.
 
@@ -108,6 +109,9 @@ def postprocess_masks(ori_mask, ori_score, image, min_crys_size=2):
     Returns:
     - list: List of processed masks
     """
+    if min_crys_size is None:
+        min_crys_size = DefaultThresholds.MIN_CRYSTAL_SIZE
+
     image = image[:, :, ::-1]
     height, width = image.shape[:2]
 

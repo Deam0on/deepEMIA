@@ -1,5 +1,5 @@
 """
-Model and data utility module for the UW Computer Vision project.
+Model and data utility module for the deepEMIA project.
 
 This module handles:
 - Dataset splitting into train and test sets

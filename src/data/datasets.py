@@ -1,5 +1,5 @@
 """
-Data preparation module for the UW Computer Vision project.
+Data preparation module for the deepEMIA project.
 
 This module handles:
 - Dataset splitting into train and test sets

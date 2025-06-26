@@ -1,5 +1,5 @@
 """
-Estimated Time of Arrival (ETA) utilities for the UW Computer Vision project.
+Estimated Time of Arrival (ETA) utilities for the deepEMIA project.
 
 This module provides functions for:
 - Reading and updating ETA data for various tasks

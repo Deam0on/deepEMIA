@@ -1,5 +1,5 @@
 """
-Model training module for the UW Computer Vision project.
+Model training module for the deepEMIA project.
 
 This module handles:
 - Model training with Detectron2
@@ -18,9 +18,12 @@ The module provides a complete training pipeline with support for:
 import os
 import shutil
 from pathlib import Path
+from typing import Dict, Optional, Union
 
 import albumentations as A
 import torch
+import yaml
+import optuna
 from albumentations.pytorch import ToTensorV2
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
@@ -32,14 +35,13 @@ from detectron2.data import (
 from detectron2.engine import DefaultTrainer
 from detectron2.evaluation import COCOEvaluator
 
-import optuna
-import yaml
-
 from src.data.custom_mapper import custom_mapper
 from src.data.datasets import read_dataset_info, register_datasets
 from src.functions.inference import CustomTrainer
 from src.utils.config import get_config
 from src.utils.logger_utils import system_logger
+from src.utils.exceptions import TrainingError, ModelLoadError, ConfigurationError
+from src.utils.constants import DefaultHyperparameters, ProcessingLimits
 
 config = get_config()
 
@@ -341,24 +343,100 @@ def train_on_dataset(
     else:
         raise ValueError("Invalid value for rcnn. Choose from '50', '101', or 'combo'.")
 
-def load_rcnn_hyperparameters(rcnn_type, use_best=True):
-    config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
-    with open(config_path, "r") as f:
-        config_data = yaml.safe_load(f)
-    section = "best" if use_best and config_data.get("rcnn_hyperparameters", {}).get("best", {}).get(rcnn_type) else "default"
-    params = config_data["rcnn_hyperparameters"][section][rcnn_type]
-    return params
+def load_rcnn_hyperparameters(rcnn_type: str, use_best: bool = True) -> Dict[str, Union[float, int]]:
+    """
+    Load RCNN hyperparameters from configuration file.
+    
+    Args:
+        rcnn_type: Type of RCNN model ('R50' or 'R101')
+        use_best: Whether to use best parameters if available
+        
+    Returns:
+        Dictionary of hyperparameters
+        
+    Raises:
+        ConfigurationError: If configuration cannot be loaded or is invalid
+    """
+    try:
+        config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
+        with open(config_path, "r") as f:
+            config_data = yaml.safe_load(f)
+        
+        rcnn_config = config_data.get("rcnn_hyperparameters", {})
+        if not rcnn_config:
+            raise ConfigurationError("No RCNN hyperparameters found in configuration")
+        
+        # Determine which section to use
+        section = "best" if use_best and rcnn_config.get("best", {}).get(rcnn_type) else "default"
+        
+        if section not in rcnn_config:
+            raise ConfigurationError(f"No {section} hyperparameters section found")
+        
+        if rcnn_type not in rcnn_config[section]:
+            raise ConfigurationError(f"No hyperparameters found for {rcnn_type} in {section} section")
+        
+        params = rcnn_config[section][rcnn_type]
+        
+        # Validate required parameters
+        required_params = ['base_lr', 'ims_per_batch', 'warmup_iters', 'gamma', 'batch_size_per_image']
+        missing_params = [p for p in required_params if p not in params]
+        if missing_params:
+            raise ConfigurationError(f"Missing required hyperparameters: {missing_params}")
+        
+        system_logger.info(f"Loaded {section} hyperparameters for {rcnn_type}")
+        return params
+        
+    except FileNotFoundError:
+        raise ConfigurationError(f"Configuration file not found: {config_path}")
+    except yaml.YAMLError as e:
+        raise ConfigurationError(f"Error parsing configuration file: {e}")
+    except Exception as e:
+        raise ConfigurationError(f"Error loading hyperparameters: {e}")
 
-def save_best_rcnn_hyperparameters(rcnn_type, best_params):
-    config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
-    with open(config_path, "r") as f:
-        config_data = yaml.safe_load(f)
-    # Save current best as backup if not present
-    if "rcnn_hyperparameters" not in config_data:
-        config_data["rcnn_hyperparameters"] = {"default": {}, "best": {}}
-    if rcnn_type not in config_data["rcnn_hyperparameters"]["default"]:
-        config_data["rcnn_hyperparameters"]["default"][rcnn_type] = best_params
-    # Save best params
-    config_data["rcnn_hyperparameters"]["best"][rcnn_type] = best_params
-    with open(config_path, "w") as f:
-        yaml.safe_dump(config_data, f)
+def save_best_rcnn_hyperparameters(rcnn_type: str, best_params: Dict[str, Union[float, int]]) -> None:
+    """
+    Save best RCNN hyperparameters to configuration file.
+    
+    Args:
+        rcnn_type: Type of RCNN model ('R50' or 'R101')
+        best_params: Dictionary of hyperparameters to save
+        
+    Raises:
+        ConfigurationError: If configuration cannot be loaded or saved
+    """
+    try:
+        config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
+        
+        # Read existing config
+        with open(config_path, "r") as f:
+            config_data = yaml.safe_load(f)
+        
+        # Initialize structure if needed
+        if "rcnn_hyperparameters" not in config_data:
+            config_data["rcnn_hyperparameters"] = {"default": {}, "best": {}}
+        
+        rcnn_config = config_data["rcnn_hyperparameters"]
+        if "default" not in rcnn_config:
+            rcnn_config["default"] = {}
+        if "best" not in rcnn_config:
+            rcnn_config["best"] = {}
+        
+        # Save current as default if not present
+        if rcnn_type not in rcnn_config["default"]:
+            rcnn_config["default"][rcnn_type] = best_params.copy()
+        
+        # Save best params
+        rcnn_config["best"][rcnn_type] = best_params
+        
+        # Write back to file
+        with open(config_path, "w") as f:
+            yaml.safe_dump(config_data, f, default_flow_style=False, sort_keys=False)
+        
+        system_logger.info(f"Saved best hyperparameters for {rcnn_type}")
+        
+    except FileNotFoundError:
+        raise ConfigurationError(f"Configuration file not found: {config_path}")
+    except yaml.YAMLError as e:
+        raise ConfigurationError(f"Error writing configuration file: {e}")
+    except Exception as e:
+        raise ConfigurationError(f"Error saving hyperparameters: {e}")

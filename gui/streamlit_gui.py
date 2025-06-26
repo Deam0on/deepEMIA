@@ -1,5 +1,5 @@
 """
-Streamlit web interface for the UW Computer Vision project.
+Streamlit web interface for the deepEMIA project.
 
 This module provides a user-friendly web interface for:
 - Dataset management
@@ -42,7 +42,7 @@ from streamlit_functions import (
 from src.utils.config import get_config
 
 config = get_config()
-ADMIN_PASSWORD = config.get("admin_password", "admin")  # fallback for legacy configs
+# ADMIN_PASSWORD removed for security - now handled via environment variable
 
 bucket = config["bucket"]
 MAIN_SCRIPT_PATH = Path(config["paths"]["main_script"]).expanduser().resolve()

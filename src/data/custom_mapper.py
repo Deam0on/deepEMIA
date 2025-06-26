@@ -1,9 +1,26 @@
+"""
+Custom data mapper for Detectron2 training pipeline.
+
+This module provides custom data mapping functionality for preprocessing
+training data with optional augmentation.
+"""
+
 import torch
 from detectron2.data import detection_utils as utils
 from detectron2.data import transforms as T
 
 
 def custom_mapper(dataset_dict, augment=False):
+    """
+    Custom data mapper function for Detectron2 training.
+    
+    Args:
+        dataset_dict (dict): Dictionary containing image and annotation data.
+        augment (bool): Whether to apply data augmentation.
+        
+    Returns:
+        dict: Processed dataset dictionary with image tensor and instances.
+    """
     dataset_dict = dataset_dict.copy()
     image = utils.read_image(dataset_dict["file_name"], format="BGR")
     annos = dataset_dict.get("annotations", [])
