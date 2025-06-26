@@ -1,5 +1,5 @@
 """
-Constants and default values for the UW Computer Vision project.
+Constants and default values for the deepEMIA project.
 
 This module centralizes all magic numbers, thresholds, and default values
 used throughout the project for better maintainability.

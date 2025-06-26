@@ -1,5 +1,5 @@
 """
-Streamlit utility functions for the UW Computer Vision project.
+Streamlit utility functions for the deepEMIA project.
 
 This module provides backend utilities for the Streamlit GUI, including:
 - Dataset management in Google Cloud Storage (GCS)

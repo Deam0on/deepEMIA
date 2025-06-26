@@ -1,5 +1,5 @@
 """
-Streamlit web interface for the UW Computer Vision project.
+Streamlit web interface for the deepEMIA project.
 
 This module provides a user-friendly web interface for:
 - Dataset management

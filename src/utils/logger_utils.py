@@ -1,3 +1,10 @@
+"""
+Logging utilities for the deepEMIA project.
+
+This module provides centralized logging configuration with file and console
+output for both development and production environments.
+"""
+
 import logging
 import os
 import sys
@@ -6,6 +13,12 @@ from pathlib import Path
 
 
 def get_log_dir():
+    """
+    Get the appropriate log directory based on the environment.
+    
+    Returns:
+        Path: Path to the log directory.
+    """
     if getattr(sys, "frozen", False):
         # Running from PyInstaller, if ever used
         base_dir = Path.home() / "AppData" / "Local" / "AD_APP" / "logs"

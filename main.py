@@ -1,5 +1,5 @@
 """
-UW Computer Vision Project - Main Pipeline Script
+deepEMIA Project - Main Pipeline Script
 
 This script provides a command-line interface for running dataset preparation, model training,
 evaluation, and inference tasks. It integrates with Google Cloud Storage and tracks progress/ETA.
@@ -41,7 +41,7 @@ def setup_config():
     Prompts the user for bucket name and scale_bar_rois settings,
     then writes them to config/config.yaml.
     """
-    print("=== UW Computer Vision Project Setup ===")
+    print("=== deepEMIA Project Setup ===")
     config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
     if config_path.exists():
         overwrite = (

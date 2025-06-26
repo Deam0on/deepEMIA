@@ -1,5 +1,5 @@
 """
-Model training module for the UW Computer Vision project.
+Model training module for the deepEMIA project.
 
 This module handles:
 - Model training with Detectron2

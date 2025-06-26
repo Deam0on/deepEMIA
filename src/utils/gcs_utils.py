@@ -1,5 +1,5 @@
 """
-Google Cloud Storage utilities for the UW Computer Vision project.
+Google Cloud Storage utilities for the deepEMIA project.
 
 This module provides functions for:
 - Downloading data from GCS buckets

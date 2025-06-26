@@ -1,5 +1,5 @@
 """
-Custom exception classes for the UW Computer Vision project.
+Custom exception classes for the deepEMIA project.
 
 This module defines project-specific exceptions to improve error handling
 and debugging throughout the application.

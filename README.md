@@ -71,8 +71,8 @@ The pipeline is suitable for scientific and industrial applications requiring re
 ### Setup
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/uw-com-vision.git
-   cd uw-com-vision
+   git clone https://github.com/your-username/deepEMIA.git
+   cd deepEMIA
    ```
 
 2. Install dependencies:
