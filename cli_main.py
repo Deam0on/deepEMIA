@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 import json
 import yaml
+import time
 
 def clear_screen():
     """Clear the terminal screen."""
@@ -24,10 +25,72 @@ def print_header():
     print("=" * 60)
     print()
 
+def check_tmux_available():
+    """Check if tmux is available on the system."""
+    try:
+        result = subprocess.run("which tmux", shell=True, capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            return True
+        
+        result = subprocess.run("tmux -V", shell=True, capture_output=True, text=True, check=False)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+def run_in_tmux(command, session_name="deepemia_task"):
+    """Run command in a tmux session that auto-terminates."""
+    print(f"\n🚀 Launching task in tmux session '{session_name}'...")
+    
+    # Kill existing session if it exists
+    subprocess.run(f"tmux kill-session -t {session_name} 2>/dev/null", shell=True)
+    
+    # Get the current directory
+    current_dir = Path.cwd()
+    
+    # Create command that auto-terminates tmux after completion
+    full_command = f"cd {current_dir} && {command}; echo ''; echo '✅ Task completed! Session will close in 10 seconds...'; sleep 10"
+    
+    # Create new session and run command
+    tmux_cmd = f"tmux new-session -d -s {session_name} '{full_command}'"
+    result = subprocess.run(tmux_cmd, shell=True, capture_output=True, text=True)
+    
+    if result.returncode == 0:
+        print(f"✅ Task started in tmux session '{session_name}'")
+        print(f"🔧 To attach and monitor: tmux attach-session -t {session_name}")
+        print(f"🔍 To check if running: tmux list-sessions")
+        print(f"🗑️  To kill manually: tmux kill-session -t {session_name}")
+        print("\n📱 Session will auto-terminate when task completes.")
+        return True
+    else:
+        print(f"❌ Failed to create tmux session")
+        if result.stderr:
+            print(f"Error: {result.stderr}")
+        return False
+
+def get_execution_mode():
+    """Ask user how they want to run the command."""
+    print("\n🎯 EXECUTION MODE")
+    print("Choose how to run the task:")
+    
+    choices = ["terminal - Run in current terminal (blocking)"]
+    
+    # Only offer tmux option if available
+    if check_tmux_available():
+        choices.append("tmux - Run in background tmux session (non-blocking)")
+    else:
+        print("⚠️  tmux not available - only terminal mode available")
+    
+    if len(choices) == 1:
+        return "terminal"
+    
+    mode = get_user_choice("", choices, default=choices[0])
+    return mode.split()[0]  # Extract just 'terminal' or 'tmux'
+
 def get_user_choice(prompt, choices, default=None):
     """Get user choice from a list of options."""
     while True:
-        print(prompt)
+        if prompt:
+            print(prompt)
         for i, choice in enumerate(choices, 1):
             marker = " (default)" if default and choice == default else ""
             print(f"  {i}. {choice}{marker}")
@@ -374,6 +437,41 @@ def inference_task():
     
     return args
 
+def execute_command(args, execution_mode):
+    """Execute the command based on the chosen mode."""
+    command = f"python main.py {' '.join(args)}"
+    
+    print(f"\n📋 Command to execute:")
+    print(f"{command}")
+    print()
+    
+    if not get_yes_no("Execute this command?", default=True):
+        print("❌ Task cancelled.")
+        return False
+    
+    if execution_mode == "tmux":
+        # Generate session name based on task
+        task_name = args[1] if len(args) > 1 else "task"  # args[1] should be the dataset name
+        session_name = f"deepemia_{task_name}_{int(time.time())}"
+        
+        return run_in_tmux(command, session_name)
+    
+    else:  # terminal mode
+        print("\n🚀 Executing in current terminal...")
+        try:
+            script_dir = Path(__file__).parent
+            main_py = script_dir / "main.py"
+            
+            subprocess.run([sys.executable, str(main_py)] + args, check=True)
+            print("\n✅ Task completed successfully!")
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"\n❌ Task failed with exit code {e.returncode}")
+            return False
+        except KeyboardInterrupt:
+            print("\n⚠️ Task interrupted by user")
+            return False
+
 def main():
     """Main function."""
     while True:
@@ -414,29 +512,17 @@ def main():
         if args is None:
             continue
         
-        # Confirm and execute
-        print(f"\n📋 Command to execute:")
-        print(f"python main.py {' '.join(args)}")
-        print()
+        # Get execution mode
+        execution_mode = get_execution_mode()
         
-        if get_yes_no("Execute this command?", default=True):
-            print("\n🚀 Executing...")
-            try:
-                # Get the directory where this script is located
-                script_dir = Path(__file__).parent
-                main_py = script_dir / "main.py"
-                
-                subprocess.run([sys.executable, str(main_py)] + args, check=True)
-                print("\n✅ Task completed successfully!")
-            except subprocess.CalledProcessError as e:
-                print(f"\n❌ Task failed with exit code {e.returncode}")
-            except KeyboardInterrupt:
-                print("\n⚠️ Task interrupted by user")
-            
+        # Execute the command
+        success = execute_command(args, execution_mode)
+        
+        if execution_mode == "terminal":
             input("\nPress Enter to continue...")
         else:
-            print("❌ Task cancelled.")
-            input("Press Enter to continue...")
+            print("\n📱 Task launched in tmux. Returning to main menu...")
+            time.sleep(2)
 
 if __name__ == "__main__":
     main()
