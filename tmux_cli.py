@@ -198,10 +198,10 @@ Tmux Commands:
         sys.exit(1)
     
     # Check if the CLI script exists
-    cli_script = Path("cli_main.py")
+    cli_script = Path.home() / "deepEMIA" / "cli_main.py"
     if not cli_script.exists():
         print(f"❌ CLI script not found: {cli_script.absolute()}")
-        print("🔍 Make sure you're in the correct directory")
+        print("🔍 Make sure the deepEMIA directory exists in your home folder")
         sys.exit(1)
     
     print("🚀 UW Computer Vision Tmux Manager")
