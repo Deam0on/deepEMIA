@@ -25,6 +25,55 @@ def print_header():
     print("=" * 60)
     print()
 
+def download_dataset_info():
+    """Download dataset_info.json from GCS before proceeding."""
+    try:
+        # Read config to get bucket name
+        config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
+        if not config_path.exists():
+            print("⚠️  Config file not found. Please run setup first.")
+            return False
+            
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+        
+        bucket = config.get("bucket")
+        if not bucket:
+            print("⚠️  Bucket not configured. Please run setup first.")
+            return False
+        
+        local_path = Path.home() / "deepEMIA"
+        local_path.mkdir(parents=True, exist_ok=True)
+        
+        print(f"📥 Downloading dataset_info.json from gs://{bucket}...")
+        
+        result = subprocess.run(
+            [
+                "gsutil",
+                "-m",
+                "cp",
+                "-r",
+                f"gs://{bucket}/dataset_info.json",
+                str(local_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        
+        if result.returncode == 0:
+            print("✅ Successfully downloaded dataset_info.json")
+            return True
+        else:
+            print(f"❌ Failed to download dataset_info.json: {result.stderr}")
+            print("⚠️  You can still enter dataset names manually.")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error downloading dataset_info.json: {e}")
+        print("⚠️  You can still enter dataset names manually.")
+        return False
+
 def check_tmux_available():
     """Check if tmux is available on the system."""
     try:
@@ -38,7 +87,7 @@ def check_tmux_available():
         return False
 
 def run_in_tmux(command, session_name="deepemia_task"):
-    """Run command in a tmux session that auto-terminates."""
+    """Run command in a tmux session without auto-termination."""
     print(f"\n🚀 Launching task in tmux session '{session_name}'...")
     
     # Kill existing session if it exists
@@ -47,8 +96,8 @@ def run_in_tmux(command, session_name="deepemia_task"):
     # Get the current directory
     current_dir = Path.cwd()
     
-    # Create command that auto-terminates tmux after completion
-    full_command = f"cd {current_dir} && {command}; echo ''; echo '✅ Task completed! Session will close in 10 seconds...'; sleep 10"
+    # Create command WITHOUT auto-termination
+    full_command = f"cd {current_dir} && {command}"
     
     # Create new session and run command
     tmux_cmd = f"tmux new-session -d -s {session_name} '{full_command}'"
@@ -59,13 +108,71 @@ def run_in_tmux(command, session_name="deepemia_task"):
         print(f"🔧 To attach and monitor: tmux attach-session -t {session_name}")
         print(f"🔍 To check if running: tmux list-sessions")
         print(f"🗑️  To kill manually: tmux kill-session -t {session_name}")
-        print("\n📱 Session will auto-terminate when task completes.")
+        
+        # Ask if user wants monitoring
+        monitor = get_yes_no("\n📱 Monitor progress in this terminal?", default=True)
+        if monitor:
+            monitor_tmux_session(session_name)
+        else:
+            print("\n📱 Task running in background. Session will persist until completion.")
+        
         return True
     else:
         print(f"❌ Failed to create tmux session")
         if result.stderr:
             print(f"Error: {result.stderr}")
         return False
+
+def monitor_tmux_session(session_name, check_interval=5):
+    """Monitor tmux session and print updates to terminal."""
+    print(f"\n🔍 Monitoring tmux session '{session_name}'...")
+    print(f"📱 Check interval: {check_interval} seconds")
+    print("💡 Use Ctrl+C to stop monitoring (task will continue in tmux)")
+    print("=" * 60)
+    
+    last_output = ""
+    
+    try:
+        while True:
+            # Check if session still exists
+            check_cmd = f"tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep -q '^{session_name}$'"
+            session_exists = subprocess.run(check_cmd, shell=True).returncode == 0
+            
+            if not session_exists:
+                print(f"\n✅ Session '{session_name}' has completed!")
+                break
+            
+            # Get current output (last 10 lines)
+            output_cmd = f"tmux capture-pane -t {session_name} -p"
+            result = subprocess.run(output_cmd, shell=True, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                current_output = result.stdout.strip()
+                
+                # Only update if output changed
+                if current_output != last_output:
+                    # Clear screen and show latest output
+                    print(f"\n📊 Session: {session_name} | {time.strftime('%Y-%m-%d %H:%M:%S')}")
+                    print("-" * 60)
+                    
+                    # Show last 15 lines
+                    lines = current_output.split('\n')
+                    recent_lines = lines[-15:] if len(lines) > 15 else lines
+                    for line in recent_lines:
+                        print(line)
+                    
+                    print("-" * 60)
+                    print(f"💡 Session is running. Next update in {check_interval}s...")
+                    print(f"🔧 Manual attach: tmux attach-session -t {session_name}")
+                    
+                    last_output = current_output
+            
+            time.sleep(check_interval)
+            
+    except KeyboardInterrupt:
+        print(f"\n⚠️ Stopped monitoring session '{session_name}'")
+        print(f"🔧 Task continues running. Attach with: tmux attach-session -t {session_name}")
+        print(f"🔍 Check status with: tmux list-sessions")
 
 def get_execution_mode():
     """Ask user how they want to run the command."""
@@ -83,7 +190,7 @@ def get_execution_mode():
     if len(choices) == 1:
         return "terminal"
     
-    mode = get_user_choice("", choices, default=choices[0])
+    mode = get_user_choice("", choices, default=choices[1] if len(choices) > 1 else choices[0])  # Default to tmux if available
     return mode.split()[0]  # Extract just 'terminal' or 'tmux'
 
 def get_user_choice(prompt, choices, default=None):
@@ -210,6 +317,17 @@ def get_available_datasets():
         # Get dataset_info.json path
         category_json_path = Path(config["paths"]["category_json"]).expanduser()
         
+        # Check if file exists, if not try to download
+        if not category_json_path.exists():
+            print(f"⚠️  Dataset info file not found at {category_json_path}")
+            if download_dataset_info():
+                # Try again after download
+                if not category_json_path.exists():
+                    print("❌ Dataset info file still not found after download")
+                    return []
+            else:
+                return []
+        
         # Read dataset info
         with open(category_json_path, "r") as f:
             dataset_info = json.load(f)
@@ -243,7 +361,8 @@ def get_dataset_selection(prompt_text="Select dataset"):
     datasets = get_available_datasets()
     
     if not datasets:
-        print("No datasets found. Please ensure dataset_info.json is properly configured.")
+        print("No datasets found or dataset_info.json not available.")
+        print("💡 Tip: Make sure you have run setup and have network access to GCS.")
         return get_string_input("Enter dataset name manually")
     
     return get_user_choice(
@@ -450,9 +569,11 @@ def execute_command(args, execution_mode):
         return False
     
     if execution_mode == "tmux":
-        # Generate session name based on task
-        task_name = args[1] if len(args) > 1 else "task"  # args[1] should be the dataset name
-        session_name = f"deepemia_{task_name}_{int(time.time())}"
+        # Generate session name based on task and dataset
+        task_type = args[1] if len(args) > 1 else "task"  # --task value
+        dataset_name = args[3] if len(args) > 3 else "dataset"  # --dataset_name value
+        timestamp = int(time.time())
+        session_name = f"deepemia_{task_type}_{dataset_name}_{timestamp}"
         
         return run_in_tmux(command, session_name)
     
@@ -474,6 +595,9 @@ def execute_command(args, execution_mode):
 
 def main():
     """Main function."""
+    # Download dataset info at startup (except for setup task)
+    print("🚀 Starting deepEMIA Interactive CLI...")
+    
     while True:
         clear_screen()
         print_header()
@@ -497,6 +621,19 @@ def main():
         
         # Get task-specific arguments
         task_name = task.split()[0]
+        
+        # For non-setup tasks, ensure we have dataset info
+        if task_name != "setup":
+            # Try to download dataset_info.json if needed
+            config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
+            dataset_info_path = Path.home() / "deepEMIA" / "dataset_info.json"
+            
+            if config_path.exists() and not dataset_info_path.exists():
+                print("\n📥 Checking for dataset information...")
+                download_dataset_info()
+            elif not config_path.exists():
+                print("⚠️  Configuration not found. Please run setup first.")
+                continue
         
         if task_name == "setup":
             args = setup_task()
