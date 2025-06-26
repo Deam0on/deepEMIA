@@ -503,12 +503,12 @@ def inference_task():
     )
     rcnn_value = rcnn.split()[0]
     
-    # Dataset format
-    dataset_format = get_user_choice(
-        "\nDataset format:",
-        ["json", "coco"],
-        default="json"
-    )
+    # # Dataset format
+    # dataset_format = get_user_choice(
+    #     "\nDataset format:",
+    #     ["json", "coco"],
+    #     default="json"
+    # )
     
     # Pass mode
     pass_mode = get_user_choice(
@@ -529,8 +529,8 @@ def inference_task():
         "--task", "inference",
         "--dataset_name", dataset_name,
         "--threshold", str(threshold),
-        "--rcnn", rcnn_value,
-        "--dataset_format", dataset_format
+        "--rcnn", rcnn_value
+        # "--dataset_format", dataset_format
     ]
     
     # Pass mode
