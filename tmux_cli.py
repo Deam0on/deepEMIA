@@ -46,8 +46,12 @@ def create_tmux_session(session_name, command):
     # Kill existing session if it exists
     run_command(f"tmux kill-session -t {session_name} 2>/dev/null")
     
+    # Change to the deepEMIA directory and run the command
+    deepemia_dir = Path.home() / "deepEMIA"
+    full_command = f"cd {deepemia_dir} && {command}"
+    
     # Create new session
-    tmux_cmd = f"tmux new-session -d -s {session_name} '{command}'"
+    tmux_cmd = f"tmux new-session -d -s {session_name} '{full_command}'"
     result = run_command(tmux_cmd)
     
     if result and result.returncode == 0:
@@ -55,6 +59,8 @@ def create_tmux_session(session_name, command):
         return True
     else:
         print(f"❌ Failed to create tmux session '{session_name}'")
+        if result and result.stderr:
+            print(f"Error: {result.stderr}")
         return False
 
 
@@ -182,8 +188,8 @@ Tmux Commands:
     parser.add_argument(
         "--command", "-c",
         type=str,
-        default="python cli_main.py",
-        help="Command to run in tmux (default: python cli_main.py)"
+        default="cd ~/deepEMIA && python cli_main.py",  # Updated default
+        help="Command to run in tmux (default: cd ~/deepEMIA && python cli_main.py)"
     )
     
     args = parser.parse_args()
