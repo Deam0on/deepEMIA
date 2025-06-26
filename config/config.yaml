@@ -16,7 +16,7 @@ scale_bar_rois:
 scalebar_thresholds:
   intensity: 150
   proximity: 50
-admin_password: "admin"
+# admin_password removed for security - use environment variable ADMIN_PASSWORD_HASH instead
 measure_contrast_distribution: false
 rcnn_hyperparameters:
   default:

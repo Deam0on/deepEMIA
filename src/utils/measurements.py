@@ -6,6 +6,7 @@ including midpoint calculation, color conversions, wavelength estimation, and
 arrow detection in images.
 """
 
+from typing import Dict, List, Optional, Tuple, Union
 import cv2
 import numpy as np
 from imutils import perspective
@@ -110,7 +111,7 @@ def rgb_to_wavelength(r: int, g: int, b: int) -> float:
     return wavelength
 
 
-def detect_arrows(image: np.ndarray) -> list:
+def detect_arrows(image: np.ndarray) -> List[Tuple[float, float]]:
     """
     Detects arrows in the image.
 
@@ -145,9 +146,13 @@ def detect_arrows(image: np.ndarray) -> list:
 
 
 def calculate_measurements(
-    c, single_im_mask, um_pix=1.0, pixelsPerMetric=1, 
-    original_image=None, measure_contrast_distribution=False
-):
+    c: np.ndarray, 
+    single_im_mask: np.ndarray, 
+    um_pix: float = 1.0, 
+    pixelsPerMetric: float = 1.0,
+    original_image: Optional[np.ndarray] = None, 
+    measure_contrast_distribution: bool = False
+) -> Dict[str, Union[float, None]]:
     """
     Calculates geometric measurements for a given contour and mask.
 
