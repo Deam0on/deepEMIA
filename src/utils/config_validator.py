@@ -117,7 +117,7 @@ def validate_config_dict(config_dict: Dict[str, Any], schema: Dict[str, Any], pr
     # Check for unexpected fields
     unexpected_fields = set(config_dict.keys()) - set(schema.keys())
     if unexpected_fields:
-        print(f"Warning: Unexpected configuration fields found: {unexpected_fields}")
+        system_logger.warning(f"Unexpected configuration fields found: {unexpected_fields}")
         # Include unexpected fields in validated config
         for field in unexpected_fields:
             validated_config[field] = config_dict[field]
