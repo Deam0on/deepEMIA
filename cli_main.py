@@ -400,6 +400,20 @@ def train_task():
     
     dataset_name = get_dataset_selection_with_retry("Select dataset to train on")
     
+    # Show current hyperparameters for this dataset
+    try:
+        # Import here to avoid issues if modules aren't available
+        sys.path.append(str(Path(__file__).parent / "src"))
+        from src.functions.train_model import get_hyperparameter_info
+        
+        print(f"\nCurrent hyperparameters for '{dataset_name}':")
+        print("-" * 50)
+        info = get_hyperparameter_info(dataset_name=dataset_name)
+        print(info)
+        print("-" * 50)
+    except Exception as e:
+        print(f"\nNote: Could not load hyperparameter info: {e}")
+    
     # RCNN backbone
     print("\nRCNN Backbone Architecture:")
     print("   R50: Faster training/inference, good for small particles")
@@ -431,6 +445,7 @@ def train_task():
     
     # Hyperparameter optimization
     print("   Hyperparameter Optimization: Uses Optuna to automatically find best parameters")
+    print("   Note: This will create/update dataset-specific hyperparameters (best_" + dataset_name + ")")
     optimize = get_yes_no("Run hyperparameter optimization (takes longer but improves results)?", default=False)
     n_trials = None
     if optimize:

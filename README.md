@@ -37,7 +37,7 @@ The pipeline is suitable for scientific and industrial applications requiring re
 
 - **Dataset Management**: Prepare, split, and register datasets in custom or COCO format. Supports per-image JSON and COCO-style annotations.
 - **Model Training**: Train instance segmentation models with Detectron2, including CPU-optimized and quantized models for efficient inference.
-- **Hyperparameter Optimization**: Automated hyperparameter tuning using Optuna with configuration persistence.
+- **Hyperparameter Optimization**: Automated hyperparameter tuning using Optuna with dataset-specific configuration persistence and automatic fallback to global/default settings.
 - **Evaluation**: COCO-style evaluation with metrics export and optional visualization.
 - **Interactive CLI Wizard**: User-friendly command-line interface with guided workflows.
 - **Advanced Measurements**: Geometric analysis with optional contrast distribution measurements for particle analysis.
@@ -377,7 +377,7 @@ The setup process will configure:
 - **Scale bar ROI settings**: Region of interest for automatic scale bar detection in SEM images
 - **Scalebar thresholds**: Intensity and proximity thresholds for scale bar detection
 - **Measurement settings**: Whether to measure contrast distribution for particle analysis
-- **RCNN hyperparameters**: Default training parameters for R50 and R101 backbones
+- **RCNN hyperparameters**: Default training parameters for R50 and R101 backbones, with support for dataset-specific optimization
 
 Example configuration file structure:
 
@@ -402,6 +402,7 @@ scalebar_thresholds:
   proximity: 50              # Proximity threshold for grouping scale bar elements
 measure_contrast_distribution: false  # Enable for detailed particle contrast analysis
 rcnn_hyperparameters:
+  # Default hyperparameters used for all datasets when no dataset-specific settings exist
   default:
     R50:
       base_lr: 0.00025
@@ -415,9 +416,25 @@ rcnn_hyperparameters:
       warmup_iters: 1000
       gamma: 0.1
       batch_size_per_image: 64
-  best:                      # Reserved for hyperparameter optimization results
+  # Global best hyperparameters (used when no dataset-specific best exists)
+  best:
     R50: {}
     R101: {}
+  # Dataset-specific best hyperparameters (automatically created by optimization)
+  # Example: best_polyhipes, best_my_dataset, etc.
+  # best_polyhipes:
+  #   R50:
+  #     base_lr: 0.0001
+  #     ims_per_batch: 4
+  #     warmup_iters: 1500
+  #     gamma: 0.15
+  #     batch_size_per_image: 128
+  #   R101:
+  #     base_lr: 0.0001
+  #     ims_per_batch: 2
+  #     warmup_iters: 1200
+  #     gamma: 0.12
+  #     batch_size_per_image: 96
 ```
 
 ## Troubleshooting
@@ -466,3 +483,65 @@ For support and troubleshooting:
    - Configuration file (remove sensitive info)
    - System information (OS, Python version, GPU)
    - Steps to reproduce the issue
+
+### Dataset-Specific Hyperparameters
+
+The deepEMIA project supports dataset-specific hyperparameter optimization, allowing different datasets to use their own optimized training parameters while maintaining global defaults.
+
+#### How It Works
+
+1. **Default Parameters**: All datasets start with the default hyperparameters defined in `rcnn_hyperparameters.default`
+
+2. **Global Best**: When hyperparameter optimization is run without dataset-specific context, results are saved to `rcnn_hyperparameters.best`
+
+3. **Dataset-Specific Best**: When optimization is run for a specific dataset, results are saved to `rcnn_hyperparameters.best_<dataset_name>`
+
+#### Training Parameter Priority
+
+During training, the system uses the following priority order:
+
+1. **Dataset-specific best** (`best_<dataset_name>`) - if available
+2. **Global best** (`best`) - if available and dataset-specific doesn't exist
+3. **Default parameters** (`default`) - fallback option
+
+#### Running Hyperparameter Optimization
+
+To optimize hyperparameters for a specific dataset:
+
+```bash
+# Optimize hyperparameters for a specific dataset
+python main.py --task train --dataset_name polyhipes --optimize --n-trials 20
+
+# Use the CLI wizard for guided optimization
+python cli_main.py
+# Select "train" -> choose dataset -> enable optimization
+```
+
+#### Example Configuration After Optimization
+
+After running optimization for a dataset named "polyhipes", your configuration might look like:
+
+```yaml
+rcnn_hyperparameters:
+  default:
+    R50:
+      base_lr: 0.00025
+      ims_per_batch: 2
+      warmup_iters: 1000
+      gamma: 0.1
+      batch_size_per_image: 64
+  best_polyhipes:  # Automatically created by optimization
+    R50:
+      base_lr: 0.0001
+      ims_per_batch: 4
+      warmup_iters: 1500
+      gamma: 0.15
+      batch_size_per_image: 128
+```
+
+#### Benefits
+
+- **Dataset-specific optimization**: Each dataset can have its own optimal hyperparameters
+- **Automatic fallback**: If no dataset-specific parameters exist, the system gracefully falls back to global best or defaults
+- **Reproducibility**: All optimized parameters are saved in the configuration file for reproducible results
+- **Easy management**: No manual parameter tuning required - just run optimization and the system handles the rest
