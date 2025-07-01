@@ -9,6 +9,8 @@ from typing import Dict, Any, List
 from pathlib import Path
 import os
 
+from src.utils.logger_utils import system_logger
+
 class ConfigValidationError(Exception):
     """Raised when configuration validation fails."""
     pass

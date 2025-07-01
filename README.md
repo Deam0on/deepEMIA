@@ -198,6 +198,99 @@ For complete usage information and examples:
 python main.py --help
 ```
 
+### Advanced Usage Patterns
+
+#### Automated Batch Processing
+
+```bash
+# Process multiple datasets in sequence
+for dataset in dataset1 dataset2 dataset3; do
+    python main.py --task inference --dataset_name $dataset --threshold 0.7 --visualize
+done
+```
+
+#### Hyperparameter Optimization Workflow
+
+```bash
+# 1. Prepare dataset
+python main.py --task prepare --dataset_name polyhipes
+
+# 2. Train with optimization (finds best parameters)
+python main.py --task train --dataset_name polyhipes --optimize --n-trials 50 --augment
+
+# 3. Evaluate optimized model
+python main.py --task evaluate --dataset_name polyhipes --visualize
+
+# 4. Run inference with optimized model
+python main.py --task inference --dataset_name polyhipes --threshold 0.65 --pass multi 10
+```
+
+#### Performance Tuning
+
+```bash
+# For speed (small particles, quick results)
+python main.py --task inference --dataset_name dataset --rcnn 50 --threshold 0.7 --pass single
+
+# For accuracy (complex particles, research quality)
+python main.py --task inference --dataset_name dataset --rcnn combo --threshold 0.5 --pass multi 15 --visualize
+```
+
+### Dataset Format Requirements
+
+**Input Structure:**
+```
+DATASET/
+├── your_dataset_name/
+│   ├── image1.tif
+│   ├── image1.json        # Annotation file (for training)
+│   ├── image2.tif
+│   ├── image2.json
+│   └── ...
+└── INFERENCE/             # For inference-only images
+    ├── test_image1.tif
+    ├── test_image2.tif
+    └── ...
+```
+
+**Annotation Format (JSON):**
+```json
+{
+  "imagePath": "image1.tif",
+  "imageHeight": 1024,
+  "imageWidth": 1024,
+  "shapes": [
+    {
+      "label": "particle",
+      "points": [[x1, y1], [x2, y2], ...],  // Polygon points
+      "shape_type": "polygon"
+    }
+  ]
+}
+```
+
+### Output Files
+
+**Training Output:**
+- `~/split_dir/`: Dataset splits and model files
+- `~/logs/`: Training logs and metrics
+- Model weights: `model_final.pth`, `model_quantized.pth`
+
+**Inference Output:**
+- `results.csv`: Measurements and particle properties
+- `*_overlay.png`: Visualization images with detected particles
+- `*_measurements.csv`: Per-image detailed measurements
+
+**Measurement Columns:**
+- `Area_um2`: Particle area in square micrometers
+- `Perimeter_um`: Particle perimeter in micrometers
+- `Major_Axis_um`: Length of major axis
+- `Minor_Axis_um`: Length of minor axis
+- `Aspect_Ratio`: Ratio of major to minor axis
+- `Circularity`: Shape circularity measure (0-1)
+- `Wavelength_nm`: Estimated wavelength (if color analysis enabled)
+- `Confidence`: Detection confidence score
+- `Image_Name`: Source image filename
+
 ### Web Interface
 
 Launch the Streamlit web interface:
@@ -264,14 +357,32 @@ Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing.
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Support
+## First-Time Setup
 
-For support, please:
+Before running any training or inference tasks, you should configure your environment using the setup task. This will prompt you to enter your Google Cloud Storage bucket name and scale bar ROI settings, and will save them to `config/config.yaml`.
 
-1. Check the logs in `~/logs/` for error details
-2. Verify your configuration with the schema validator
-3. Ensure all environment variables are set correctly
-4. Open an issue on GitHub with relevant log excerpts
+### Quick Setup
+
+```bash
+# Interactive setup wizard (recommended)
+python cli_main.py
+# Select "setup" from the menu
+
+# Or direct setup
+python main.py --task setup --dataset_name dummy
+```
+
+### Configuration Details
+
+The setup process will configure:
+
+- **Google Cloud Storage bucket**: Your GCS bucket for data storage and model sharing
+- **Scale bar ROI settings**: Region of interest for automatic scale bar detection in SEM images
+- **Scalebar thresholds**: Intensity and proximity thresholds for scale bar detection
+- **Measurement settings**: Whether to measure contrast distribution for particle analysis
+- **RCNN hyperparameters**: Default training parameters for R50 and R101 backbones
+
+Example configuration file structure:
 
 ```yaml
 bucket: your-bucket-name
@@ -280,38 +391,109 @@ paths:
   split_dir: "~/split_dir"
   category_json: "~/deepEMIA/dataset_info.json"
   eta_file: "~/deepEMIA/config/eta_data.json"
+  logs_dir: "~/logs"
+  output_dir: "~/deepEMIA/output"
   local_dataset_root: "~"
 scale_bar_rois:
   default:
-    x_start_factor: 0.667
-    y_start_factor: 0.866
-    width_factor: 1
-    height_factor: 0.067
+    x_start_factor: 0.667    # Start position (fraction of image width)
+    y_start_factor: 0.866    # Start position (fraction of image height)
+    width_factor: 1          # ROI width (fraction of image width)
+    height_factor: 0.067     # ROI height (fraction of image height)
+scalebar_thresholds:
+  intensity: 150             # Intensity threshold for scale bar detection
+  proximity: 50              # Proximity threshold for grouping scale bar elements
+measure_contrast_distribution: false  # Enable for detailed particle contrast analysis
+rcnn_hyperparameters:
+  default:
+    R50:
+      base_lr: 0.00025
+      ims_per_batch: 2
+      warmup_iters: 1000
+      gamma: 0.1
+      batch_size_per_image: 64
+    R101:
+      base_lr: 0.00025
+      ims_per_batch: 2
+      warmup_iters: 1000
+      gamma: 0.1
+      batch_size_per_image: 64
+  best:                      # Reserved for hyperparameter optimization results
+    R50: {}
+    R101: {}
 ```
 
-## First-Time Setup
+## Troubleshooting
 
-Before running any training or inference tasks, you should configure your environment using the setup task. This will prompt you to enter your Google Cloud Storage bucket name and scale bar ROI settings, and will save them to `config/config.yaml`.
+### Common Issues
 
-To run the setup:
+1. **"Configuration not found" error**
+   - Run the setup task first: `python cli_main.py` and select "setup"
 
-```sh
-python main.py --task setup
-```
+2. **"Failed to download dataset_info.json" error**
+   - Ensure Google Cloud SDK is installed and configured
+   - Check your bucket name in the configuration
+   - Verify you have read permissions on the GCS bucket
 
-You will be prompted for:
+3. **Import errors or missing dependencies**
+   - Install requirements: `pip install -r requirements.txt`
+   - For CUDA support: `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118`
 
-- **Google Cloud Storage bucket name**: The name of your GCS bucket for data storage.
-- **Scale bar ROI settings**: The region of interest for scale bar detection. You can press Enter to accept the defaults.
+4. **Training fails with CUDA out of memory**
+   - Reduce batch size in hyperparameters
+   - Use R50 backbone instead of R101
+   - Enable CPU training (automatic fallback)
 
-If a configuration file already exists, you will be asked whether you want to overwrite it.
+5. **Scale bar detection fails**
+   - Adjust scale_bar_rois parameters in config
+   - Check intensity and proximity thresholds
+   - Ensure images have visible scale bars in the expected region
 
-After setup, you can proceed to use the other tasks (`prepare`, `train`, `evaluate`, `inference`) as described in the Command Line Interface section above.
+### Log Files
+
+All operations are logged to `~/logs/` with timestamps:
+- `system_YYYY-MM-DD_HH-MM-SS.log`: Detailed system logs
+- Console output: Simplified progress information
+
+## Support
+
+For support and troubleshooting:
+
+1. **Check the logs** in `~/logs/` for detailed error information
+2. **Verify configuration** by running setup again
+3. **Test with sample data** to isolate issues
+4. **Check system requirements** (Python 3.8+, sufficient RAM/disk space)
+5. **Review Google Cloud permissions** for your service account
+6. **Open an issue** on GitHub with:
+   - Error messages from logs
+   - Configuration file (remove sensitive info)
+   - System information (OS, Python version, GPU)
+   - Steps to reproduce the issue
+
+## Contributing
+
+We welcome contributions! Please see our contribution guidelines:
+
+### How to Contribute
 
 1. Fork the repository
-2. Create a feature branch
-3. Commit your changes with clear messages
-4. Push to your fork
-5. Open a Pull Request describing your changes
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes following our coding standards
+4. Add tests for new functionality
+5. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request describing your changes
+
+### Development Guidelines
+
+- Follow PEP 8 style guidelines
+- Add docstrings to all functions and classes
+- Include type hints where possible
+- Write tests for new features
+- Update documentation as needed
+- Never commit passwords, API keys, or sensitive data
+- Use environment variables for sensitive configuration
+- Validate all user inputs
+- Test error handling paths
 
 Please review the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before contributing.

@@ -1,3 +1,15 @@
+"""
+Scale bar detection and optical character recognition utilities.
+
+This module provides functions for:
+- Detecting scale bars in SEM/microscopy images
+- OCR text extraction from scale bar regions
+- Converting pixel measurements to real-world units
+- Hough line detection for scale bar boundaries
+
+The module integrates EasyOCR for text recognition and OpenCV for image processing.
+"""
+
 import re
 from math import sqrt
 from pathlib import Path

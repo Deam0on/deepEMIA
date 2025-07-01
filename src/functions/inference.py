@@ -227,6 +227,15 @@ def GetInferenceNoID(predictor, im, x_pred, metadata, test_img):
 
 
 def is_image_file(filename):
+    """
+    Checks if a filename corresponds to a supported image format.
+
+    Parameters:
+    - filename (str): The filename to check
+
+    Returns:
+    - bool: True if the file is a supported image format, False otherwise
+    """
     return filename.lower().endswith(
         (".tif", ".tiff", ".png", ".jpg", ".jpeg", ".bmp", ".gif")
     )
@@ -255,6 +264,16 @@ def GetCounts(predictor, im, TList, PList):
 
 
 def iou(mask1, mask2):
+    """
+    Calculates the Intersection over Union (IoU) of two binary masks.
+
+    Parameters:
+    - mask1 (numpy.ndarray): First binary mask
+    - mask2 (numpy.ndarray): Second binary mask
+
+    Returns:
+    - float: IoU score between 0 and 1
+    """
     intersection = np.logical_and(mask1, mask2).sum()
     union = np.logical_or(mask1, mask2).sum()
     return intersection / union if union > 0 else 0

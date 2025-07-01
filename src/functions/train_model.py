@@ -215,6 +215,19 @@ def train_with_backbone(
 
 
 def optuna_objective(trial, dataset_name, output_dir, backbone="R50", augment=False):
+    """
+    Optuna objective function for hyperparameter optimization.
+
+    Parameters:
+    - trial (optuna.Trial): Optuna trial object for suggesting hyperparameters
+    - dataset_name (str): Name of the dataset to train on
+    - output_dir (str): Directory to save trained models
+    - backbone (str): RCNN backbone architecture ("R50" or "R101")
+    - augment (bool): Whether to apply data augmentation
+
+    Returns:
+    - float: Average Precision (AP) score to maximize
+    """
     # Suggest hyperparameters
     base_lr = trial.suggest_loguniform("base_lr", 1e-5, 1e-2)
     ims_per_batch = trial.suggest_categorical("ims_per_batch", [2, 4, 8])
