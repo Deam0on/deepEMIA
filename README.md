@@ -16,7 +16,6 @@ A modular, end-to-end computer vision pipeline for scientific image analysis, fe
 - [First-Time Setup](#first-time-setup)
 - [Security Considerations](#security-considerations)
 - [Error Handling and Reliability](#error-handling-and-reliability)
-- [Contributing](#contributing)
 - [License](#license)
 - [Support](#support)
 
@@ -330,10 +329,6 @@ The pipeline includes comprehensive error handling:
 - **Resource Management**: Proper cleanup of processes and file handles
 - **Validation**: Input validation and sanitization throughout the pipeline
 
-## Contributing
-
-Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing.
-
 ### Development Setup
 1. Install development dependencies:
    ```bash
@@ -355,7 +350,9 @@ Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Copyright (c) 2025 Filip Hládek. All rights reserved.
+
+Unauthorized copying, distribution, modification, or commercial use of this software is strictly prohibited without express permission from the copyright holder.
 
 ## First-Time Setup
 
@@ -469,31 +466,3 @@ For support and troubleshooting:
    - Configuration file (remove sensitive info)
    - System information (OS, Python version, GPU)
    - Steps to reproduce the issue
-
-## Contributing
-
-We welcome contributions! Please see our contribution guidelines:
-
-### How to Contribute
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes following our coding standards
-4. Add tests for new functionality
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request describing your changes
-
-### Development Guidelines
-
-- Follow PEP 8 style guidelines
-- Add docstrings to all functions and classes
-- Include type hints where possible
-- Write tests for new features
-- Update documentation as needed
-- Never commit passwords, API keys, or sensitive data
-- Use environment variables for sensitive configuration
-- Validate all user inputs
-- Test error handling paths
-
-Please review the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before contributing.
