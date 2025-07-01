@@ -199,15 +199,6 @@ python main.py --help
 
 ### Advanced Usage Patterns
 
-#### Automated Batch Processing
-
-```bash
-# Process multiple datasets in sequence
-for dataset in dataset1 dataset2 dataset3; do
-    python main.py --task inference --dataset_name $dataset --threshold 0.7 --visualize
-done
-```
-
 #### Hyperparameter Optimization Workflow
 
 ```bash
