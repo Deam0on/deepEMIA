@@ -61,6 +61,29 @@ def setup_config():
     width = input("  width_factor [default 1]: ").strip() or "1"
     height = input("  height_factor [default 0.067]: ").strip() or "0.067"
 
+    print("\nConfigure scalebar thresholds (press Enter to use defaults):")
+    intensity = input("  intensity threshold [default 150]: ").strip() or "150"
+    proximity = input("  proximity threshold [default 50]: ").strip() or "50"
+
+    print("\nConfigure measurement settings:")
+    measure_contrast = input("  measure_contrast_distribution [default false] (true/false): ").strip() or "false"
+    measure_contrast = measure_contrast.lower() == "true"
+
+    print("\nConfigure RCNN hyperparameters (press Enter to use defaults):")
+    print("  R50 settings:")
+    r50_base_lr = input("    base_lr [default 0.00025]: ").strip() or "0.00025"
+    r50_ims_per_batch = input("    ims_per_batch [default 2]: ").strip() or "2"
+    r50_warmup_iters = input("    warmup_iters [default 1000]: ").strip() or "1000"
+    r50_gamma = input("    gamma [default 0.1]: ").strip() or "0.1"
+    r50_batch_size_per_image = input("    batch_size_per_image [default 64]: ").strip() or "64"
+
+    print("  R101 settings:")
+    r101_base_lr = input("    base_lr [default 0.00025]: ").strip() or "0.00025"
+    r101_ims_per_batch = input("    ims_per_batch [default 2]: ").strip() or "2"
+    r101_warmup_iters = input("    warmup_iters [default 1000]: ").strip() or "1000"
+    r101_gamma = input("    gamma [default 0.1]: ").strip() or "0.1"
+    r101_batch_size_per_image = input("    batch_size_per_image [default 64]: ").strip() or "64"
+
     config = {
         "bucket": bucket,
         "paths": {
@@ -68,6 +91,8 @@ def setup_config():
             "split_dir": "~/split_dir",
             "category_json": "~/deepEMIA/dataset_info.json",
             "eta_file": "~/deepEMIA/config/eta_data.json",
+            "logs_dir": "~/logs",
+            "output_dir": "~/deepEMIA/output",
             "local_dataset_root": "~",
         },
         "scale_bar_rois": {
@@ -78,11 +103,38 @@ def setup_config():
                 "height_factor": float(height),
             }
         },
+        "scalebar_thresholds": {
+            "intensity": int(intensity),
+            "proximity": int(proximity),
+        },
+        "measure_contrast_distribution": measure_contrast,
+        "rcnn_hyperparameters": {
+            "default": {
+                "R50": {
+                    "base_lr": float(r50_base_lr),
+                    "ims_per_batch": int(r50_ims_per_batch),
+                    "warmup_iters": int(r50_warmup_iters),
+                    "gamma": float(r50_gamma),
+                    "batch_size_per_image": int(r50_batch_size_per_image),
+                },
+                "R101": {
+                    "base_lr": float(r101_base_lr),
+                    "ims_per_batch": int(r101_ims_per_batch),
+                    "warmup_iters": int(r101_warmup_iters),
+                    "gamma": float(r101_gamma),
+                    "batch_size_per_image": int(r101_batch_size_per_image),
+                },
+            },
+            "best": {
+                "R50": {},
+                "R101": {},
+            },
+        },
     }
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
     with open(config_path, "w") as f:
-        yaml.dump(config, f)
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
     print(f"Configuration saved to {config_path}.")
 
 
@@ -91,40 +143,66 @@ def main():
     Main function that parses command line arguments and executes the requested task.
     """
     parser = argparse.ArgumentParser(
-        description="Computer Vision Pipeline: Prepare data, train, evaluate, and run inference.",
+        description="deepEMIA - Deep Learning Computer Vision Pipeline for Scientific Image Analysis.\n"
+                   "This tool provides dataset preparation, model training, evaluation, and inference capabilities.\n\n"
+                   "For an easier, interactive experience, use: python cli_main.py\n"
+                   "The CLI wizard guides you through all options step-by-step.",
         epilog="""
-Examples:
-  Prepare a dataset:
-    python main.py --task prepare --dataset_name <dataset_name>
+QUICK START EXAMPLES:
 
-  Train a model (default: R101 backbone):
-    python main.py --task train --dataset_name <dataset_name> --rcnn 101
+Setup (First Time):
+  python main.py --task setup
+  
+Prepare Dataset:
+  python main.py --task prepare --dataset_name polyhipes
 
-  Train with both backbones (combo):
-    python main.py --task train --dataset_name <dataset_name> --rcnn combo
+Training:
+  # Basic training
+  python main.py --task train --dataset_name polyhipes --rcnn 101
+  
+  # Advanced training with optimization
+  python main.py --task train --dataset_name polyhipes --rcnn combo --optimize --n-trials 20 --augment
 
-  Evaluate a model:
-    python main.py --task evaluate --dataset_name <dataset_name> --visualize
+Evaluation:
+  python main.py --task evaluate --dataset_name polyhipes --visualize --rcnn combo
 
-  Run inference (with threshold and dual model):
-    python main.py --task inference --dataset_name <dataset_name> --threshold 0.65 --rcnn combo --visualize
+Inference:
+  # Single pass inference
+  python main.py --task inference --dataset_name polyhipes --threshold 0.7 --visualize
+  
+  # Multi-pass inference with deduplication
+  python main.py --task inference --dataset_name polyhipes --threshold 0.65 --pass multi 10 --visualize --id
 
-  Run setup (first-time configuration):
-    python main.py --task setup
+TASK DESCRIPTIONS:
 
-Tasks:
-  prepare    Prepare the dataset by splitting into train and test sets.
-  train      Train a model on the dataset.
-  evaluate   Evaluate the trained model on the test set.
-  inference  Run inference on new data using the trained model.
-  setup      Run first-time configuration setup.
+setup      First-time configuration (bucket, scale bar settings, hyperparameters)
+prepare    Split dataset into train/test sets and register with Detectron2
+train      Train instance segmentation models (R50, R101, or both)
+evaluate   Evaluate trained models on test set with COCO metrics
+inference  Run inference on new images with measurements and analysis
 
-RCNN Backbone options:
-  50      R50 (prefer small particles)
-  101     R101 (prefer large particles, default)
-  combo   Dual model (universal, merges both)
+RCNN BACKBONE OPTIONS:
 
-For more details, see the README or documentation.
+50         Fast R-CNN with ResNet-50 backbone (good for small particles)
+101        Fast R-CNN with ResNet-101 backbone (good for large particles, default)
+combo      Dual model approach - uses both R50 and R101 for universal detection
+
+ADVANCED FEATURES:
+
+• Hyperparameter Optimization: Use --optimize --n-trials N for automated tuning
+• Data Augmentation: Use --augment for enhanced training robustness  
+• Multi-pass Inference: Use --pass multi N for iterative deduplication
+• Visualization: Use --visualize to save prediction overlays
+• Instance IDs: Use --id to draw instance identifiers on visualizations
+
+CLOUD INTEGRATION:
+
+• Automatic GCS sync with --download/--upload flags
+• Progress tracking with ETA estimation
+• Comprehensive logging to ~/logs/
+
+For detailed documentation, see README.md
+For guided interactive mode: python cli_main.py
 """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -134,54 +212,54 @@ For more details, see the README or documentation.
         required=True,
         choices=["prepare", "train", "evaluate", "inference", "setup"],
         help="Task to perform:\n"
-        "- 'prepare': Prepare the dataset by splitting into train and test sets.\n"
-        "- 'train': Train a model on the dataset.\n"
-        "- 'evaluate': Evaluate the trained model on the test set.\n"
-        "- 'inference': Run inference on new data using the trained model.\n"
-        "- 'setup': Run first-time configuration setup.",
+        "• 'prepare': Split dataset into train/test sets and register with Detectron2\n"
+        "• 'train': Train instance segmentation models (supports R50, R101, or combo)\n"
+        "• 'evaluate': Evaluate trained models on test set with COCO metrics\n"
+        "• 'inference': Run inference on new images with advanced measurements\n"
+        "• 'setup': Interactive first-time configuration (bucket, hyperparameters, etc.)",
     )
     parser.add_argument(
         "--dataset_name",
         type=str,
-        required=True,
-        help="Name of the dataset to use (e.g., 'polyhipes').",
+        required=False,
+        help="Dataset name to use (e.g., 'polyhipes', 'crystals'). Must exist in dataset_info.json. Not required for setup task.",
     )
     parser.add_argument(
         "--threshold",
         type=float,
         default=0.65,
-        help="Threshold for inference. Default is 0.65.",
+        help="Detection confidence threshold for inference (0.0-1.0). Higher = fewer, more confident detections. [default: 0.65]",
     )
     parser.add_argument(
         "--dataset_format",
         type=str,
         default="json",
         choices=["json", "coco"],
-        help="The format of the dataset annotations. 'json' for the custom one-JSON-per-image format, 'coco' for the standard COCO format.",
+        help="Dataset annotation format: 'json' (one JSON per image) or 'coco' (standard COCO format). [default: json]",
     )
     parser.add_argument(
         "--visualize",
         action="store_true",
         default=False,
-        help="Flag to visualize results during evaluation and inference. Saves visualizations of predictions. Default is False.",
+        help="Generate and save visualization overlays during evaluation/inference. Shows predictions on original images.",
     )
     parser.add_argument(
         "--download",
         action="store_true",
         default=True,
-        help="Flag to download data from Google Cloud Storage before executing the task. Default is True.",
+        help="Download required data from Google Cloud Storage before task execution. [default: True]",
     )
     parser.add_argument(
         "--upload",
         action="store_true",
         default=True,
-        help="Flag to upload results to Google Cloud Storage after executing the task. Default is True.",
+        help="Upload results and logs to Google Cloud Storage after task completion. [default: True]",
     )
     parser.add_argument(
         "--id",
         dest="draw_id",
         action="store_true",
-        help="Draw instance ID on inference overlays",
+        help="Draw instance ID numbers on inference visualization overlays for easier tracking.",
     )
     parser.set_defaults(draw_id=False)
     parser.add_argument(
@@ -189,24 +267,27 @@ For more details, see the README or documentation.
         type=str,
         default="101",
         choices=["50", "101", "combo"],
-        help="RCNN backbone to use: '50', '101', or 'combo' (both). Default is '101'.",
+        help="RCNN backbone architecture:\n"
+        "• '50': ResNet-50 (faster, good for small particles)\n"
+        "• '101': ResNet-101 (slower, good for large particles)\n"
+        "• 'combo': Both models for universal detection [default: 101]",
     )
     parser.add_argument(
         "--augment",
         action="store_true",
-        help="Enable data augmentation during training (applies to both images and annotations).",
+        help="Enable data augmentation during training (rotation, flip, brightness). Improves model robustness.",
     )
     # --- Optuna HPO flags ---
     parser.add_argument(
         "--optimize",
         action="store_true",
-        help="Run Optuna hyperparameter optimization during training.",
+        help="Run Optuna hyperparameter optimization during training. Automatically finds best parameters.",
     )
     parser.add_argument(
         "--n-trials",
         type=int,
         default=10,
-        help="Number of Optuna trials for hyperparameter optimization (default: 10).",
+        help="Number of Optuna optimization trials to run. More trials = better optimization but longer time. [default: 10]",
     )
     parser.add_argument(
         "--pass",
@@ -214,13 +295,17 @@ For more details, see the README or documentation.
         nargs="+",
         default=["single"],
         metavar=("MODE", "MAX_ITERS"),
-        help=(
-            "Inference pass mode: 'single' for one pass (default), "
-            "'multi [max_iters]' for iterative deduplication (e.g. --pass multi 5)."
-        ),
+        help="Inference pass mode:\n"
+        "• 'single': One inference pass per image (faster)\n"
+        "• 'multi [N]': Multi-pass with iterative deduplication up to N iterations (more accurate)\n"
+        "Example: --pass multi 5",
     )
 
     args = parser.parse_args()
+
+    # Validate arguments
+    if args.task != "setup" and not args.dataset_name:
+        parser.error(f"--dataset_name is required for task '{args.task}'")
 
     # Parse pass_mode and max_iters
     if args.pass_mode[0] == "multi":

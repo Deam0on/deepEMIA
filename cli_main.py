@@ -253,7 +253,7 @@ def setup_task():
     print("You'll be prompted to enter your Google Cloud Storage bucket and other settings.")
     
     if get_yes_no("\nProceed with setup?", default=True):
-        return ["--task", "setup", "--dataset_name", "dummy"]
+        return ["--task", "setup"]
     return None
 
 
@@ -356,14 +356,28 @@ def prepare_task():
     """
     print("\nPREPARE TASK")
     print("This will split your dataset into training and testing sets.")
+    print("Typically uses 80% for training and 20% for testing with stratified splitting.")
     
     dataset_name = get_dataset_selection_with_retry("Select dataset to prepare")
     
-    args = ["--task", "prepare", "--dataset_name", dataset_name]
+    # Dataset format
+    dataset_format = get_user_choice(
+        "\nDataset annotation format:",
+        ["json (one JSON per image - most common)", "coco (standard COCO format)"],
+        default="json (one JSON per image - most common)"
+    )
+    dataset_format_value = dataset_format.split()[0]
+    
+    args = [
+        "--task", "prepare", 
+        "--dataset_name", dataset_name,
+        "--dataset_format", dataset_format_value
+    ]
     
     # Download/Upload options
-    download = get_yes_no("Download data from Google Cloud Storage?", default=True)
-    upload = get_yes_no("Upload results to Google Cloud Storage?", default=True)
+    print("\nCloud Storage Options:")
+    download = get_yes_no("Download dataset from Google Cloud Storage?", default=True)
+    upload = get_yes_no("Upload prepared dataset splits to Google Cloud Storage?", default=True)
     
     if download:
         args.append("--download")
@@ -381,41 +395,52 @@ def train_task():
         list or None: Command arguments for train task, or None if cancelled.
     """
     print("\nTRAIN TASK")
-    print("This will train a model on your dataset.")
+    print("This will train instance segmentation models on your dataset.")
+    print("Training uses Detectron2 with ResNet backbones and can take several hours.")
     
     dataset_name = get_dataset_selection_with_retry("Select dataset to train on")
     
     # RCNN backbone
+    print("\nRCNN Backbone Architecture:")
+    print("   R50: Faster training/inference, good for small particles")
+    print("   R101: Slower but more accurate, good for large/complex particles")
+    print("   Combo: Trains both models - best overall performance")
     rcnn = get_user_choice(
-        "\nSelect RCNN backbone:",
-        ["50 (R50 - better for small particles)", 
-         "101 (R101 - better for large particles)", 
-         "combo (both R50 and R101)"],
-        default="101 (R101 - better for large particles)"
+        "Select RCNN backbone:",
+        ["50 (R50 - faster, good for small particles)", 
+         "101 (R101 - slower, good for large particles)", 
+         "combo (both R50 and R101 - recommended)"],
+        default="101 (R101 - slower, good for large particles)"
     )
     rcnn_value = rcnn.split()[0]  # Extract just the number/combo
     
     # Dataset format
     dataset_format = get_user_choice(
-        "\nDataset format:",
-        ["json", "coco"],
-        default="json"
+        "\nDataset annotation format:",
+        ["json (one JSON per image)", "coco (standard COCO format)"],
+        default="json (one JSON per image)"
     )
+    dataset_format_value = dataset_format.split()[0]
+    
+    # Advanced training options
+    print("\nAdvanced Training Options:")
     
     # Augmentation
-    augment = get_yes_no("Enable data augmentation?", default=False)
+    print("   Data Augmentation: Improves model robustness with rotation, flip, brightness changes")
+    augment = get_yes_no("Enable data augmentation during training?", default=False)
     
     # Hyperparameter optimization
-    optimize = get_yes_no("Run hyperparameter optimization (Optuna)?", default=False)
+    print("   Hyperparameter Optimization: Uses Optuna to automatically find best parameters")
+    optimize = get_yes_no("Run hyperparameter optimization (takes longer but improves results)?", default=False)
     n_trials = None
     if optimize:
-        n_trials = get_int_input("Number of optimization trials", default=10, min_val=1)
+        n_trials = get_int_input("Number of optimization trials (more trials = better results but longer training)", default=10, min_val=1, max_val=100)
     
     args = [
         "--task", "train",
         "--dataset_name", dataset_name,
         "--rcnn", rcnn_value,
-        "--dataset_format", dataset_format
+        "--dataset_format", dataset_format_value
     ]
     
     if augment:
@@ -425,8 +450,9 @@ def train_task():
         args.extend(["--optimize", "--n-trials", str(n_trials)])
     
     # Download/Upload
-    download = get_yes_no("Download training data from GCS?", default=True)
-    upload = get_yes_no("Upload results to GCS?", default=True)
+    print("\nCloud Storage Options:")
+    download = get_yes_no("Download training data from Google Cloud Storage?", default=True)
+    upload = get_yes_no("Upload trained models and results to Google Cloud Storage?", default=True)
     
     if download:
         args.append("--download")
@@ -444,36 +470,50 @@ def evaluate_task():
         list or None: Command arguments for evaluate task, or None if cancelled.
     """
     print("\nEVALUATE TASK")
-    print("This will evaluate your trained model on the test set.")
+    print("This will evaluate your trained model on the test set using COCO metrics.")
+    print("You'll get precision, recall, mAP, and other performance metrics.")
     
     dataset_name = get_dataset_selection_with_retry("Select dataset to evaluate")
     
     # RCNN backbone
     rcnn = get_user_choice(
         "\nSelect RCNN backbone to evaluate:",
-        ["50", "101", "combo"],
-        default="101"
+        ["50 (R50 model)", "101 (R101 model)", "combo (both models)"],
+        default="101 (R101 model)"
     )
+    rcnn_value = rcnn.split()[0]
     
     # Dataset format
     dataset_format = get_user_choice(
-        "\nDataset format:",
-        ["json", "coco"],
-        default="json"
+        "\nDataset annotation format:",
+        ["json (one JSON per image)", "coco (standard COCO format)"],
+        default="json (one JSON per image)"
     )
+    dataset_format_value = dataset_format.split()[0]
     
     # Visualization
-    visualize = get_yes_no("Generate visualization outputs?", default=True)
+    print("\nVisualization Options:")
+    visualize = get_yes_no("Generate visualization outputs showing predictions vs ground truth?", default=True)
     
     args = [
         "--task", "evaluate",
         "--dataset_name", dataset_name,
-        "--rcnn", rcnn,
-        "--dataset_format", dataset_format
+        "--rcnn", rcnn_value,
+        "--dataset_format", dataset_format_value
     ]
     
     if visualize:
         args.append("--visualize")
+    
+    # Download/Upload
+    print("\nCloud Storage Options:")
+    download = get_yes_no("Download evaluation data from Google Cloud Storage?", default=True)
+    upload = get_yes_no("Upload evaluation results to Google Cloud Storage?", default=True)
+    
+    if download:
+        args.append("--download")
+    if upload:
+        args.append("--upload")
     
     return args
 
@@ -487,50 +527,61 @@ def inference_task():
     """
     print("\nINFERENCE TASK")
     print("This will run inference on new images using your trained model.")
+    print("The system will detect, measure, and analyze particles in your images.")
     
     dataset_name = get_dataset_selection_with_retry("Select dataset for inference")
     
     # Detection threshold
-    threshold = get_float_input("Detection threshold", default=0.65, min_val=0.0, max_val=1.0)
+    print("\nDetection Threshold Configuration:")
+    print("   Higher threshold = fewer, more confident detections")
+    print("   Lower threshold = more detections, including uncertain ones")
+    threshold = get_float_input("Detection confidence threshold (0.0-1.0)", default=0.65, min_val=0.0, max_val=1.0)
     
     # RCNN backbone
     rcnn = get_user_choice(
-        "\nSelect RCNN backbone:",
-        ["50 (faster, good for small particles)", 
-         "101 (slower, good for large particles)", 
-         "combo (both models, most accurate)"],
-        default="combo (both models, most accurate)"
+        "\nSelect RCNN backbone architecture:",
+        ["50 (R50 - faster, good for small particles)", 
+         "101 (R101 - slower, good for large particles)", 
+         "combo (both models - most accurate, recommended)"],
+        default="combo (both models - most accurate, recommended)"
     )
     rcnn_value = rcnn.split()[0]
     
-    # # Dataset format
-    # dataset_format = get_user_choice(
-    #     "\nDataset format:",
-    #     ["json", "coco"],
-    #     default="json"
-    # )
+    # Dataset format
+    dataset_format = get_user_choice(
+        "\nDataset annotation format:",
+        ["json (one JSON per image - most common)", "coco (standard COCO format)"],
+        default="json (one JSON per image - most common)"
+    )
+    dataset_format_value = dataset_format.split()[0]
     
     # Pass mode
+    print("\nInference Pass Mode:")
+    print("   Single: One detection pass per image (faster)")
+    print("   Multi: Multiple passes with iterative deduplication (more accurate)")
     pass_mode = get_user_choice(
-        "\nInference pass mode:",
+        "Choose inference mode:",
         ["single (one pass, faster)", "multi (iterative deduplication, more accurate)"],
         default="single (one pass, faster)"
     )
     
     max_iters = None
     if pass_mode.startswith("multi"):
-        max_iters = get_int_input("Maximum iterations for multi-pass", default=10, min_val=1)
+        max_iters = get_int_input("Maximum iterations for multi-pass", default=10, min_val=1, max_val=50)
     
     # Visualization options
-    visualize = get_yes_no("Generate visualization outputs?", default=True)
-    draw_id = get_yes_no("Draw instance IDs on visualizations?", default=False)
+    print("\nVisualization Options:")
+    visualize = get_yes_no("Generate visualization overlays showing detections?", default=True)
+    draw_id = False
+    if visualize:
+        draw_id = get_yes_no("Draw instance ID numbers on visualizations?", default=False)
     
     args = [
         "--task", "inference",
         "--dataset_name", dataset_name,
         "--threshold", str(threshold),
-        "--rcnn", rcnn_value
-        # "--dataset_format", dataset_format
+        "--rcnn", rcnn_value,
+        "--dataset_format", dataset_format_value
     ]
     
     # Pass mode
@@ -545,8 +596,9 @@ def inference_task():
         args.append("--id")
     
     # Download/Upload
-    download = get_yes_no("Download inference data from GCS?", default=True)
-    upload = get_yes_no("Upload results to GCS?", default=True)
+    print("\nCloud Storage Options:")
+    download = get_yes_no("Download inference data from Google Cloud Storage?", default=True)
+    upload = get_yes_no("Upload results to Google Cloud Storage?", default=True)
     
     if download:
         args.append("--download")
@@ -594,28 +646,33 @@ def execute_command(args):
 
 def main():
     """Main function."""
-    # Download dataset info at startup (except for setup task)
     print("Starting deepEMIA Interactive CLI...")
+    print("This wizard will guide you through all available operations step-by-step.")
+    print("For direct command-line usage: python main.py --help")
     
     while True:
         clear_screen()
         print_header()
         
+        print("Welcome to deepEMIA - Deep Learning Image Analysis Tool")
+        print("   A complete pipeline for scientific image analysis with instance segmentation")
+        print()
+        
         # Task selection
         task = get_user_choice(
             "Select a task to perform:",
             [
-                "setup - First-time configuration",
-                "prepare - Split dataset into train/test",
-                "train - Train a model",
-                "evaluate - Evaluate trained model",
-                "inference - Run inference on new data",
+                "setup - First-time configuration (bucket, hyperparameters, scale bars)",
+                "prepare - Split dataset into train/test sets", 
+                "train - Train instance segmentation models",
+                "evaluate - Evaluate trained models with COCO metrics",
+                "inference - Run inference on new images with measurements",
                 "exit - Exit the wizard"
             ]
         )
         
         if task.startswith("exit"):
-            print("\nGoodbye!")
+            print("\nThank you for using deepEMIA! Goodbye!")
             break
         
         # Get task-specific arguments
@@ -632,27 +689,67 @@ def main():
                 download_dataset_info()
             elif not config_path.exists():
                 print("Warning: Configuration not found. Please run setup first.")
+                print("   Setup will configure your GCS bucket and other settings.")
                 continue
         
+        # Show task-specific information
         if task_name == "setup":
+            print("\nSetup will configure:")
+            print("   • Google Cloud Storage bucket")
+            print("   • Scale bar detection settings")
+            print("   • Model hyperparameters")
+            print("   • Other project settings")
             args = setup_task()
         elif task_name == "prepare":
+            print("\nPrepare will:")
+            print("   • Split your dataset into train/test sets")
+            print("   • Register datasets with Detectron2")
+            print("   • Validate annotations")
             args = prepare_task()
         elif task_name == "train":
+            print("\nTraining will:")
+            print("   • Train instance segmentation models")
+            print("   • Support R50, R101, or combo backbones")
+            print("   • Optional hyperparameter optimization")
+            print("   • Optional data augmentation")
             args = train_task()
         elif task_name == "evaluate":
+            print("\nEvaluation will:")
+            print("   • Test model performance on test set")
+            print("   • Generate COCO metrics (mAP, precision, recall)")
+            print("   • Optional visualization outputs")
             args = evaluate_task()
         elif task_name == "inference":
+            print("\nInference will:")
+            print("   • Detect and segment particles in images")
+            print("   • Measure geometric properties")
+            print("   • Generate CSV results and visualizations")
+            print("   • Support single or multi-pass modes")
             args = inference_task()
         
         if args is None:
+            print("\nTask cancelled.")
+            input("Press Enter to return to main menu...")
             continue
         
         # Execute the command
         success = execute_command(args)
         
-        input("\nPress Enter to continue...")
+        if success:
+            print("\nTask completed successfully!")
+        else:
+            print("\nTask failed. Check the output above for details.")
+            print("Tip: Check ~/logs/ for detailed error information.")
+        
+        input("\nPress Enter to return to main menu...")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\nGoodbye! (Interrupted by user)")
+    except Exception as e:
+        print(f"\nUnexpected error: {e}")
+        print("Please check ~/logs/ for detailed error information.")
+        input("Press Enter to exit...")
