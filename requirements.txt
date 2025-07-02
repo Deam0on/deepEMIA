@@ -35,6 +35,7 @@ scikit-image==0.19.3
 imageio==2.34.0
 PyWavelets==1.4.1
 tifffile==2024.4.18
+shapely==2.0.6
 
 # Scientific Computing
 numpy==1.23.5

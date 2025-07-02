@@ -10,6 +10,7 @@ A modular, end-to-end computer vision pipeline for scientific image analysis, fe
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Usage](#usage)
+  - [Modern Web Interface](#modern-web-interface)
   - [Interactive CLI Wizard](#interactive-cli-wizard)
   - [Command Line Interface](#command-line-interface)
   - [Web Interface](#web-interface)
@@ -121,6 +122,33 @@ rcnn_hyperparameters:
 ```
 
 ## Usage
+
+### Modern Web Interface (Recommended)
+
+The modern Gradio web interface provides the most user-friendly experience:
+
+```bash
+python launch_gradio.py
+```
+
+**Features:**
+- **🔒 Secure Access**: No public sharing - interface only accessible via VM IP
+- **🎯 Context-Aware UI**: Only relevant options shown for each task
+- **⚡ Real Backend Integration**: Direct connection to all pipeline functions
+- **📊 Live Results**: Real-time output and progress tracking
+- **🔧 Dynamic Configuration**: Task-specific parameter visibility
+
+**Key Improvements:**
+- **Task-Specific Parameters**: Only see options relevant to your selected task
+  - Inference: threshold, visualization, ID drawing, pass mode
+  - Training: augmentation, hyperparameter optimization, trial count
+  - Evaluation: visualization options
+  - Prepare: test set size configuration
+- **Real Function Calls**: Direct integration with backend functions (not placeholders)
+- **VM-Only Access**: Interface bound to VM IP address, no public Gradio links
+- **Modern UI**: Clean, responsive interface with organized sections
+
+**Access:** Navigate to `http://[YOUR_VM_IP]:7860` in your browser
 
 ### Interactive CLI Wizard
 

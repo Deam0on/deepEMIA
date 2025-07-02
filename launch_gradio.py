@@ -41,17 +41,18 @@ def main():
     
     # Import and launch
     try:
-        from gui.gradio_minimal import launch_minimal_app
+        from gui.gradio_minimal import launch_modern_app
         
-        print("🚀 Launching Gradio interface...")
-        print("   Using shareable link for external access")
+        print("🚀 Launching modern Gradio interface...")
+        print("   Interface will be available on VM IP only")
+        print("   No public sharing link will be created")
         print("   Press Ctrl+C to stop")
         print()
         
-        launch_minimal_app(
+        launch_modern_app(
             server_name="0.0.0.0",  # Listen on all interfaces
             server_port=7860,
-            share=True,  # Enable sharing for external access
+            share=False,  # Disable public sharing
             debug=False
         )
         
