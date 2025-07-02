@@ -18,6 +18,7 @@ scalebar_thresholds:
   proximity: 50
 measure_contrast_distribution: false
 rcnn_hyperparameters:
+  # Default hyperparameters used for all datasets when no dataset-specific settings exist
   default:
     R50:
       base_lr: 0.00025
@@ -31,6 +32,21 @@ rcnn_hyperparameters:
       warmup_iters: 1000
       gamma: 0.1
       batch_size_per_image: 64
+  # Global best hyperparameters (used when no dataset-specific best exists)
   best:
     R50: {}
     R101: {}
+  # Dataset-specific best hyperparameters (example format)
+  # best_my_dataset:
+  #   R50:
+  #     base_lr: 0.0001
+  #     ims_per_batch: 4
+  #     warmup_iters: 1500
+  #     gamma: 0.15
+  #     batch_size_per_image: 128
+  #   R101:
+  #     base_lr: 0.0001
+  #     ims_per_batch: 2
+  #     warmup_iters: 1200
+  #     gamma: 0.12
+  #     batch_size_per_image: 96

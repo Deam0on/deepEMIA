@@ -274,8 +274,8 @@ def optimize_hyperparameters(
     # Save best params
     for t in study.trials:
         system_logger.info(f"Trial {t.number}: value={t.value}, params={t.params}")
-    save_best_rcnn_hyperparameters(backbone, study.best_trial.params)
-    system_logger.info(f"Best hyperparameters for {backbone} saved to config/config.yaml")
+    save_best_rcnn_hyperparameters(backbone, study.best_trial.params, dataset_name=dataset_name)
+    system_logger.info(f"Best hyperparameters for {backbone} on dataset '{dataset_name}' saved to config/config.yaml")
     return study.best_trial
 
 
@@ -331,7 +331,7 @@ def train_on_dataset(
         return
 
     def _train(backbone_name, config_file, model_suffix):
-        params = load_rcnn_hyperparameters(backbone_name, use_best=True)
+        params = load_rcnn_hyperparameters(backbone_name, dataset_name=dataset_name, use_best=True)
         train_with_backbone(
             backbone_name=backbone_name,
             config_file=config_file,
@@ -356,12 +356,13 @@ def train_on_dataset(
     else:
         raise ValueError("Invalid value for rcnn. Choose from '50', '101', or 'combo'.")
 
-def load_rcnn_hyperparameters(rcnn_type: str, use_best: bool = True) -> Dict[str, Union[float, int]]:
+def load_rcnn_hyperparameters(rcnn_type: str, dataset_name: str = None, use_best: bool = True) -> Dict[str, Union[float, int]]:
     """
     Load RCNN hyperparameters from configuration file.
     
     Args:
         rcnn_type: Type of RCNN model ('R50' or 'R101')
+        dataset_name: Name of the dataset (for dataset-specific parameters)
         use_best: Whether to use best parameters if available
         
     Returns:
@@ -379,16 +380,41 @@ def load_rcnn_hyperparameters(rcnn_type: str, use_best: bool = True) -> Dict[str
         if not rcnn_config:
             raise ConfigurationError("No RCNN hyperparameters found in configuration")
         
-        # Determine which section to use
-        section = "best" if use_best and rcnn_config.get("best", {}).get(rcnn_type) else "default"
+        # Priority order for loading hyperparameters:
+        # 1. Dataset-specific best (best_<dataset_name>)
+        # 2. Global best (best)
+        # 3. Default
         
-        if section not in rcnn_config:
-            raise ConfigurationError(f"No {section} hyperparameters section found")
+        params = None
+        source = None
         
-        if rcnn_type not in rcnn_config[section]:
-            raise ConfigurationError(f"No hyperparameters found for {rcnn_type} in {section} section")
+        if use_best and dataset_name:
+            # Try dataset-specific best first
+            dataset_best_key = f"best_{dataset_name}"
+            if dataset_best_key in rcnn_config and rcnn_type in rcnn_config[dataset_best_key]:
+                dataset_params = rcnn_config[dataset_best_key][rcnn_type]
+                if dataset_params:  # Make sure it's not empty
+                    params = dataset_params
+                    source = f"dataset-specific best ({dataset_best_key})"
         
-        params = rcnn_config[section][rcnn_type]
+        if params is None and use_best:
+            # Try global best
+            if "best" in rcnn_config and rcnn_type in rcnn_config["best"]:
+                best_params = rcnn_config["best"][rcnn_type]
+                if best_params:  # Make sure it's not empty
+                    params = best_params
+                    source = "global best"
+        
+        if params is None:
+            # Fall back to default
+            if "default" not in rcnn_config:
+                raise ConfigurationError("No default hyperparameters section found")
+            
+            if rcnn_type not in rcnn_config["default"]:
+                raise ConfigurationError(f"No default hyperparameters found for {rcnn_type}")
+            
+            params = rcnn_config["default"][rcnn_type]
+            source = "default"
         
         # Validate required parameters
         required_params = ['base_lr', 'ims_per_batch', 'warmup_iters', 'gamma', 'batch_size_per_image']
@@ -396,7 +422,8 @@ def load_rcnn_hyperparameters(rcnn_type: str, use_best: bool = True) -> Dict[str
         if missing_params:
             raise ConfigurationError(f"Missing required hyperparameters: {missing_params}")
         
-        system_logger.info(f"Loaded {section} hyperparameters for {rcnn_type}")
+        dataset_info = f" for dataset '{dataset_name}'" if dataset_name else ""
+        system_logger.info(f"Loaded {source} hyperparameters for {rcnn_type}{dataset_info}")
         return params
         
     except FileNotFoundError:
@@ -406,13 +433,14 @@ def load_rcnn_hyperparameters(rcnn_type: str, use_best: bool = True) -> Dict[str
     except Exception as e:
         raise ConfigurationError(f"Error loading hyperparameters: {e}")
 
-def save_best_rcnn_hyperparameters(rcnn_type: str, best_params: Dict[str, Union[float, int]]) -> None:
+def save_best_rcnn_hyperparameters(rcnn_type: str, best_params: Dict[str, Union[float, int]], dataset_name: str = None) -> None:
     """
     Save best RCNN hyperparameters to configuration file.
     
     Args:
         rcnn_type: Type of RCNN model ('R50' or 'R101')
         best_params: Dictionary of hyperparameters to save
+        dataset_name: Name of the dataset (for dataset-specific parameters)
         
     Raises:
         ConfigurationError: If configuration cannot be loaded or saved
@@ -438,14 +466,23 @@ def save_best_rcnn_hyperparameters(rcnn_type: str, best_params: Dict[str, Union[
         if rcnn_type not in rcnn_config["default"]:
             rcnn_config["default"][rcnn_type] = best_params.copy()
         
-        # Save best params
-        rcnn_config["best"][rcnn_type] = best_params
+        # Determine where to save best params
+        if dataset_name:
+            # Save dataset-specific best params
+            best_key = f"best_{dataset_name}"
+            if best_key not in rcnn_config:
+                rcnn_config[best_key] = {}
+            
+            rcnn_config[best_key][rcnn_type] = best_params
+            system_logger.info(f"Saved dataset-specific best hyperparameters for {rcnn_type} (dataset: {dataset_name})")
+        else:
+            # Save global best params
+            rcnn_config["best"][rcnn_type] = best_params
+            system_logger.info(f"Saved global best hyperparameters for {rcnn_type}")
         
         # Write back to file
         with open(config_path, "w") as f:
             yaml.safe_dump(config_data, f, default_flow_style=False, sort_keys=False)
-        
-        system_logger.info(f"Saved best hyperparameters for {rcnn_type}")
         
     except FileNotFoundError:
         raise ConfigurationError(f"Configuration file not found: {config_path}")
@@ -453,3 +490,76 @@ def save_best_rcnn_hyperparameters(rcnn_type: str, best_params: Dict[str, Union[
         raise ConfigurationError(f"Error writing configuration file: {e}")
     except Exception as e:
         raise ConfigurationError(f"Error saving hyperparameters: {e}")
+
+def list_available_hyperparameters() -> Dict[str, Dict[str, dict]]:
+    """
+    List all available hyperparameter configurations.
+    
+    Returns:
+        Dictionary containing all hyperparameter configurations organized by type
+    """
+    try:
+        config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
+        with open(config_path, "r") as f:
+            config_data = yaml.safe_load(f)
+        
+        rcnn_config = config_data.get("rcnn_hyperparameters", {})
+        
+        # Organize configurations
+        configurations = {
+            "default": rcnn_config.get("default", {}),
+            "global_best": rcnn_config.get("best", {}),
+            "dataset_specific": {}
+        }
+        
+        # Find all dataset-specific configurations
+        for key, value in rcnn_config.items():
+            if key.startswith("best_") and key not in ["best"]:
+                dataset_name = key[5:]  # Remove "best_" prefix
+                configurations["dataset_specific"][dataset_name] = value
+        
+        # Log summary
+        system_logger.info("Available hyperparameter configurations:")
+        system_logger.info(f"  Default: {list(configurations['default'].keys())}")
+        system_logger.info(f"  Global best: {list(configurations['global_best'].keys())}")
+        system_logger.info(f"  Dataset-specific: {list(configurations['dataset_specific'].keys())}")
+        
+        return configurations
+        
+    except Exception as e:
+        system_logger.error(f"Error listing hyperparameters: {e}")
+        return {"default": {}, "global_best": {}, "dataset_specific": {}}
+
+
+def get_hyperparameter_info(dataset_name: str = None, rcnn_type: str = None) -> str:
+    """
+    Get formatted information about hyperparameters for a dataset/model combination.
+    
+    Args:
+        dataset_name: Name of the dataset (optional)
+        rcnn_type: Type of RCNN model ('R50' or 'R101', optional)
+        
+    Returns:
+        Formatted string with hyperparameter information
+    """
+    try:
+        info_lines = []
+        
+        if rcnn_type:
+            rcnn_types = [rcnn_type]
+        else:
+            rcnn_types = ["R50", "R101"]
+        
+        for rcnn in rcnn_types:
+            try:
+                params = load_rcnn_hyperparameters(rcnn, dataset_name=dataset_name, use_best=True)
+                info_lines.append(f"\n{rcnn} hyperparameters" + (f" for '{dataset_name}'" if dataset_name else "") + ":")
+                for key, value in params.items():
+                    info_lines.append(f"  {key}: {value}")
+            except ConfigurationError as e:
+                info_lines.append(f"\n{rcnn}: Error loading hyperparameters - {e}")
+        
+        return "\n".join(info_lines)
+        
+    except Exception as e:
+        return f"Error getting hyperparameter info: {e}"
