@@ -1,5 +1,17 @@
 """
 GUI package for the deepEMIA project.
 
-This package contains the Streamlit web interface and related utilities.
+This package contains both legacy Streamlit and modern Gradio web interfaces:
+
+- streamlit_gui.py: Legacy Streamlit interface (maintained for compatibility)
+- gradio_app.py: Modern Gradio interface (recommended)
+- components/: Modular Gradio components
+- utils/: Gradio-specific utilities
+
+Usage:
+    # Launch modern Gradio interface
+    python launch_gradio.py
+    
+    # Or launch legacy Streamlit interface
+    streamlit run gui/streamlit_gui.py
 """

@@ -28,7 +28,8 @@ This repository provides a robust pipeline for computer vision tasks, including:
 - Model evaluation and metrics reporting
 - Inference on new images with advanced measurement and analysis
 - Interactive CLI wizard for easy operation
-- Web-based interface for streamlined workflow management
+- **Modern Gradio web interface** for streamlined workflow management (recommended)
+- **Legacy Streamlit interface** for backwards compatibility
 - Integration with Google Cloud Storage for scalable data management
 
 The pipeline is suitable for scientific and industrial applications requiring reproducible, automated image analysis with enterprise-grade security features.
@@ -283,11 +284,37 @@ DATASET/
 
 ### Web Interface
 
-Launch the Streamlit web interface:
+#### Modern Gradio Interface (Recommended)
+
+Launch the new Gradio-based interface:
+
+```bash
+# Quick setup
+python setup_gradio.py
+
+# Launch interface
+python launch_gradio.py
+```
+
+The Gradio interface provides:
+- Modern, responsive design optimized for ML workflows
+- Real-time progress tracking with ETA estimation
+- Interactive dataset management with drag-and-drop uploads
+- Live visualization of results and images
+- Built-in help and documentation
+- Better error handling and user feedback
+
+Access at: `http://127.0.0.1:7860`
+
+#### Legacy Streamlit Interface
+
+Launch the legacy Streamlit interface:
 
 ```bash
 streamlit run gui/streamlit_gui.py
 ```
+
+The Streamlit interface is maintained for compatibility but the Gradio interface is recommended for new users.
 
 ## Security Considerations
 
