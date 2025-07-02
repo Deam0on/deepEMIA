@@ -341,6 +341,9 @@ The pipeline includes comprehensive error handling:
 
 ## License
 
+This project is licensed for non-commercial use only.  
+For commercial use, please contact the author at [info.f@hladek.cz] to obtain permission.
+
 Shield: [![CC BY-NC-SA 4.0][cc-by-nc-sa-shield]][cc-by-nc-sa]
 
 This work is licensed under a
