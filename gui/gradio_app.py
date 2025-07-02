@@ -140,29 +140,28 @@ def create_app():
     # Create the main interface
     with gr.Blocks(
         title="deepEMIA Control Panel",
-        theme=gr.themes.Soft(),
+        theme=gr.themes.Default(),
         css=custom_css
     ) as app:
         
         # Header
         create_header()
         
+        # Initialize components and get references
+        upload_group, file_upload = create_file_upload()
+        dataset_group, dataset_dropdown = create_dataset_manager()
+        task_group = create_task_runner()
+        results_group = create_results_viewer()
+        
         # Main content area
         with gr.Row():
             # Main content (left side)
             with gr.Column(scale=4):
-                
-                # File upload section
-                upload_group, file_upload = create_file_upload()
-                
-                # Dataset management
-                dataset_group, dataset_dropdown = create_dataset_manager()
-                
-                # Task execution
-                task_group = create_task_runner()
-                
-                # Results and visualization
-                results_group = create_results_viewer()
+                # Display components
+                upload_group.render()
+                dataset_group.render()
+                task_group.render()
+                results_group.render()
             
             # Sidebar (right side)
             with gr.Column(scale=1):
@@ -195,9 +194,6 @@ def create_app():
                                 <p><strong>Backend:</strong> Connected</p>
                             </div>
                             """
-                    
-                    # Update system info periodically
-                    app.load(update_system_info, outputs=[system_info], every=30)
         
         # Footer
         create_footer()
@@ -225,9 +221,6 @@ def create_app():
             except Exception as e:
                 system_logger.error(f"Failed to initialize application: {str(e)}")
                 return create_status_message("error", f"Initialization failed: {str(e)}")
-        
-        # Run initialization on app load
-        app.load(initialize_app)
     
     return app
 

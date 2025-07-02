@@ -32,54 +32,25 @@ def setup_environment():
     
     print("✅ Environment setup complete")
 
-
-def check_dependencies():
-    """Check if required dependencies are installed."""
-    print("📦 Checking dependencies...")
-    
-    required_packages = [
-        "gradio",
-        "google-cloud-storage", 
-        "pillow",
-        "pandas",
-        "numpy"
-    ]
-    
-    missing_packages = []
-    
-    for package in required_packages:
-        try:
-            __import__(package.replace("-", "_"))
-        except ImportError:
-            missing_packages.append(package)
-    
-    if missing_packages:
-        print(f"❌ Missing packages: {', '.join(missing_packages)}")
-        print("   Please install with: pip install -r requirements.txt")
-        sys.exit(1)
-    
-    print("✅ All dependencies found")
-
-
 def main():
     """Main launcher function."""
     print("🔬 deepEMIA - Modern Gradio Interface")
     print("=" * 50)
     
     setup_environment()
-    check_dependencies()
     
     # Import and launch
     try:
-        from gui.gradio_app import launch_app
+        from gui.gradio_standalone import launch_standalone_app
         
         print("🚀 Launching Gradio interface...")
-        print("   Access the interface at: http://127.0.0.1:7860")
+        print("   Access the interface at: http://0.0.0.0:7860")
+        print("   Or from external: http://YOUR_VM_IP:7860")
         print("   Press Ctrl+C to stop")
         print()
         
-        launch_app(
-            server_name="127.0.0.1",
+        launch_standalone_app(
+            server_name="0.0.0.0",  # Listen on all interfaces
             server_port=7860,
             share=False,
             debug=False

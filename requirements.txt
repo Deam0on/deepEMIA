@@ -70,7 +70,7 @@ google-crc32c==1.5.0
 streamlit==1.26.0
 
 # Gradio for modern GUI
-gradio==4.15.0
+gradio==4.44.1
 
 # FastAPI for API endpoints
 fastapi==0.98.0

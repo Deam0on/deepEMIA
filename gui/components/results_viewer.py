@@ -291,7 +291,4 @@ def create_results_viewer() -> gr.Group:
         outputs=[download_status, download_file]
     )
     
-    # Load folders on component creation
-    results_group.load(load_folders, outputs=[folder_dropdown])
-    
     return results_group

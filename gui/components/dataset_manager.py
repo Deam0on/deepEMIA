@@ -32,14 +32,14 @@ GCS_DATASET_FOLDER = "DATASET"
 GCS_INFERENCE_FOLDER = "DATASET/INFERENCE"
 
 
-def create_dataset_manager() -> gr.Group:
+def create_dataset_manager():
     """
     Create dataset management interface.
     
     Returns:
-        gr.Group: Dataset management component group
+        Tuple[gr.Column, gr.Dropdown]: Dataset management component and dropdown
     """
-    with gr.Group() as dataset_group:
+    with gr.Column() as dataset_group:
         gr.Markdown("## 📁 Dataset Management")
         
         # Dataset selection
@@ -56,7 +56,7 @@ def create_dataset_manager() -> gr.Group:
                 refresh_btn = gr.Button("🔄 Refresh", size="sm")
         
         # Admin controls (initially hidden)
-        with gr.Group(visible=False) as admin_controls:
+        with gr.Column(visible=False) as admin_controls:
             gr.Markdown("### 🔐 Admin Controls")
             
             # Password input
@@ -72,7 +72,7 @@ def create_dataset_manager() -> gr.Group:
             auth_status = gr.HTML("")
             
             # Dataset creation (initially hidden)
-            with gr.Group(visible=False) as creation_controls:
+            with gr.Column(visible=False) as creation_controls:
                 gr.Markdown("#### ➕ Create New Dataset")
                 with gr.Row():
                     new_dataset_name = gr.Textbox(
@@ -115,7 +115,7 @@ def create_dataset_manager() -> gr.Group:
     
     def toggle_admin_controls(current_state):
         """Toggle admin controls visibility."""
-        return gr.Group(visible=not current_state)
+        return gr.Column(visible=not current_state)
     
     def authenticate_admin(password):
         """Authenticate admin user."""
@@ -123,13 +123,13 @@ def create_dataset_manager() -> gr.Group:
             session_state.set("admin_authenticated", True)
             return (
                 create_status_message("success", "Authentication successful"),
-                gr.Group(visible=True),
+                gr.Column(visible=True),
                 gr.Textbox(value="")  # Clear password
             )
         else:
             return (
                 create_status_message("error", "Invalid password"),
-                gr.Group(visible=False),
+                gr.Column(visible=False),
                 gr.Textbox(value="")  # Clear password
             )
     
@@ -227,20 +227,17 @@ def create_dataset_manager() -> gr.Group:
         outputs=[status_display]
     )
     
-    # Load datasets on component creation
-    dataset_group.load(load_datasets, outputs=[dataset_dropdown])
-    
     return dataset_group, dataset_dropdown
 
 
-def create_file_upload() -> Tuple[gr.Group, gr.File]:
+def create_file_upload():
     """
     Create file upload interface.
     
     Returns:
-        Tuple[gr.Group, gr.File]: Upload component group and file component
+        Tuple[gr.Column, gr.File]: Upload component and file component
     """
-    with gr.Group() as upload_group:
+    with gr.Column() as upload_group:
         gr.Markdown("## 📤 Upload Data")
         
         with gr.Row():

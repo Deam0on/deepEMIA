@@ -318,8 +318,4 @@ def create_task_runner() -> gr.Group:
         outputs=[status_display, run_btn, stop_btn]
     )
     
-    # Live status updates
-    task_group.load(get_live_status, outputs=[status_display], every=2)
-    task_group.load(update_dataset_choices, outputs=[dataset_selection])
-    
     return task_group
