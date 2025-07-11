@@ -14,7 +14,7 @@ scale_bar_rois:
     width_factor: 1
     height_factor: 0.067
 scalebar_thresholds:
-  intensity: 150
+  intensity: 100
   proximity: 50
 measure_contrast_distribution: false
 rcnn_hyperparameters:

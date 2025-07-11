@@ -126,9 +126,9 @@ def detect_scale_bar(
             edges,
             1,
             np.pi / 180,
-            threshold=100,
-            minLineLength=50,
-            maxLineGap=5,
+            threshold=50,
+            minLineLength=20,
+            maxLineGap=10,
         )
         if lines is not None:
             for points in lines:
