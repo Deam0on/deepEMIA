@@ -96,7 +96,7 @@ function formatDuration(seconds) {
 function displayServerInfo() {
     // Get current hostname for external access info
     const hostname = window.location.hostname;
-    const port = '8080';
+    const port = '8505';
     
     console.log(`FastAPI GUI accessible at:`);
     console.log(`- Local: http://localhost:${port}`);

@@ -46,12 +46,12 @@ def start_server():
     print("🚀 Starting deepEMIA FastAPI GUI...")
     print("=" * 60)
     print("📡 Server will be accessible at:")
-    print("   - Local:    http://localhost:8080")
-    print("   - Network:  http://0.0.0.0:8080") 
-    print("   - External: http://[VM_EXTERNAL_IP]:8080")
+    print("   - Local:    http://localhost:8505")
+    print("   - Network:  http://0.0.0.0:8505") 
+    print("   - External: http://[VM_EXTERNAL_IP]:8505")
     print("📚 API Documentation:")
-    print("   - Swagger:  http://[VM_EXTERNAL_IP]:8080/api/docs")
-    print("   - ReDoc:    http://[VM_EXTERNAL_IP]:8080/api/redoc")
+    print("   - Swagger:  http://[VM_EXTERNAL_IP]:8505/api/docs")
+    print("   - ReDoc:    http://[VM_EXTERNAL_IP]:8505/api/redoc")
     print("=" * 60)
     print("Press Ctrl+C to stop the server")
     print("=" * 60)
@@ -62,7 +62,7 @@ def start_server():
         uvicorn.run(
             "gui.fastapi_app:app",
             host="0.0.0.0",
-            port=8080,
+            port=8505,
             reload=False,  # Disable reload for production
             log_level="info"
         )
