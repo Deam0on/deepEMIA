@@ -104,11 +104,17 @@ async function runTask() {
 }
 
 function showTaskProgress(taskId) {
-    document.getElementById('taskStatus').style.display = 'none';
+    document.getElementById('taskStatus').style.display = 'block';
     document.getElementById('taskProgress').style.display = 'block';
     
     // Reset progress
     updateProgress(0, 'starting');
+    
+    // Show the progress section
+    const progressSection = document.getElementById('taskProgress');
+    if (progressSection) {
+        progressSection.scrollIntoView({ behavior: 'smooth' });
+    }
 }
 
 function startTaskPolling(taskId) {

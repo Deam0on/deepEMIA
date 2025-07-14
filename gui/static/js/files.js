@@ -122,10 +122,25 @@ async function browseGCSFiles() {
         const response = await fetch('/api/files/browse');
         const result = await response.json();
         
-        // For now, just show a summary
+        if (result.error) {
+            // Handle GCS permission errors gracefully
+            const errorInfo = `
+                <div class="alert alert-warning">
+                    <strong><i class="bi bi-exclamation-triangle"></i> GCS Access Issue:</strong><br>
+                    ${result.message}<br>
+                    <small class="text-muted">Error: ${result.error}</small>
+                </div>
+            `;
+            document.getElementById('filesList').innerHTML = errorInfo;
+            showAlert('GCS access not configured or permission denied', 'warning');
+            return;
+        }
+        
+        // Show successful GCS content
         const summary = `
             <div class="alert alert-info">
-                <strong>GCS Browser Results:</strong><br>
+                <strong><i class="bi bi-cloud"></i> GCS Browser Results:</strong><br>
+                • Bucket: <code>${result.bucket || 'unknown'}</code><br>
                 • Directories: ${result.directories?.length || 0}<br>
                 • Images: ${result.images?.length || 0}<br>
                 • Other files: ${result.other_files?.length || 0}<br>
@@ -135,11 +150,11 @@ async function browseGCSFiles() {
         
         // Update the files list with GCS content
         document.getElementById('filesList').innerHTML = summary;
-        showAlert('GCS files loaded', 'info');
+        showAlert('GCS files loaded successfully', 'success');
         
     } catch (error) {
         console.error('Failed to browse GCS:', error);
-        showAlert('Failed to browse GCS files', 'danger');
+        showAlert('Failed to browse GCS files: ' + error.message, 'danger');
     }
 }
 

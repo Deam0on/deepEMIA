@@ -105,17 +105,27 @@ async def execute_task(task_id: str, task_request: TaskRequest):
     task_info = running_tasks[task_id]
     
     try:
-        # Build command
-        try:
-            from src.utils.config import get_config
-            config = get_config()
-            main_script = Path(config["paths"]["main_script"]).expanduser().resolve()
-        except:
-            # Fallback
-            main_script = Path.home() / "deepEMIA" / "main.py"
+        # Build command - try to find main.py
+        main_script = None
+        possible_paths = [
+            Path("main.py"),  # Current directory
+            Path("../main.py"),  # Parent directory
+            Path(__file__).parent.parent.parent / "main.py",  # Project root
+        ]
+        
+        for path in possible_paths:
+            if path.exists():
+                main_script = path.resolve()
+                break
+        
+        if not main_script:
+            raise FileNotFoundError("Could not find main.py script")
+        
+        # Use python instead of python3 for Windows
+        python_cmd = "python"
         
         command_parts = [
-            "python3", str(main_script),
+            python_cmd, str(main_script),
             "--task", task_request.task,
             "--dataset_name", task_request.dataset_name,
             "--threshold", str(task_request.threshold),
@@ -133,6 +143,8 @@ async def execute_task(task_id: str, task_request: TaskRequest):
         task_info["command"] = command
         task_info["status"] = "running"
         
+        print(f"Executing command: {command}")  # Debug log
+        
         # Execute command
         process = subprocess.Popen(
             command_parts,
@@ -140,7 +152,8 @@ async def execute_task(task_id: str, task_request: TaskRequest):
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
-            universal_newlines=True
+            universal_newlines=True,
+            cwd=str(main_script.parent)  # Set working directory
         )
         
         # Read output in real-time

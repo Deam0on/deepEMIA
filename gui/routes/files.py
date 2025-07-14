@@ -24,8 +24,16 @@ router = APIRouter(tags=["files"])
 async def browse_gcs_files(prefix: Optional[str] = ""):
     """Browse files in GCS bucket."""
     try:
-        # Mock bucket name - in production, get from config
-        bucket_name = "your-bucket-name"
+        # Get bucket name from config
+        try:
+            import sys
+            import os
+            sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            from src.utils.config import get_config
+            config = get_config()
+            bucket_name = config.get("bucket", "deepemia-bucket")
+        except:
+            bucket_name = "deepemia-bucket"  # fallback
         
         # List directories and files
         files = list_directories(bucket_name, prefix)
@@ -49,10 +57,20 @@ async def browse_gcs_files(prefix: Optional[str] = ""):
             "directories": directories,
             "images": images,
             "other_files": other_files,
-            "total_count": len(files)
+            "total_count": len(files),
+            "bucket": bucket_name
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to browse files: {str(e)}")
+        # Return graceful fallback
+        return {
+            "prefix": prefix,
+            "directories": [],
+            "images": [],
+            "other_files": [],
+            "total_count": 0,
+            "error": str(e),
+            "message": "GCS access not configured or permission denied"
+        }
 
 @router.post("/upload")
 async def upload_files(
@@ -104,17 +122,30 @@ async def download_file(file_path: str):
 async def create_results_zip(prefix: str = "results/"):
     """Create a ZIP file from GCS files."""
     try:
-        bucket_name = "your-bucket-name"
+        # Get bucket name from config
+        try:
+            import sys
+            import os
+            sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            from src.utils.config import get_config
+            config = get_config()
+            bucket_name = config.get("bucket", "deepemia-bucket")
+        except:
+            bucket_name = "deepemia-bucket"  # fallback
+        
         output_path = f"downloads/results_{prefix.replace('/', '_')}.zip"
+        
+        # Create downloads directory if it doesn't exist
+        os.makedirs("downloads", exist_ok=True)
         
         success = create_zip_from_gcs(bucket_name, prefix, output_path)
         
         if success:
             return {"message": "ZIP file created successfully", "download_path": output_path}
         else:
-            return {"message": "No files found to zip", "download_path": None}
+            return {"message": "No files found to zip or GCS access not configured", "download_path": None}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create ZIP: {str(e)}")
+        return {"message": f"Failed to create ZIP: {str(e)}", "download_path": None}
 
 @router.get("/list-local")
 async def list_local_files(directory: str = "uploads"):
