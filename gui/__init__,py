@@ -1,5 +1,17 @@
 """
 GUI package for the deepEMIA project.
 
-This package contains the Streamlit web interface and related utilities.
+This package contains both the legacy Streamlit web interface and the new FastAPI web interface.
+
+Components:
+- streamlit_gui.py: Legacy Streamlit interface (port 8501)
+- streamlit_functions.py: Utility functions for Streamlit
+- fastapi_app.py: New FastAPI interface (port 8888)
+- routes/: FastAPI route modules
+- templates/: Jinja2 templates for FastAPI
+- static/: Static files (CSS, JS) for FastAPI
+
+Usage:
+- Start FastAPI GUI: python start_gui.py --interface fastapi
+- Start Streamlit GUI: python start_gui.py --interface streamlit
 """
