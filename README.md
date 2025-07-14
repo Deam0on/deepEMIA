@@ -283,11 +283,21 @@ DATASET/
 
 ### Web Interface
 
-Launch the Streamlit web interface:
-
+**Streamlit Interface (Existing):**
 ```bash
 streamlit run gui/streamlit_gui.py
 ```
+
+**Dear ImGui Interface (New - Port 8888):**
+```bash
+# Quick start
+./start_gui.sh
+
+# Or manually
+python3 gui/dear_imgui_server.py
+```
+
+The Dear ImGui interface will be available at `http://<VM-EXTERNAL-IP>:8888` and provides a minimal hello world GUI suitable for GCP VM deployment.
 
 ## Security Considerations
 
