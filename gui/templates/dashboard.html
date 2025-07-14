@@ -375,7 +375,14 @@
                                                     </div>
                                                     <div class="mb-3">
                                                         <label for="uploadPath" class="form-label">Upload Path</label>
-                                                        <input type="text" class="form-control" id="uploadPath" placeholder="/dataset/images/" value="/dataset/images/">
+                                                        <select class="form-select" id="uploadPath">
+                                                            <option value="/DATASET/TRAINING/">Training Data</option>
+                                                            <option value="/DATASET/INFERENCE/">Inference Data</option>
+                                                            <option value="/DATASET/VALIDATION/">Validation Data</option>
+                                                            <option value="/DATASET/ANNOTATIONS/">Annotations</option>
+                                                            <option value="/custom">Custom Path...</option>
+                                                        </select>
+                                                        <input type="text" class="form-control mt-2" id="customUploadPath" placeholder="/custom/path/" style="display: none;">
                                                     </div>
                                                     <button type="submit" class="btn btn-primary w-100">
                                                         <i class="bi bi-cloud-upload"></i> Upload Files

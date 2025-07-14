@@ -4,7 +4,36 @@
 document.addEventListener('DOMContentLoaded', function() {
     loadFilesList();
     setupFileUpload();
+    setupUploadPathHandler();
 });
+
+function setupUploadPathHandler() {
+    const uploadPathSelect = document.getElementById('uploadPath');
+    const customPathDiv = document.getElementById('customPathDiv');
+    const customPathInput = document.getElementById('customPath');
+
+    if (uploadPathSelect) {
+        uploadPathSelect.addEventListener('change', function() {
+            if (this.value === 'custom') {
+                customPathDiv.style.display = 'block';
+                customPathInput.required = true;
+            } else {
+                customPathDiv.style.display = 'none';
+                customPathInput.required = false;
+            }
+        });
+    }
+}
+
+function getSelectedUploadPath() {
+    const uploadPathSelect = document.getElementById('uploadPath');
+    const customPathInput = document.getElementById('customPath');
+    
+    if (uploadPathSelect.value === 'custom') {
+        return customPathInput.value.trim();
+    }
+    return uploadPathSelect.value;
+}
 
 async function loadFilesList() {
     try {
@@ -62,10 +91,15 @@ function setupFileUpload() {
         e.preventDefault();
         
         const files = fileInput.files;
-        const uploadPath = document.getElementById('uploadPath').value;
+        const uploadPath = getSelectedUploadPath();
         
         if (files.length === 0) {
             showAlert('Please select files to upload', 'warning');
+            return;
+        }
+        
+        if (!uploadPath) {
+            showAlert('Please select or enter an upload path', 'warning');
             return;
         }
         
@@ -82,6 +116,9 @@ function setupFileUpload() {
             
             const response = await fetch('/api/files/upload', {
                 method: 'POST',
+                headers: {
+                    'X-Admin-Password': SHA256('admin')
+                },
                 body: formData
             });
             

@@ -181,8 +181,28 @@ async function editDataset(name) {
         const response = await fetch('/api/datasets/');
         const datasets = await response.json();
         
+        console.log('Available datasets:', datasets); // Debug log
+        console.log('Editing dataset:', name, datasets[name]); // Debug log
+        
         if (datasets[name]) {
-            const [created, description, classes] = datasets[name];
+            const datasetInfo = datasets[name];
+            let created, description, classes;
+            
+            // Handle different data structures
+            if (Array.isArray(datasetInfo)) {
+                // New structure: [created, description, classes]
+                [created, description, classes] = datasetInfo;
+            } else if (typeof datasetInfo === 'object') {
+                // Object structure
+                created = datasetInfo.created;
+                description = datasetInfo.description;
+                classes = datasetInfo.classes;
+            } else {
+                // Fallback
+                created = 'Unknown';
+                description = '';
+                classes = [];
+            }
             
             // Populate form
             document.getElementById('datasetName').value = name;
@@ -205,7 +225,7 @@ async function editDataset(name) {
         }
     } catch (error) {
         console.error('Failed to load dataset for editing:', error);
-        showAlert('Failed to load dataset details', 'danger');
+        showAlert('Failed to load dataset details: ' + error.message, 'danger');
     }
 }
 

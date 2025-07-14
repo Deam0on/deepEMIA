@@ -175,3 +175,123 @@ async def list_local_files(directory: str = "uploads"):
         return {"files": files, "count": len(files)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list files: {str(e)}")
+
+@router.get("/browse-archive")
+async def browse_archive_files(prefix: Optional[str] = "Archive/"):
+    """Browse archive files in GCS bucket."""
+    try:
+        # Get bucket name from config
+        try:
+            import sys
+            import os
+            sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            from src.utils.config import get_config
+            config = get_config()
+            bucket_name = config.get("bucket", "deepemia-bucket")
+        except:
+            bucket_name = "deepemia-bucket"  # fallback
+        
+        # List archive files
+        files = list_directories(bucket_name, prefix)
+        
+        # Process archive structure
+        archive_folders = []
+        for file_path in files:
+            if file_path.endswith('/') and 'Archive/' in file_path:
+                # Extract timestamp from folder name
+                folder_name = file_path.replace('Archive/', '').replace('/', '')
+                if folder_name:  # Not empty
+                    archive_folders.append({
+                        "name": folder_name,
+                        "path": file_path,
+                        "timestamp": folder_name,
+                        "type": "archive_folder"
+                    })
+        
+        # Sort by timestamp (newest first)
+        archive_folders.sort(key=lambda x: x['timestamp'], reverse=True)
+        
+        return {
+            "prefix": prefix,
+            "archive_folders": archive_folders,
+            "total_count": len(archive_folders),
+            "bucket": bucket_name
+        }
+    except Exception as e:
+        return {
+            "prefix": prefix,
+            "archive_folders": [],
+            "total_count": 0,
+            "error": str(e),
+            "message": "Failed to browse archive files"
+        }
+
+@router.get("/list-archive-contents/{folder_name}")
+async def list_archive_contents(folder_name: str):
+    """List contents of a specific archive folder."""
+    try:
+        # Get bucket name from config
+        try:
+            import sys
+            import os
+            sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            from src.utils.config import get_config
+            config = get_config()
+            bucket_name = config.get("bucket", "deepemia-bucket")
+        except:
+            bucket_name = "deepemia-bucket"  # fallback
+        
+        prefix = f"Archive/{folder_name}/"
+        files = list_directories(bucket_name, prefix)
+        
+        # Categorize files
+        png_files = []
+        csv_files = []
+        other_files = []
+        
+        for file_path in files:
+            if not file_path.endswith('/'):  # Not a directory
+                file_info = {
+                    "name": os.path.basename(file_path),
+                    "path": file_path,
+                    "download_url": f"/api/files/download-from-gcs?file_path={file_path}"
+                }
+                
+                if file_path.lower().endswith('.png'):
+                    png_files.append(file_info)
+                elif file_path.lower().endswith('.csv'):
+                    csv_files.append(file_info)
+                else:
+                    other_files.append(file_info)
+        
+        return {
+            "folder_name": folder_name,
+            "png_files": png_files,
+            "csv_files": csv_files,
+            "other_files": other_files,
+            "total_files": len(png_files) + len(csv_files) + len(other_files)
+        }
+    except Exception as e:
+        return {
+            "folder_name": folder_name,
+            "png_files": [],
+            "csv_files": [],
+            "other_files": [],
+            "total_files": 0,
+            "error": str(e)
+        }
+
+@router.get("/download-from-gcs")
+async def download_from_gcs(file_path: str):
+    """Download a file from GCS."""
+    try:
+        # This would implement actual GCS file download
+        # For now, return file info
+        return {
+            "message": f"Download link for {file_path}",
+            "file_path": file_path,
+            "download_url": f"gs://bucket/{file_path}",
+            "note": "Direct download implementation would go here"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}")
