@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 import json
 
-router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+router = APIRouter(tags=["tasks"])
 
 # Store running tasks
 running_tasks: Dict[str, Dict[str, Any]] = {}
