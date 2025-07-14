@@ -13,14 +13,33 @@ from pathlib import Path
 # Add project root to path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from fastapi import FastAPI, Request
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
-import uvicorn
+try:
+    from fastapi import FastAPI, Request
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.templating import Jinja2Templates
+    from fastapi.responses import HTMLResponse
+    import uvicorn
+except ImportError as e:
+    print(f"❌ FastAPI dependencies not installed: {e}")
+    print("Please run: pip install fastapi uvicorn jinja2 python-multipart")
+    sys.exit(1)
 
-from src.utils.config import get_config
-from src.utils.logger_utils import system_logger
+try:
+    from src.utils.config import get_config
+    from src.utils.logger_utils import system_logger
+except ImportError as e:
+    print(f"⚠️  Could not import deepEMIA modules: {e}")
+    print("Using fallback configuration...")
+    
+    # Fallback configuration
+    def get_config():
+        return {"bucket": "not-configured"}
+    
+    class FallbackLogger:
+        def info(self, msg): print(f"INFO: {msg}")
+        def error(self, msg): print(f"ERROR: {msg}")
+    
+    system_logger = FallbackLogger()
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -69,9 +88,24 @@ async def health_check():
     """Health check endpoint for monitoring."""
     return {"status": "healthy", "service": "deepEMIA-GUI", "timestamp": time.time()}
 
-# Include demo routes
-from gui.routes import demo
-app.include_router(demo.router)
+# Include demo routes with error handling
+try:
+    from gui.routes import demo
+    app.include_router(demo.router)
+except ImportError as e:
+    print(f"⚠️  Could not load demo routes: {e}")
+    
+    # Add a simple demo route directly
+    @app.get("/demo/hello", response_class=HTMLResponse)
+    async def demo_hello_fallback(request: Request):
+        current_time = time.strftime("%H:%M:%S")
+        return f"""
+        <div class="alert alert-success fade-in">
+            <strong>Success!</strong> FastAPI is working correctly. 
+            The backend responded at {current_time}.
+            <br><small>This is a fallback demo endpoint.</small>
+        </div>
+        """
 
 def run_server():
     """Run the FastAPI server."""
