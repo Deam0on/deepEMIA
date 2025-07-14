@@ -121,8 +121,10 @@ def upload_data_to_bucket() -> float:
     timestamp = (datetime.now() + time_offset).strftime("%Y%m%d_%H%M%S")
     archive_path = f"gs://{bucket}/Archive/{timestamp}/"
 
-    # Upload .png files
-    png_files = list(Path.home().glob("*.png"))
+    # Upload .png files (check both home directory and current directory)
+    png_files = list(Path.home().glob("*.png")) + list(Path.cwd().glob("*.png"))
+    # Remove duplicates if any
+    png_files = list(set(png_files))
     if png_files:
         system_logger.info(f"Uploading {len(png_files)} PNG files to {archive_path}")
         cmd = (
@@ -131,17 +133,31 @@ def upload_data_to_bucket() -> float:
         result = run_gsutil_with_retry(cmd)
         if result.returncode != 0:
             system_logger.error(f"PNG upload failed: {result.stderr}")
+    else:
+        system_logger.info("No PNG files found to upload")
 
-    # Upload .csv files
-    csv_files = list(Path.home().glob("*.csv"))
+    # Upload .csv files (check both home directory and current directory)
+    home_csv_files = list(Path.home().glob("*.csv"))
+    cwd_csv_files = list(Path.cwd().glob("*.csv"))
+    
+    system_logger.info(f"Found {len(home_csv_files)} CSV files in home directory: {Path.home()}")
+    system_logger.info(f"Found {len(cwd_csv_files)} CSV files in current directory: {Path.cwd()}")
+    
+    csv_files = home_csv_files + cwd_csv_files
+    # Remove duplicates if any
+    csv_files = list(set(csv_files))
     if csv_files:
         system_logger.info(f"Uploading {len(csv_files)} CSV files to {archive_path}")
+        for csv_file in csv_files:
+            system_logger.info(f"  - {csv_file}")
         cmd = (
             ["gsutil", "-m", "cp", "-r"] + [str(f) for f in csv_files] + [archive_path]
         )
         result = run_gsutil_with_retry(cmd)
         if result.returncode != 0:
             system_logger.error(f"CSV upload failed: {result.stderr}")
+    else:
+        system_logger.warning("No CSV files found to upload")
 
     # Upload output directory contents
     output_dir = Path.home() / "output"

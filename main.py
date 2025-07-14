@@ -473,8 +473,18 @@ For guided interactive mode: python cli_main.py
             #         f"Could not delete local logs directory {logs_dir}: {e}"
             #     )
 
-        # Delete result files after upload
+        # Delete result files after upload (check both current directory and home directory)
         for pattern in ("*.png", "*.csv"):
+            # Clean up current directory
+            for file_path in Path.cwd().glob(pattern):
+                try:
+                    file_path.unlink()
+                    system_logger.info(f"Deleted result file: {file_path}")
+                except Exception as e:
+                    system_logger.warning(
+                        f"Could not delete result file {file_path}: {e}"
+                    )
+            # Clean up home directory
             for file_path in Path.home().glob(pattern):
                 try:
                     file_path.unlink()
