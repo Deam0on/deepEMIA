@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.6"></script>
+    
+    <!-- Custom CSS -->
+    <link href="/static/css/main.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <strong>deepEMIA</strong> Control Panel v2.0
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/api/docs" target="_blank">
+                            <i class="bi bi-book"></i> API Docs
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="http://{{ request.url.hostname }}:8501" target="_blank" class="nav-link">
+                            <i class="bi bi-arrow-repeat"></i> Streamlit GUI
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="container-fluid mt-4">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">
+                            <i class="bi bi-lightning-charge"></i> Quick Actions
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-outline-primary" onclick="switchTab('files-tab')">
+                                <i class="bi bi-upload"></i> Upload Data
+                            </button>
+                            <button class="btn btn-outline-success" onclick="switchTab('tasks-tab')">
+                                <i class="bi bi-play-circle"></i> Run Tasks
+                            </button>
+                            <button class="btn btn-outline-info" onclick="switchTab('results-tab')">
+                                <i class="bi bi-bar-chart-line"></i> View Results
+                            </button>
+                            <button class="btn btn-outline-warning" onclick="switchTab('datasets-tab')">
+                                <i class="bi bi-folder"></i> Manage Datasets
+                            </button>
+                        </div>
+                        <hr>
+                        <div class="small text-muted">
+                            <div class="mb-2">
+                                <strong><i class="bi bi-info-circle"></i> Status:</strong> 
+                                <span class="badge bg-success" id="serverStatus">Ready</span>
+                            </div>
+                            <div class="mb-2">
+                                <strong><i class="bi bi-cloud"></i> Bucket:</strong><br>
+                                <code class="small">{{ config.bucket }}</code>
+                            </div>
+                            <div class="mb-2">
+                                <strong><i class="bi bi-tag"></i> Version:</strong> 
+                                <span class="badge bg-info">2.0.0</span>
+                            </div>
+                            <div>
+                                <strong><i class="bi bi-server"></i> Port:</strong> 
+                                <span class="badge bg-primary">8505</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content Area -->
+            <div class="col-md-9">
+                <!-- Navigation Tabs -->
+                <ul class="nav nav-tabs mb-4" id="mainTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard-pane" type="button" role="tab">
+                            <i class="bi bi-speedometer2"></i> Dashboard
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="tasks-tab" data-bs-toggle="tab" data-bs-target="#tasks-pane" type="button" role="tab">
+                            <i class="bi bi-play-circle"></i> Run Tasks
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="datasets-tab" data-bs-toggle="tab" data-bs-target="#datasets-pane" type="button" role="tab">
+                            <i class="bi bi-folder"></i> Datasets
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="files-tab" data-bs-toggle="tab" data-bs-target="#files-pane" type="button" role="tab">
+                            <i class="bi bi-cloud-upload"></i> Files
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="results-tab" data-bs-toggle="tab" data-bs-target="#results-pane" type="button" role="tab">
+                            <i class="bi bi-bar-chart"></i> Results
+                        </button>
+                    </li>
+                </ul>
+
+                <!-- Tab Content -->
+                <div class="tab-content" id="mainTabContent">
+                    <!-- Dashboard Tab -->
+                    <div class="tab-pane fade show active" id="dashboard-pane" role="tabpanel">
+                        <!-- Hero Section -->
+                        <div class="jumbotron bg-gradient p-5 rounded-4 shadow-sm">
+                            <div class="container-fluid">
+                                <h1 class="display-4 text-primary fw-bold">
+                                    <i class="bi bi-rocket-takeoff"></i> deepEMIA Control Panel
+                                </h1>
+                                <p class="lead">
+                                    Complete FastAPI-based interface for deep learning image analysis.
+                                    All Streamlit functionality now available with modern web architecture.
+                                </p>
+                                <hr class="my-4">
+                                
+                                <!-- Feature Status -->
+                                <div class="row mt-4">
+                                    <div class="col-md-3 mb-3">
+                                        <div class="card border-success h-100">
+                                            <div class="card-body text-center">
+                                                <i class="bi bi-check-circle text-success display-6"></i>
+                                                <h6 class="card-title text-success mt-2">Task Execution</h6>
+                                                <p class="card-text small">Run inference, training, evaluation</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <div class="card border-success h-100">
+                                            <div class="card-body text-center">
+                                                <i class="bi bi-check-circle text-success display-6"></i>
+                                                <h6 class="card-title text-success mt-2">Dataset Management</h6>
+                                                <p class="card-text small">Create, edit, delete datasets</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <div class="card border-success h-100">
+                                            <div class="card-body text-center">
+                                                <i class="bi bi-check-circle text-success display-6"></i>
+                                                <h6 class="card-title text-success mt-2">File Operations</h6>
+                                                <p class="card-text small">Upload, download, GCS integration</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <div class="card border-success h-100">
+                                            <div class="card-body text-center">
+                                                <i class="bi bi-check-circle text-success display-6"></i>
+                                                <h6 class="card-title text-success mt-2">Real-time Updates</h6>
+                                                <p class="card-text small">Progress tracking, live logs</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Quick Start -->
+                                <div class="mt-4 p-4 bg-light rounded-3">
+                                    <h4><i class="bi bi-lightning text-primary"></i> Quick Start</h4>
+                                    <p class="mb-3">Get started with deepEMIA in a few simple steps:</p>
+                                    <ol>
+                                        <li><strong>Upload Data:</strong> Go to Files tab to upload training or measurement data</li>
+                                        <li><strong>Run Tasks:</strong> Use Tasks tab to execute inference, training, or evaluation</li>
+                                        <li><strong>View Results:</strong> Check Results tab for outputs and visualizations</li>
+                                        <li><strong>Manage Datasets:</strong> Use Datasets tab to create or modify dataset configurations</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tasks Tab -->
+                    <div class="tab-pane fade" id="tasks-pane" role="tabpanel">
+                        <div class="card">
+                            <div class="card-header bg-primary text-white">
+                                <h4 class="mb-0"><i class="bi bi-play-circle"></i> Task Execution</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <!-- Task Configuration -->
+                                    <div class="col-md-6">
+                                        <h5>Configuration</h5>
+                                        <form id="taskForm">
+                                            <div class="mb-3">
+                                                <label for="datasetSelect" class="form-label">Dataset</label>
+                                                <select class="form-select" id="datasetSelect" required>
+                                                    <option value="">Loading datasets...</option>
+                                                </select>
+                                            </div>
+                                            
+                                            <div class="mb-3">
+                                                <label for="taskSelect" class="form-label">Task</label>
+                                                <select class="form-select" id="taskSelect" required>
+                                                    <option value="inference">Inference (Measurement)</option>
+                                                    <option value="evaluate">Evaluate Model</option>
+                                                    <option value="prepare">Prepare Dataset</option>
+                                                    <option value="train">Train Model</option>
+                                                </select>
+                                            </div>
+                                            
+                                            <div class="mb-3">
+                                                <label for="rcnnSelect" class="form-label">RCNN Model</label>
+                                                <select class="form-select" id="rcnnSelect">
+                                                    <option value="50">R50 (Small particles)</option>
+                                                    <option value="101" selected>R101 (Large particles)</option>
+                                                    <option value="combo">Dual model (Universal)</option>
+                                                </select>
+                                            </div>
+                                            
+                                            <div class="mb-3">
+                                                <label for="thresholdRange" class="form-label">Detection Threshold: <span id="thresholdValue">0.65</span></label>
+                                                <input type="range" class="form-range" id="thresholdRange" min="0" max="1" step="0.01" value="0.65">
+                                            </div>
+                                            
+                                            <div class="mb-3">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" id="visualizeCheck" checked>
+                                                    <label class="form-check-label" for="visualizeCheck">
+                                                        Generate Visualizations
+                                                    </label>
+                                                </div>
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" id="downloadCheck" checked>
+                                                    <label class="form-check-label" for="downloadCheck">
+                                                        Download from GCS
+                                                    </label>
+                                                </div>
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" id="uploadCheck" checked>
+                                                    <label class="form-check-label" for="uploadCheck">
+                                                        Upload to GCS
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            
+                                            <button type="submit" class="btn btn-success btn-lg w-100">
+                                                <i class="bi bi-play"></i> Run Task
+                                            </button>
+                                        </form>
+                                    </div>
+                                    
+                                    <!-- Task Status -->
+                                    <div class="col-md-6">
+                                        <h5>Status</h5>
+                                        <div id="taskStatus" class="alert alert-secondary">
+                                            <i class="bi bi-info-circle"></i> No task running
+                                        </div>
+                                        
+                                        <div id="taskProgress" style="display: none;">
+                                            <div class="mb-2">
+                                                <span class="fw-bold">Progress:</span>
+                                                <span id="progressPercent">0%</span>
+                                            </div>
+                                            <div class="progress mb-3">
+                                                <div id="progressBar" class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                            </div>
+                                            
+                                            <div class="mb-3">
+                                                <button class="btn btn-outline-info btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#taskOutput">
+                                                    <i class="bi bi-terminal"></i> Show Output
+                                                </button>
+                                            </div>
+                                            
+                                            <div class="collapse" id="taskOutput">
+                                                <div class="card">
+                                                    <div class="card-body">
+                                                        <h6>Command:</h6>
+                                                        <code id="taskCommand" class="d-block mb-2"></code>
+                                                        <h6>Output:</h6>
+                                                        <pre id="taskStdout" class="small bg-light p-2 rounded" style="max-height: 200px; overflow-y: auto;"></pre>
+                                                        <h6>Errors:</h6>
+                                                        <pre id="taskStderr" class="small bg-danger text-white p-2 rounded" style="max-height: 100px; overflow-y: auto;"></pre>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Running Tasks -->
+                                <div class="mt-4">
+                                    <h5>Recent Tasks</h5>
+                                    <div id="tasksList">
+                                        <p class="text-muted">No tasks yet</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Datasets Tab -->
+                    <div class="tab-pane fade" id="datasets-pane" role="tabpanel">
+                        <div class="card">
+                            <div class="card-header bg-warning text-dark">
+                                <h4 class="mb-0"><i class="bi bi-folder"></i> Dataset Management</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <h5>Available Datasets</h5>
+                                        <div id="datasetsList">
+                                            <p class="text-muted">Loading datasets...</p>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <h5>Admin Actions</h5>
+                                        <div class="card border-danger">
+                                            <div class="card-body">
+                                                <div class="mb-3">
+                                                    <label for="adminPassword" class="form-label">Admin Password</label>
+                                                    <input type="password" class="form-control" id="adminPassword" placeholder="Enter admin password">
+                                                </div>
+                                                <button class="btn btn-outline-primary btn-sm w-100 mb-2" onclick="verifyAdmin()">
+                                                    <i class="bi bi-shield-check"></i> Verify Admin
+                                                </button>
+                                                
+                                                <div id="adminActions" style="display: none;">
+                                                    <hr>
+                                                    <h6>Add New Dataset</h6>
+                                                    <div class="mb-2">
+                                                        <input type="text" class="form-control form-control-sm" id="newDatasetName" placeholder="Dataset name">
+                                                    </div>
+                                                    <div class="mb-2">
+                                                        <input type="text" class="form-control form-control-sm" id="newDatasetClasses" placeholder="Classes (comma-separated)">
+                                                    </div>
+                                                    <button class="btn btn-success btn-sm w-100 mb-3" onclick="addDataset()">
+                                                        <i class="bi bi-plus"></i> Add Dataset
+                                                    </button>
+                                                    
+                                                    <h6>Delete Dataset</h6>
+                                                    <select class="form-select form-select-sm mb-2" id="deleteDatasetSelect">
+                                                        <option value="">Select dataset to delete</option>
+                                                    </select>
+                                                    <button class="btn btn-danger btn-sm w-100" onclick="deleteDataset()">
+                                                        <i class="bi bi-trash"></i> Delete Selected
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Files Tab -->
+                    <div class="tab-pane fade" id="files-pane" role="tabpanel">
+                        <div class="card">
+                            <div class="card-header bg-info text-white">
+                                <h4 class="mb-0"><i class="bi bi-cloud-upload"></i> File Management</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="alert alert-info">
+                                    <i class="bi bi-info-circle"></i> 
+                                    <strong>Note:</strong> File upload functionality requires additional implementation for production use.
+                                    For now, please use the Streamlit interface for file uploads.
+                                </div>
+                                <div class="d-grid">
+                                    <a href="http://{{ request.url.hostname }}:8501" target="_blank" class="btn btn-outline-primary">
+                                        <i class="bi bi-box-arrow-up-right"></i> Open Streamlit for File Operations
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Results Tab -->
+                    <div class="tab-pane fade" id="results-pane" role="tabpanel">
+                        <div class="card">
+                            <div class="card-header bg-success text-white">
+                                <h4 class="mb-0"><i class="bi bi-bar-chart"></i> Results & Downloads</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="alert alert-info">
+                                    <i class="bi bi-info-circle"></i> 
+                                    <strong>Note:</strong> Results viewing and download functionality requires additional implementation.
+                                    For now, please use the Streamlit interface for result operations.
+                                </div>
+                                <div class="d-grid">
+                                    <a href="http://{{ request.url.hostname }}:8501" target="_blank" class="btn btn-outline-primary">
+                                        <i class="bi bi-box-arrow-up-right"></i> Open Streamlit for Results
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-light mt-5 py-3">
+        <div class="container text-center">
+            <p class="text-muted mb-0">
+                deepEMIA v2.0.0 - Phase 2 Implementation<br>
+                <small>FastAPI + HTMX | External IP: <code>{{ request.url.hostname }}:8505</code></small>
+            </p>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Custom JS -->
+    <script src="/static/js/main.js"></script>
+    <script src="/static/js/tasks.js"></script>
+    <script src="/static/js/datasets.js"></script>
+</body>
+</html>

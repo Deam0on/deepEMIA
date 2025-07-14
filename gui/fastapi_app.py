@@ -72,10 +72,24 @@ except Exception as e:
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """
-    Home page - Hello World for now, will expand to full dashboard later.
+    Home page - Full dashboard interface
     """
     return templates.TemplateResponse(
-        "index.html", 
+        "dashboard.html", 
+        {
+            "request": request,
+            "title": "deepEMIA Control Panel",
+            "config": config
+        }
+    )
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    """
+    Dashboard page - same as home
+    """
+    return templates.TemplateResponse(
+        "dashboard.html", 
         {
             "request": request,
             "title": "deepEMIA Control Panel",
@@ -88,10 +102,11 @@ async def health_check():
     """Health check endpoint for monitoring."""
     return {"status": "healthy", "service": "deepEMIA-GUI", "timestamp": time.time()}
 
-# Include demo routes with error handling
+# Include routes with error handling
 try:
     from gui.routes import demo
     app.include_router(demo.router)
+    system_logger.info("Demo routes loaded successfully")
 except ImportError as e:
     print(f"⚠️  Could not load demo routes: {e}")
     
@@ -106,6 +121,20 @@ except ImportError as e:
             <br><small>This is a fallback demo endpoint.</small>
         </div>
         """
+
+try:
+    from gui.routes import datasets
+    app.include_router(datasets.router, prefix="/api/datasets", tags=["datasets"])
+    system_logger.info("Dataset routes loaded successfully")
+except ImportError as e:
+    print(f"⚠️  Could not load dataset routes: {e}")
+
+try:
+    from gui.routes import tasks
+    app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
+    system_logger.info("Task routes loaded successfully")
+except ImportError as e:
+    print(f"⚠️  Could not load task routes: {e}")
 
 def run_server():
     """Run the FastAPI server."""
