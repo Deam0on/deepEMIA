@@ -145,16 +145,21 @@ async function saveDataset() {
     };
     
     try {
+        // Hash the password before sending
+        const passwordHash = SHA256(password);
+        console.log("Sending password hash:", passwordHash);
+        
         const response = await fetch('/api/datasets/', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Admin-Password': password
+                'X-Admin-Password': passwordHash
             },
             body: JSON.stringify(datasetData)
         });
         
         const result = await response.json();
+        console.log("Save dataset response:", response.status, result);
         
         if (response.ok) {
             showAlert(result.message, 'success');
@@ -238,14 +243,19 @@ async function deleteDataset(name) {
     }
     
     try {
+        // Hash the password before sending
+        const passwordHash = SHA256(password);
+        console.log("Delete dataset - sending password hash:", passwordHash);
+        
         const response = await fetch(`/api/datasets/${name}`, {
             method: 'DELETE',
             headers: {
-                'X-Admin-Password': password
+                'X-Admin-Password': passwordHash
             }
         });
         
         const result = await response.json();
+        console.log("Delete dataset response:", response.status, result);
         
         if (response.ok) {
             showAlert(result.message, 'success');
@@ -265,14 +275,19 @@ async function loadDatasetsFromGCS() {
     if (!password) return;
     
     try {
+        // Hash the password before sending
+        const passwordHash = SHA256(password);
+        console.log("Load GCS datasets - sending password hash:", passwordHash);
+        
         const response = await fetch('/api/datasets/load-from-gcs', {
             method: 'POST',
             headers: {
-                'X-Admin-Password': password
+                'X-Admin-Password': passwordHash
             }
         });
         
         const result = await response.json();
+        console.log("Load GCS datasets response:", response.status, result);
         
         if (response.ok) {
             showAlert(`Loaded ${result.count} datasets from GCS`, 'success');
@@ -291,14 +306,19 @@ async function saveDatasetsToGCS() {
     if (!password) return;
     
     try {
+        // Hash the password before sending
+        const passwordHash = SHA256(password);
+        console.log("Save GCS datasets - sending password hash:", passwordHash);
+        
         const response = await fetch('/api/datasets/save-to-gcs', {
             method: 'POST',
             headers: {
-                'X-Admin-Password': password
+                'X-Admin-Password': passwordHash
             }
         });
         
         const result = await response.json();
+        console.log("Save GCS datasets response:", response.status, result);
         
         if (response.ok) {
             showAlert('Datasets saved to GCS successfully', 'success');

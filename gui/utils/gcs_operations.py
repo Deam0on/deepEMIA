@@ -8,7 +8,7 @@ import hashlib
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import sys
 
 # Add project root to path
@@ -172,3 +172,24 @@ def format_and_sort_folders(folders: List[str]) -> List[tuple]:
     # Sort by timestamp (newest first)
     formatted_folders.sort(key=lambda x: x[1], reverse=True)
     return formatted_folders
+
+def upload_file_to_gcs(bucket_name: str, file_obj, destination: str) -> Optional[str]:
+    """Upload a file to Google Cloud Storage."""
+    if not GCS_AVAILABLE:
+        system_logger.info(f"GCS not available - skipping upload of {destination}")
+        return None
+    
+    try:
+        client = storage.Client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(destination)
+        
+        # Upload the file
+        blob.upload_from_file(file_obj)
+        
+        system_logger.info(f"Successfully uploaded {destination} to GCS bucket {bucket_name}")
+        return f"gs://{bucket_name}/{destination}"
+        
+    except Exception as e:
+        system_logger.error(f"Failed to upload {destination} to GCS: {str(e)}")
+        return None

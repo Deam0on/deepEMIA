@@ -2,14 +2,14 @@
 File management routes for GCS operations.
 """
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Header
 from typing import List, Optional
 import os
 import shutil
 from pathlib import Path
 
 try:
-    from gui.utils.gcs_operations import list_directories, create_zip_from_gcs
+    from gui.utils.gcs_operations import list_directories, create_zip_from_gcs, upload_file_to_gcs
 except ImportError:
     # Fallback implementations
     def list_directories(bucket_name: str, prefix: str = ""):
@@ -17,6 +17,9 @@ except ImportError:
     
     def create_zip_from_gcs(bucket_name: str, prefix: str, output_path: str):
         return False
+    
+    def upload_file_to_gcs(bucket_name: str, file_obj, destination: str):
+        return None
 
 router = APIRouter(tags=["files"])
 
@@ -82,10 +85,17 @@ async def browse_gcs_files(prefix: Optional[str] = ""):
 @router.post("/upload")
 async def upload_files(
     files: List[UploadFile] = File(...),
-    upload_path: str = Form("/dataset/images/")
+    upload_path: str = Form("/dataset/images/"),
+    x_admin_password: str = Header(None)
 ):
     """Upload files to local storage and optionally to GCS."""
     try:
+        # Verify admin authentication if header is provided
+        if x_admin_password:
+            from gui.utils.gcs_operations import verify_admin_password
+            if not verify_admin_password(x_admin_password):
+                raise HTTPException(status_code=401, detail="Invalid admin password")
+        
         uploaded_files = []
         
         # Create upload directory if it doesn't exist
@@ -93,22 +103,52 @@ async def upload_files(
         upload_dir.mkdir(parents=True, exist_ok=True)
         
         for file in files:
-            # Save file locally
+            # Save file locally first
             file_path = upload_dir / file.filename
             
             with open(file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
             
+            # Try to upload to GCS as well
+            gcs_path = None
+            try:
+                # Reset file pointer for GCS upload
+                file.file.seek(0)
+                
+                # Get bucket name from config
+                try:
+                    import sys
+                    import os
+                    sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+                    from src.utils.config import get_config
+                    config = get_config()
+                    bucket_name = config.get("bucket", "deepemia-bucket")
+                except:
+                    bucket_name = "deepemia-bucket"  # fallback
+                
+                # Upload to GCS
+                gcs_destination = f"{upload_path.strip('/')}/{file.filename}"
+                gcs_path = upload_file_to_gcs(bucket_name, file.file, gcs_destination)
+                
+            except Exception as gcs_error:
+                print(f"GCS upload failed for {file.filename}: {gcs_error}")
+                # Continue with local upload even if GCS fails
+            
             uploaded_files.append({
                 "filename": file.filename,
                 "size": file_path.stat().st_size,
-                "path": str(file_path)
+                "local_path": str(file_path),
+                "gcs_path": gcs_path,
+                "uploaded_to_gcs": gcs_path is not None
             })
         
         return {
             "message": f"Successfully uploaded {len(uploaded_files)} files",
-            "files": uploaded_files
+            "files": uploaded_files,
+            "gcs_uploads": sum(1 for f in uploaded_files if f["uploaded_to_gcs"])
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload files: {str(e)}")
 
