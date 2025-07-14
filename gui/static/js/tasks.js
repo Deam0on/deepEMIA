@@ -66,12 +66,16 @@ async function runTask() {
         upload: document.getElementById('uploadCheck').checked
     };
     
+    console.log('Submitting task:', formData); // Debug log
+    
     if (!formData.dataset_name) {
         showAlert('Please select a dataset', 'warning');
         return;
     }
     
     try {
+        showAlert('Starting task...', 'info');
+        
         const response = await fetch('/api/tasks/run', {
             method: 'POST',
             headers: {
@@ -80,7 +84,10 @@ async function runTask() {
             body: JSON.stringify(formData)
         });
         
+        console.log('Response status:', response.status); // Debug log
+        
         const result = await response.json();
+        console.log('Response result:', result); // Debug log
         
         if (response.ok) {
             currentTaskId = result.task_id;
@@ -92,7 +99,7 @@ async function runTask() {
         }
     } catch (error) {
         console.error('Failed to start task:', error);
-        showAlert('Failed to start task', 'danger');
+        showAlert('Failed to start task: ' + error.message, 'danger');
     }
 }
 

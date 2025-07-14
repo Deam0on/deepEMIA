@@ -136,6 +136,13 @@ try:
 except ImportError as e:
     print(f"⚠️  Could not load task routes: {e}")
 
+try:
+    from gui.routes import files
+    app.include_router(files.router, prefix="/api/files", tags=["files"])
+    system_logger.info("File routes loaded successfully")
+except ImportError as e:
+    print(f"⚠️  Could not load file routes: {e}")
+
 def run_server():
     """Run the FastAPI server."""
     uvicorn.run(

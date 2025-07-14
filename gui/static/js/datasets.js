@@ -190,7 +190,7 @@ async function editDataset(name) {
             
             // Clear and add class tags
             document.getElementById('classesContainer').innerHTML = '';
-            if (classes) {
+            if (classes && Array.isArray(classes)) {
                 classes.forEach(className => addClassTag(className));
             }
             
@@ -200,6 +200,8 @@ async function editDataset(name) {
             
             // Scroll to form
             document.getElementById('datasetForm').scrollIntoView({ behavior: 'smooth' });
+        } else {
+            showAlert('Dataset not found', 'error');
         }
     } catch (error) {
         console.error('Failed to load dataset for editing:', error);
