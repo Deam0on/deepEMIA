@@ -112,12 +112,12 @@ def run_server():
     uvicorn.run(
         "gui.fastapi_app:app",
         host="0.0.0.0",  # Listen on all interfaces for external access
-        port=8888,
+        port=8080,
         reload=True,
         log_level="info"
     )
 
 if __name__ == "__main__":
-    print("Starting deepEMIA FastAPI GUI on http://0.0.0.0:8888")
-    print("Access via VM external IP: http://[VM_EXTERNAL_IP]:8888")
+    print("Starting deepEMIA FastAPI GUI on http://0.0.0.0:8080")
+    print("Access via VM external IP: http://[VM_EXTERNAL_IP]:8080")
     run_server()

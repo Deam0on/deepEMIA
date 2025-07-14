@@ -8,8 +8,8 @@ This directory contains the new FastAPI-powered web interface for deepEMIA, alon
 ```bash
 python start_gui.py --interface fastapi
 ```
-- Access via VM external IP: `http://[VM_EXTERNAL_IP]:8888`
-- API Documentation: `http://[VM_EXTERNAL_IP]:8888/api/docs`
+- Access via VM external IP: `http://[VM_EXTERNAL_IP]:8080`
+- API Documentation: `http://[VM_EXTERNAL_IP]:8080/api/docs`
 
 ### Start Streamlit GUI (Legacy)
 ```bash
@@ -30,7 +30,7 @@ pip install fastapi uvicorn jinja2 python-multipart
 - **Backend**: FastAPI for modern API endpoints
 - **Frontend**: HTMX + Bootstrap for interactive UI
 - **Templates**: Jinja2 templating system
-- **Port**: 8888
+- **Port**: 8080
 - **Features**: 
   - Automatic API documentation
   - Better performance
@@ -57,12 +57,12 @@ gui/
 
 ## External Access Configuration
 
-The FastAPI server is configured to listen on `0.0.0.0:8888`, making it accessible from:
-- **Local**: `http://localhost:8888`
-- **Network**: `http://[INTERNAL_IP]:8888`
-- **External**: `http://[VM_EXTERNAL_IP]:8888`
+The FastAPI server is configured to listen on `0.0.0.0:8080`, making it accessible from:
+- **Local**: `http://localhost:8080`
+- **Network**: `http://[INTERNAL_IP]:8080`
+- **External**: `http://[VM_EXTERNAL_IP]:8080`
 
-Make sure your VM firewall allows incoming connections on port 8888.
+Make sure your VM firewall allows incoming connections on port 8080.
 
 ## Development Roadmap
 
