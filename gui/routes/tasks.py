@@ -145,6 +145,10 @@ async def execute_task(task_id: str, task_request: TaskRequest):
         
         print(f"Executing command: {command}")  # Debug log
         
+        # Small delay to ensure the "running" status is visible
+        import time
+        time.sleep(0.5)
+        
         # Execute command
         process = subprocess.Popen(
             command_parts,
@@ -156,9 +160,15 @@ async def execute_task(task_id: str, task_request: TaskRequest):
             cwd=str(main_script.parent)  # Set working directory
         )
         
+        # Store process for potential cancellation
+        task_info["process"] = process
+        
         # Read output in real-time
         stdout_buffer = []
         stderr_buffer = []
+        
+        # Set initial progress
+        task_info["progress"] = 15
         
         while True:
             if task_info["status"] == "cancelled":
@@ -176,13 +186,20 @@ async def execute_task(task_id: str, task_request: TaskRequest):
                     stdout_buffer.append(line)
                     task_info["stdout"] = "".join(stdout_buffer)
                     
-                    # Update progress based on output
-                    if "download" in line.lower():
-                        task_info["progress"] = 10
-                    elif "training" in line.lower() or "prepare" in line.lower():
-                        task_info["progress"] = 50
-                    elif "upload" in line.lower():
-                        task_info["progress"] = 90
+                    # Update progress based on output patterns
+                    line_lower = line.lower()
+                    if "loading" in line_lower or "initializing" in line_lower:
+                        task_info["progress"] = max(task_info["progress"], 20)
+                    elif "download" in line_lower:
+                        task_info["progress"] = max(task_info["progress"], 30)
+                    elif "processing" in line_lower or "inference" in line_lower:
+                        task_info["progress"] = max(task_info["progress"], 50)
+                    elif "training" in line_lower or "prepare" in line_lower:
+                        task_info["progress"] = max(task_info["progress"], 60)
+                    elif "saving" in line_lower or "upload" in line_lower:
+                        task_info["progress"] = max(task_info["progress"], 80)
+                    elif "complete" in line_lower or "finished" in line_lower:
+                        task_info["progress"] = max(task_info["progress"], 95)
             except:
                 pass
             

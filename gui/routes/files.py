@@ -38,16 +38,23 @@ async def browse_gcs_files(prefix: Optional[str] = ""):
         # List directories and files
         files = list_directories(bucket_name, prefix)
         
-        # Group by type
+        # Convert string list to proper objects
         directories = []
         images = []
         other_files = []
         
-        for file_info in files:
-            name = file_info.get('name', '')
-            if name.endswith('/'):
+        for file_path in files:
+            # Create file info object
+            file_info = {
+                "name": file_path,
+                "path": file_path,
+                "size": 0,  # Size not available from directory listing
+                "type": "directory" if file_path.endswith('/') else "file"
+            }
+            
+            if file_path.endswith('/'):
                 directories.append(file_info)
-            elif name.lower().endswith(('.jpg', '.jpeg', '.png', '.tiff', '.tif')):
+            elif file_path.lower().endswith(('.jpg', '.jpeg', '.png', '.tiff', '.tif')):
                 images.append(file_info)
             else:
                 other_files.append(file_info)

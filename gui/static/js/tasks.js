@@ -74,7 +74,10 @@ async function runTask() {
     }
     
     try {
+        // Show immediate feedback
         showAlert('Starting task...', 'info');
+        showTaskProgress('temp'); // Show progress UI immediately
+        updateProgress(5, 'starting');
         
         const response = await fetch('/api/tasks/run', {
             method: 'POST',
@@ -91,15 +94,27 @@ async function runTask() {
         
         if (response.ok) {
             currentTaskId = result.task_id;
-            showTaskProgress(result.task_id);
+            updateProgress(10, 'running');
+            updateTaskDisplay({
+                status: 'running',
+                progress: 10,
+                command: 'Initializing...',
+                stdout: 'Task started successfully',
+                stderr: '',
+                elapsed_time: 0
+            });
             startTaskPolling(result.task_id);
             showAlert(`Task started: ${result.message}`, 'success');
         } else {
             showAlert(`Error: ${result.detail}`, 'danger');
+            // Hide progress if error
+            document.getElementById('taskProgress').style.display = 'none';
         }
     } catch (error) {
         console.error('Failed to start task:', error);
         showAlert('Failed to start task: ' + error.message, 'danger');
+        // Hide progress if error
+        document.getElementById('taskProgress').style.display = 'none';
     }
 }
 
@@ -122,9 +137,23 @@ function startTaskPolling(taskId) {
         clearInterval(taskPollingInterval);
     }
     
+    // Poll immediately first
+    pollTaskStatus(taskId);
+    
+    // Then poll every 1 second for the first minute (more responsive)
+    let pollCount = 0;
     taskPollingInterval = setInterval(async () => {
         await pollTaskStatus(taskId);
-    }, 2000); // Poll every 2 seconds
+        pollCount++;
+        
+        // After 60 polls (1 minute), switch to 2-second intervals
+        if (pollCount === 60) {
+            clearInterval(taskPollingInterval);
+            taskPollingInterval = setInterval(async () => {
+                await pollTaskStatus(taskId);
+            }, 2000);
+        }
+    }, 1000); // Start with 1-second intervals
 }
 
 async function pollTaskStatus(taskId) {
