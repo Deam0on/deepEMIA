@@ -12,27 +12,53 @@ function setupUploadPathHandler() {
     const customPathDiv = document.getElementById('customPathDiv');
     const customPathInput = document.getElementById('customPath');
 
-    if (uploadPathSelect) {
+    if (uploadPathSelect && customPathDiv && customPathInput) {
         uploadPathSelect.addEventListener('change', function() {
-            if (this.value === 'custom') {
-                customPathDiv.style.display = 'block';
-                customPathInput.required = true;
-            } else {
-                customPathDiv.style.display = 'none';
-                customPathInput.required = false;
+            console.log("Upload path changed to:", this.value);
+            try {
+                if (this.value === 'custom') {
+                    customPathDiv.style.display = 'block';
+                    customPathInput.required = true;
+                    console.log("Custom path input shown");
+                } else {
+                    customPathDiv.style.display = 'none';
+                    customPathInput.required = false;
+                    console.log("Custom path input hidden");
+                }
+            } catch (error) {
+                console.error("Error in upload path handler:", error);
+                showAlert('Error updating upload path interface', 'warning');
             }
         });
+        console.log("Upload path handler set up successfully");
+    } else {
+        console.warn("Upload path elements not found - may not be on the correct tab");
     }
 }
 
 function getSelectedUploadPath() {
-    const uploadPathSelect = document.getElementById('uploadPath');
-    const customPathInput = document.getElementById('customPath');
-    
-    if (uploadPathSelect.value === 'custom') {
-        return customPathInput.value.trim();
+    try {
+        const uploadPathSelect = document.getElementById('uploadPath');
+        const customPathInput = document.getElementById('customPath');
+        
+        if (!uploadPathSelect) {
+            console.warn("Upload path select element not found");
+            return '';
+        }
+        
+        if (uploadPathSelect.value === 'custom') {
+            if (!customPathInput) {
+                console.warn("Custom path input element not found");
+                return '';
+            }
+            return customPathInput.value.trim();
+        }
+        return uploadPathSelect.value;
+    } catch (error) {
+        console.error("Error getting upload path:", error);
+        showAlert('Error getting upload path', 'warning');
+        return '';
     }
-    return uploadPathSelect.value;
 }
 
 async function loadFilesList() {
