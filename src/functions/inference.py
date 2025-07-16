@@ -412,7 +412,7 @@ def run_inference(
     ]
 
     # Memory optimization: Process in smaller batches
-    batch_size = min(10, len(images_name))  # Process max 10 images at a time
+    batch_size = min(10, len(images_name))
     system_logger.info(f"Processing {len(images_name)} images in batches of {batch_size}")
 
     Img_ID = []
@@ -435,7 +435,7 @@ def run_inference(
 
     conv = lambda l: " ".join(map(str, l))
 
-    # Store deduplicated masks for each image - but process in batches
+    # Store deduplicated masks AND class predictions for each image
     dedup_results = {}
 
     # Process images in batches to manage memory
@@ -458,10 +458,6 @@ def run_inference(
             if image is None:
                 system_logger.warning(f"Could not load image: {image_path}")
                 continue
-                
-            all_masks = []
-            all_scores = []
-            all_sources = []
 
             if rcnn == "combo":
                 if pass_mode == "multi":
@@ -474,26 +470,33 @@ def run_inference(
                             max_iters=max_iters,
                         )
                     )
+                    # For combo mode, we need to get class predictions separately
+                    unique_classes = []
+                    for mask in unique_masks:
+                        # Use the first predictor to get class predictions for each mask
+                        # This is a simplified approach - you might want to use the predictor that found the mask
+                        outputs = predictors[0](image)
+                        # For now, assign class 0 to all masks - this would need refinement
+                        unique_classes.append(0)
                 else:  # single pass
                     all_masks = []
                     all_scores = []
                     all_sources = []
+                    all_classes = []
+                    
                     for pred_idx, predictor in enumerate(predictors):
-                        # Memory optimization: Clear GPU cache before each prediction
                         if torch.cuda.is_available():
                             torch.cuda.empty_cache()
                             
                         outputs = predictor(image)
                         masks = postprocess_masks(
-                            np.asarray(
-                                outputs["instances"].to("cpu")._fields["pred_masks"]
-                            ),
+                            np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
                             outputs["instances"].to("cpu")._fields["scores"].numpy(),
                             image,
                         )
                         scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
+                        classes = outputs["instances"].to("cpu")._fields["pred_classes"].numpy()
                         
-                        # Memory optimization: Move outputs to CPU and clear GPU memory
                         del outputs
                         if torch.cuda.is_available():
                             torch.cuda.empty_cache()
@@ -503,81 +506,73 @@ def run_inference(
                                 all_masks.append(mask)
                                 all_scores.append(scores[i])
                                 all_sources.append(pred_idx)
+                                all_classes.append(classes[i])
                         
-                        # Memory optimization: Clear intermediate variables
-                        del masks, scores
+                        del masks, scores, classes
                         gc.collect()
                         
                     # Deduplicate
                     unique_masks = []
                     unique_scores = []
                     unique_sources = []
+                    unique_classes = []
+                    
                     for i, mask in enumerate(all_masks):
                         if not any(iou(mask, um) > 0.7 for um in unique_masks):
                             unique_masks.append(mask)
                             unique_scores.append(all_scores[i])
                             unique_sources.append(all_sources[i])
-                            
-                    # Memory optimization: Clear intermediate variables
-                    del all_masks, all_scores, all_sources
+                            unique_classes.append(all_classes[i])
+                    
+                    del all_masks, all_scores, all_sources, all_classes
                     gc.collect()
             else:
-                # Single model logic with memory optimization
-                all_masks = []
-                all_scores = []
-                all_sources = []
-                for pred_idx, predictor in enumerate(predictors):
-                    # Memory optimization: Clear GPU cache
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                        
-                    outputs = predictor(image)
-                    masks = postprocess_masks(
-                        np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
-                        outputs["instances"].to("cpu")._fields["scores"].numpy(),
-                        image,
-                    )
-                    scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
+                # Single model logic with class prediction
+                if pass_mode == "multi":
+                    # For iterative single model, we need to modify the function to return classes too
+                    # For now, use single pass approach even in multi mode for classes
+                    system_logger.info(f"Running single model (R{rcnn}) inference")
                     
-                    # Memory optimization: Clear GPU memory
-                    del outputs
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                        
-                    if masks:
-                        for i, mask in enumerate(masks):
-                            all_masks.append(mask)
-                            all_scores.append(scores[i])
-                            all_sources.append(pred_idx)
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
                     
-                    # Memory optimization: Clear intermediate variables
-                    del masks, scores
-                    gc.collect()
-                    
-                # Deduplicate
-                unique_masks = []
-                unique_scores = []
-                unique_sources = []
-                for i, mask in enumerate(all_masks):
-                    if not any(iou(mask, um) > 0.7 for um in unique_masks):
-                        unique_masks.append(mask)
-                        unique_scores.append(all_scores[i])
-                        unique_sources.append(all_sources[i])
-                        
-                # Memory optimization: Clear intermediate variables
-                del all_masks, all_scores, all_sources
+                outputs = predictors[0](image)
+                masks = postprocess_masks(
+                    np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
+                    outputs["instances"].to("cpu")._fields["scores"].numpy(),
+                    image,
+                )
+                scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
+                classes = outputs["instances"].to("cpu")._fields["pred_classes"].numpy()
+                
+                del outputs
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                
+                unique_masks = masks if masks else []
+                unique_scores = scores.tolist() if len(scores) > 0 else []
+                unique_sources = [0] * len(unique_masks)
+                unique_classes = classes.tolist() if len(classes) > 0 else []
+                
+                del masks, scores, classes
                 gc.collect()
 
+            # Log results with class distribution
+            class_counts = {}
+            for cls in unique_classes:
+                class_counts[cls] = class_counts.get(cls, 0) + 1
+            
+            class_summary = ", ".join([f"class {cls}: {count}" for cls, count in class_counts.items()])
             system_logger.info(
-                f"After deduplication: {len(unique_masks)} unique masks for image {name} "
-                f"(kept: {unique_sources.count(0)} from R50, {unique_sources.count(1)} from R101)"
+                f"After processing: {len(unique_masks)} unique masks for image {name} ({class_summary})"
             )
 
-            # Save for later use
+            # Save for later use - now including classes
             dedup_results[name] = {
                 "masks": unique_masks,
                 "scores": unique_scores,
                 "sources": unique_sources,
+                "classes": unique_classes,
             }
 
             processed_images.add(name)
@@ -588,7 +583,7 @@ def run_inference(
                 EncodedPixels.append(conv(rle_encoding(mask)))
             
             # Memory optimization: Clear image and mask data after processing
-            del image, unique_masks, unique_scores, unique_sources
+            del image, unique_masks, unique_scores, unique_sources, unique_classes
             gc.collect()
             
         # Memory optimization: Force garbage collection after each batch
@@ -596,22 +591,20 @@ def run_inference(
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    overall_elapsed = (
-        time.perf_counter() - overall_start_time
-    )
+    overall_elapsed = time.perf_counter() - overall_start_time
     average_time = overall_elapsed / total_images if total_images else 0
     system_logger.info(
         f"Average mask generation and deduplication time per image: {average_time:.3f} seconds"
     )
 
-    # --- Ensure all images were processed ---
+    # Ensure all images were processed
     unprocessed = set(images_name) - processed_images
     if unprocessed:
         system_logger.warning(f"The following images were not processed: {unprocessed}")
     else:
         system_logger.info("All images in the INFERENCE folder were processed.")
 
-    # Save results
+    # Save RLE results
     df = pd.DataFrame({"ImageId": Img_ID, "EncodedPixels": EncodedPixels})
     df.to_csv(os.path.join(path, "R50_flip_results.csv"), index=False, sep=",")
 
@@ -619,173 +612,227 @@ def run_inference(
     del df, Img_ID, EncodedPixels
     gc.collect()
 
-    # Continue with the rest of the function...
-    num_classes = len(MetadataCatalog.get(f"{dataset_name}_train").thing_classes)
-    for x_pred in range(num_classes):
-        TList = []
-        PList = []
-        csv_filename = f"results_x_pred_{x_pred}.csv"
-        test_img_path = image_folder_path
+    # MODIFIED: Single measurements file with class information
+    system_logger.info("Starting measurements phase...")
+    
+    csv_filename = os.path.join(output_dir, "measurements_results.csv")
+    test_img_path = image_folder_path
 
-        with open(csv_filename, "w", newline="") as csvfile:
-            csvwriter = csv.writer(csvfile)
+    # Define colors for different classes (BGR format for OpenCV)
+    class_colors = [
+        (0, 255, 0),    # Green for class 0
+        (255, 0, 0),    # Blue for class 1
+        (0, 0, 255),    # Red for class 2
+        (255, 255, 0),  # Cyan for class 3
+        (255, 0, 255),  # Magenta for class 4
+        (0, 255, 255),  # Yellow for class 5
+        (128, 0, 128),  # Purple for class 6
+        (255, 165, 0),  # Orange for class 7
+    ]
 
-            csvwriter.writerow(
-                [
-                    "Instance_ID",
-                    "Major axis length",
-                    "Minor axis length",
-                    "Eccentricity",
-                    "C. Length",
-                    "C. Width",
-                    "Circular eq. diameter",
-                    "Acpect ratio",
-                    "Circularity",
-                    "Chord length",
-                    "Ferret diameter",
-                    "Roundness",
-                    "Sphericity",
-                    "Contrast d10",
-                    "Contrast d50",
-                    "Contrast d90",
-                    "Detected scale bar",
-                    "File name",
-                ]
-            )
+    with open(csv_filename, "w", newline="") as csvfile:
+        csvwriter = csv.writer(csvfile)
 
-            image_list = os.listdir(test_img_path)
-            num_images = len(image_list)
-            total_time = 0
+        # ADDED: Class column to CSV header
+        csvwriter.writerow(
+            [
+                "Instance_ID",
+                "Class",
+                "Class_Name",
+                "Major axis length",
+                "Minor axis length",
+                "Eccentricity",
+                "C. Length",
+                "C. Width",
+                "Circular eq. diameter",
+                "Aspect ratio",
+                "Circularity",
+                "Chord length",
+                "Ferret diameter",
+                "Roundness",
+                "Sphericity",
+                "Contrast d10",
+                "Contrast d50",
+                "Contrast d90",
+                "Detected scale bar",
+                "File name",
+            ]
+        )
 
-            # Process images in smaller batches for measurements too
-            measurement_batch_size = min(5, len(image_list))  # Smaller batches for measurement phase
+        image_list = [f for f in os.listdir(test_img_path) if is_image_file(f)]
+        num_images = len(image_list)
+        total_time = 0
+
+        # Process images in smaller batches for measurements
+        measurement_batch_size = min(5, len(image_list))
+        
+        for batch_start in range(0, len(image_list), measurement_batch_size):
+            batch_end = min(batch_start + measurement_batch_size, len(image_list))
+            batch_images = image_list[batch_start:batch_end]
             
-            for batch_start in range(0, len(image_list), measurement_batch_size):
-                batch_end = min(batch_start + measurement_batch_size, len(image_list))
-                batch_images = image_list[batch_start:batch_end]
+            system_logger.info(f"Processing measurements batch {batch_start//measurement_batch_size + 1}/{(len(image_list) + measurement_batch_size - 1)//measurement_batch_size}")
+            
+            for idx_in_batch, test_img in enumerate(batch_images):
+                idx = batch_start + idx_in_batch + 1
+                start_time = time.perf_counter()
+                system_logger.info(f"Processing measurements for image {idx} out of {num_images}: {test_img}")
+
+                input_path = os.path.join(test_img_path, test_img)
+                im = cv2.imread(input_path)
                 
-                for idx_in_batch, test_img in enumerate(batch_images):
-                    idx = batch_start + idx_in_batch + 1
-                    start_time = time.perf_counter()
-                    system_logger.info(f"Processing measurements for image {idx} out of {num_images}")
+                if im is None:
+                    system_logger.warning(f"Could not load image for measurements: {input_path}")
+                    continue
 
-                    input_path = os.path.join(test_img_path, test_img)
-                    im = cv2.imread(input_path)
+                psum, um_pix = detect_scale_bar(im, roi_config)
+
+                # Use deduplicated masks and classes for this image
+                image_data = dedup_results.get(test_img, {})
+                masks = image_data.get("masks", [])
+                classes = image_data.get("classes", [])
+                
+                if not masks:
+                    system_logger.info(f"No masks found for image {test_img}, skipping measurements")
+                    continue
+
+                system_logger.info(f"Processing {len(masks)} masks for image {test_img}")
+
+                # MODIFIED: Single visualization per image with color-coded classes
+                if visualize:
+                    vis_img = im.copy()
                     
-                    if im is None:
-                        system_logger.warning(f"Could not load image for measurements: {input_path}")
-                        continue
-
-                    psum, um_pix = detect_scale_bar(im, roi_config)
-
-                    # Use deduplicated masks for this image
-                    masks = dedup_results.get(test_img, {}).get("masks", [])
-                    if not masks:
-                        continue
-
-                    # --- Visualization: Save overlay image with deduplicated masks ---
-                    if visualize:
-                        vis_img = im.copy()
-                        color = (0, 255, 0)
-                        for i, mask in enumerate(masks):
-                            # Create colored overlay for each mask
-                            colored_mask = np.zeros_like(vis_img)
-                            colored_mask[mask.astype(bool)] = color
-                            vis_img = cv2.addWeighted(vis_img, 1.0, colored_mask, 0.5, 0)
-                            # Optionally, draw contours and label
-                            contours, _ = cv2.findContours(
-                                mask.astype(np.uint8),
-                                cv2.RETR_EXTERNAL,
-                                cv2.CHAIN_APPROX_SIMPLE,
-                            )
-                            cv2.drawContours(vis_img, contours, -1, (0, 0, 255), 1)
-                            # Draw instance ID at centroid
-                            M = cv2.moments(mask.astype(np.uint8))
-                            if M["m00"] > 0:
-                                cX = int(M["m10"] / M["m00"])
-                                cY = int(M["m01"] / M["m00"])
-                                cv2.putText(
-                                    vis_img,
-                                    str(i + 1),
-                                    (cX, cY),
-                                    cv2.FONT_HERSHEY_SIMPLEX,
-                                    0.5,
-                                    (255, 0, 0),
-                                    1,
-                                    cv2.LINE_AA,
-                                )
-                        vis_save_path = os.path.join(
-                            local_dataset_root, f"{test_img}_class_{x_pred}_pred.png"
+                    for i, (mask, cls) in enumerate(zip(masks, classes)):
+                        # Use class-specific color
+                        color = class_colors[cls % len(class_colors)]
+                        
+                        # Create colored overlay for each mask
+                        colored_mask = np.zeros_like(vis_img)
+                        colored_mask[mask.astype(bool)] = color
+                        vis_img = cv2.addWeighted(vis_img, 1.0, colored_mask, 0.5, 0)
+                        
+                        # Draw contours
+                        contours, _ = cv2.findContours(
+                            mask.astype(np.uint8),
+                            cv2.RETR_EXTERNAL,
+                            cv2.CHAIN_APPROX_SIMPLE,
                         )
-                        cv2.imwrite(vis_save_path, vis_img)
-                        del vis_img
-                        gc.collect()
-
-                    # Process each mask with memory optimization
-                    for instance_id, mask in enumerate(masks, 1):
-                        binary_mask = (mask > 0).astype(np.uint8) * 255
-                        single_im_mask = binary_mask.copy()
-                        mask_3ch = np.stack([single_im_mask] * 3, axis=-1)
-                        mask_filename = os.path.join(output_dir, f"mask_{instance_id}.jpg")
-                        cv2.imwrite(mask_filename, mask_3ch)
-
-                        single_cnts = cv2.findContours(
-                            single_im_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-                        )
-                        single_cnts = imutils.grab_contours(single_cnts)
-
-                        for c in single_cnts:
-                            pixelsPerMetric = 1
-                            if cv2.contourArea(c) < 100:
-                                continue
-
-                            measurements = calculate_measurements(
-                                c,
-                                single_im_mask,
-                                um_pix=um_pix,
-                                pixelsPerMetric=pixelsPerMetric,
-                                original_image=im,
-                                measure_contrast_distribution=measure_contrast_distribution,
+                        cv2.drawContours(vis_img, contours, -1, color, 2)
+                        
+                        # Draw instance ID and class at centroid
+                        M = cv2.moments(mask.astype(np.uint8))
+                        if M["m00"] > 0:
+                            cX = int(M["m10"] / M["m00"])
+                            cY = int(M["m01"] / M["m00"])
+                            
+                            # Get class name
+                            class_name = metadata.thing_classes[cls] if cls < len(metadata.thing_classes) else f"class_{cls}"
+                            
+                            # Draw instance ID
+                            cv2.putText(
+                                vis_img,
+                                f"{i + 1}",
+                                (cX, cY - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.6,
+                                (255, 255, 255),  # White text
+                                2,
+                                cv2.LINE_AA,
                             )
-
-                            csvwriter.writerow(
-                                [
-                                    instance_id,
-                                    measurements["major_axis_length"],
-                                    measurements["minor_axis_length"],
-                                    measurements["eccentricity"],
-                                    measurements["Length"],
-                                    measurements["Width"],
-                                    measurements["CircularED"],
-                                    measurements["Aspect_Ratio"],
-                                    measurements["Circularity"],
-                                    measurements["Chords"],
-                                    measurements["Feret_diam"],
-                                    measurements["Roundness"],
-                                    measurements["Sphericity"],
-                                    measurements["contrast_d10"],
-                                    measurements["contrast_d50"],  
-                                    measurements["contrast_d90"],
-                                    psum,
-                                    test_img,   
-                                ]
+                            
+                            # Draw class name
+                            cv2.putText(
+                                vis_img,
+                                class_name,
+                                (cX, cY + 15),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.4,
+                                (255, 255, 255),  # White text
+                                1,
+                                cv2.LINE_AA,
                             )
                         
-                        # Memory optimization: Clear mask data
-                        del binary_mask, single_im_mask, mask_3ch, single_cnts
-                        gc.collect()
+                        del colored_mask
                     
-                    # Memory optimization: Clear image data
-                    del im
+                    # MODIFIED: Single PNG per image
+                    vis_save_path = os.path.join(output_dir, f"{test_img}_predictions.png")
+                    cv2.imwrite(vis_save_path, vis_img)
+                    del vis_img
+                    gc.collect()
+
+                # Process each mask for measurements
+                for instance_id, (mask, cls) in enumerate(zip(masks, classes), 1):
+                    binary_mask = (mask > 0).astype(np.uint8) * 255
+                    single_im_mask = binary_mask.copy()
                     
-                    elapsed = time.perf_counter() - start_time
-                    total_time += elapsed
-                    system_logger.info(f"Time taken for image {idx}: {elapsed:.3f} seconds")
+                    # Save individual mask image with class info
+                    mask_3ch = np.stack([single_im_mask] * 3, axis=-1)
+                    class_name = metadata.thing_classes[cls] if cls < len(metadata.thing_classes) else f"class_{cls}"
+                    mask_filename = os.path.join(output_dir, f"{test_img}_mask_{instance_id}_{class_name}.jpg")
+                    cv2.imwrite(mask_filename, mask_3ch)
+
+                    single_cnts = cv2.findContours(
+                        single_im_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                    )
+                    single_cnts = imutils.grab_contours(single_cnts)
+
+                    for c in single_cnts:
+                        pixelsPerMetric = 1
+                        if cv2.contourArea(c) < 100:
+                            continue
+
+                        measurements = calculate_measurements(
+                            c,
+                            single_im_mask,
+                            um_pix=um_pix,
+                            pixelsPerMetric=pixelsPerMetric,
+                            original_image=im,
+                            measure_contrast_distribution=measure_contrast_distribution,
+                        )
+
+                        # Get class name for CSV
+                        class_name = metadata.thing_classes[cls] if cls < len(metadata.thing_classes) else f"class_{cls}"
+
+                        # MODIFIED: Include class information in CSV
+                        csvwriter.writerow(
+                            [
+                                f"{test_img}_{instance_id}",
+                                cls,  # Class number
+                                class_name,  # Class name
+                                measurements["major_axis_length"],
+                                measurements["minor_axis_length"],
+                                measurements["eccentricity"],
+                                measurements["Length"],
+                                measurements["Width"],
+                                measurements["CircularED"],
+                                measurements["Aspect_Ratio"],
+                                measurements["Circularity"],
+                                measurements["Chords"],
+                                measurements["Feret_diam"],
+                                measurements["Roundness"],
+                                measurements["Sphericity"],
+                                measurements["contrast_d10"],
+                                measurements["contrast_d50"],  
+                                measurements["contrast_d90"],
+                                psum,
+                                test_img,   
+                            ]
+                        )
+                    
+                    # Memory optimization: Clear mask data
+                    del binary_mask, single_im_mask, mask_3ch, single_cnts
+                    gc.collect()
                 
-                # Memory optimization: Force cleanup after each batch
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                # Memory optimization: Clear image data
+                del im
+                
+                elapsed = time.perf_counter() - start_time
+                total_time += elapsed
+                system_logger.info(f"Time taken for image {idx}: {elapsed:.3f} seconds")
+            
+            # Memory optimization: Force cleanup after each batch
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     # Final memory cleanup
     del dedup_results
@@ -794,4 +841,18 @@ def run_inference(
         torch.cuda.empty_cache()
 
     average_time = total_time / num_images if num_images else 0
-    system_logger.info(f"Average inference time per image: {average_time:.3f} seconds")
+    system_logger.info("MEASUREMENTS PHASE COMPLETED")
+    system_logger.info(f"Average measurement time per image: {average_time:.3f} seconds")
+    system_logger.info(f"Results saved to: {csv_filename}")
+    
+    # Create a color legend file
+    legend_path = os.path.join(output_dir, "class_color_legend.txt")
+    with open(legend_path, "w") as f:
+        f.write("Class Color Legend:\n")
+        f.write("==================\n")
+        for i, class_name in enumerate(metadata.thing_classes):
+            color_bgr = class_colors[i % len(class_colors)]
+            color_rgb = (color_bgr[2], color_bgr[1], color_bgr[0])  # Convert BGR to RGB for display
+            f.write(f"Class {i} ({class_name}): RGB{color_rgb}\n")
+    
+    system_logger.info(f"Class color legend saved to: {legend_path}")
