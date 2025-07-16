@@ -429,12 +429,51 @@ For guided interactive mode: python cli_main.py
             dataset_format=args.dataset_format,
             rcnn=args.rcnn,
             pass_mode=pass_mode,
-            max_iters=max_iters,  # <-- Pass max_iters to run_inference
+            max_iters=max_iters,
         )
 
         task_end_time = datetime.now()
         inference_time_taken = (task_end_time - task_start_time).total_seconds()
         update_eta_data("inference", inference_time_taken, num_images)
+
+        # ADDED: Handle inference-specific uploads
+        if args.upload:
+            system_logger.info("Uploading inference results to GCP...")
+            
+            # Upload inference-specific files
+            inference_files = []
+            
+            # Find all inference output files
+            for file_pattern in ["*.csv", "*_predictions.png", "*.log", "*.txt"]:
+                for file_path in output_dir.glob(file_pattern):
+                    if file_path.exists():
+                        inference_files.append(str(file_path))
+            
+            # Also check current directory for any results
+            for file_pattern in ["*.csv", "*.png", "*.jpg"]:
+                for file_path in Path.cwd().glob(file_pattern):
+                    if file_path.exists():
+                        inference_files.append(str(file_path))
+            
+            # Upload each file
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            model_info = f"combo_{pass_mode}" if args.rcnn == "combo" else f"R{args.rcnn}_{pass_mode}"
+            
+            for local_file in inference_files:
+                try:
+                    filename = Path(local_file).name
+                    remote_path = f"inference_results/{args.dataset_name}/{model_info}/{timestamp}/{filename}"
+                    
+                    upload_data_to_bucket(
+                        bucket_name=bucket,
+                        local_file_path=local_file,
+                        remote_file_path=remote_path
+                    )
+                    system_logger.info(f"Uploaded: {filename}")
+                except Exception as e:
+                    system_logger.error(f"Failed to upload {filename}: {e}")
+            
+            system_logger.info(f"Inference results uploaded to gs://{bucket}/inference_results/{args.dataset_name}/{model_info}/{timestamp}/")
 
         # Delete inference data after inference
         if inference_path.exists():
