@@ -154,3 +154,139 @@ def upload_data_to_bucket() -> float:
 
     upload_end_time = datetime.now()
     return (upload_end_time - upload_start_time).total_seconds()
+
+
+def upload_inference_results(dataset_name: str, model_info: str, output_dir: Path, current_dir: Path = None) -> float:
+    """
+    Upload inference results from various locations to a timestamped GCS archive.
+    
+    Args:
+        dataset_name: Name of the dataset
+        model_info: Model information string (e.g., "R101_single", "combo_multi")
+        output_dir: Main output directory (usually split_dir)
+        current_dir: Current working directory (optional)
+        
+    Returns:
+        float: Time taken to upload data in seconds
+    """
+    upload_start_time = datetime.now()
+    time_offset = timedelta(hours=2)
+    timestamp = (datetime.now() + time_offset).strftime("%Y%m%d_%H%M%S")
+    archive_path = f"gs://{bucket}/Archive/{timestamp}_{dataset_name}_{model_info}/"
+    
+    system_logger.info(f"Starting inference results upload to {archive_path}")
+    
+    # Collect files from multiple locations
+    files_to_upload = []
+    
+    # 1. Primary output directory (split_dir)
+    if output_dir.exists():
+        system_logger.info(f"Scanning output directory: {output_dir}")
+        for pattern in ["*.csv", "*.txt", "*.png", "*.jpg"]:
+            for file_path in output_dir.glob(pattern):
+                if file_path.is_file():
+                    files_to_upload.append(file_path)
+                    system_logger.info(f"Found: {file_path.name}")
+    
+    # 2. Current working directory
+    if current_dir is None:
+        current_dir = Path.cwd()
+    
+    if current_dir.exists():
+        system_logger.info(f"Scanning current directory: {current_dir}")
+        for pattern in ["*.csv", "*.png", "*.jpg", "*.txt"]:
+            for file_path in current_dir.glob(pattern):
+                if file_path.is_file():
+                    # Avoid duplicates by checking if already in list
+                    if file_path not in files_to_upload:
+                        files_to_upload.append(file_path)
+                        system_logger.info(f"Found: {file_path.name}")
+    
+    # 3. Home directory (inference-specific files)
+    home_dir = Path.home()
+    inference_patterns = [
+        "measurements_results.csv",
+        "R50_flip_results.csv", 
+        "class_color_legend.txt",
+        "*_predictions.png",
+        "*_mask_*.jpg"
+    ]
+    
+    for pattern in inference_patterns:
+        for file_path in home_dir.glob(pattern):
+            if file_path.is_file() and file_path not in files_to_upload:
+                files_to_upload.append(file_path)
+                system_logger.info(f"Found: {file_path.name}")
+    
+    if not files_to_upload:
+        system_logger.warning("No inference result files found to upload")
+        return 0.0
+    
+    system_logger.info(f"Uploading {len(files_to_upload)} files to {archive_path}")
+    
+    # Upload files using gsutil
+    successful_uploads = 0
+    failed_uploads = 0
+    
+    for file_path in files_to_upload:
+        try:
+            cmd = [
+                "gsutil", "-m", "cp",
+                str(file_path),
+                f"{archive_path}{file_path.name}"
+            ]
+            
+            result = run_gsutil_with_retry(cmd)
+            system_logger.info(f"Uploaded: {file_path.name}")
+            successful_uploads += 1
+            
+        except subprocess.CalledProcessError as e:
+            system_logger.error(f"Failed to upload {file_path.name}: {e}")
+            failed_uploads += 1
+    
+    # Create and upload a comprehensive summary
+    summary_content = f"""Inference Results Upload Summary
+=====================================
+Dataset: {dataset_name}
+Model Configuration: {model_info}
+Upload Timestamp: {timestamp}
+Total Files Found: {len(files_to_upload)}
+Successfully Uploaded: {successful_uploads}
+Failed Uploads: {failed_uploads}
+Archive Location: {archive_path}
+
+File Listing:
+"""
+    
+    for i, file_path in enumerate(files_to_upload, 1):
+        summary_content += f"{i:3d}. {file_path.name} ({file_path.stat().st_size} bytes)\n"
+    
+    summary_path = output_dir / "inference_upload_summary.txt"
+    try:
+        with open(summary_path, "w") as f:
+            f.write(summary_content)
+        
+        # Upload summary
+        cmd = [
+            "gsutil", "-m", "cp",
+            str(summary_path),
+            f"{archive_path}inference_upload_summary.txt"
+        ]
+        run_gsutil_with_retry(cmd)
+        system_logger.info("Upload summary created and uploaded")
+        
+    except Exception as e:
+        system_logger.error(f"Failed to create/upload summary: {e}")
+    
+    # Log final results
+    upload_end_time = datetime.now()
+    elapsed_time = (upload_end_time - upload_start_time).total_seconds()
+    
+    if successful_uploads > 0:
+        system_logger.info(f"INFERENCE UPLOAD COMPLETED: {successful_uploads}/{len(files_to_upload)} files uploaded")
+        system_logger.info(f"Upload time: {elapsed_time:.2f} seconds")
+        system_logger.info(f"Results available at: {archive_path}")
+    else:
+        system_logger.error("All inference uploads failed!")
+    
+    return elapsed_time
