@@ -224,25 +224,21 @@ def upload_inference_results(dataset_name: str, model_info: str, output_dir: Pat
     
     system_logger.info(f"Uploading {len(files_to_upload)} files to {archive_path}")
     
-    # Upload files using gsutil
-    successful_uploads = 0
-    failed_uploads = 0
-    
-    for file_path in files_to_upload:
-        try:
-            cmd = [
-                "gsutil", "-m", "cp",
-                str(file_path),
-                f"{archive_path}{file_path.name}"
-            ]
-            
-            result = run_gsutil_with_retry(cmd)
-            system_logger.info(f"Uploaded: {file_path.name}")
-            successful_uploads += 1
-            
-        except subprocess.CalledProcessError as e:
-            system_logger.error(f"Failed to upload {file_path.name}: {e}")
-            failed_uploads += 1
+    # Upload all files in batch using gsutil -m cp -r
+    try:
+        cmd = [
+            "gsutil", "-m", "cp"
+        ] + [str(file_path) for file_path in files_to_upload] + [archive_path]
+        
+        result = run_gsutil_with_retry(cmd)
+        system_logger.info(f"Batch upload completed successfully: {len(files_to_upload)} files uploaded")
+        successful_uploads = len(files_to_upload)
+        failed_uploads = 0
+        
+    except subprocess.CalledProcessError as e:
+        system_logger.error(f"Batch upload failed: {e}")
+        successful_uploads = 0
+        failed_uploads = len(files_to_upload)
     
     # Create and upload a comprehensive summary
     summary_content = f"""Inference Results Upload Summary
@@ -254,6 +250,7 @@ Total Files Found: {len(files_to_upload)}
 Successfully Uploaded: {successful_uploads}
 Failed Uploads: {failed_uploads}
 Archive Location: {archive_path}
+Upload Method: Batch upload using gsutil -m cp
 
 File Listing:
 """
@@ -283,10 +280,10 @@ File Listing:
     elapsed_time = (upload_end_time - upload_start_time).total_seconds()
     
     if successful_uploads > 0:
-        system_logger.info(f"INFERENCE UPLOAD COMPLETED: {successful_uploads}/{len(files_to_upload)} files uploaded")
+        system_logger.info(f"INFERENCE BATCH UPLOAD COMPLETED: {successful_uploads}/{len(files_to_upload)} files uploaded")
         system_logger.info(f"Upload time: {elapsed_time:.2f} seconds")
         system_logger.info(f"Results available at: {archive_path}")
     else:
-        system_logger.error("All inference uploads failed!")
+        system_logger.error("Batch inference upload failed!")
     
     return elapsed_time
