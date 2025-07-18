@@ -465,12 +465,12 @@ For guided interactive mode: python cli_main.py
             except Exception as e:
                 system_logger.error(f"Failed to upload inference results: {e}")
 
-    # Delete inference data after inference
-    if inference_path.exists():
-        shutil.rmtree(inference_path)
-        system_logger.info(
-            f"Deleted inference data at {inference_path} after inference."
-        )
+        # Delete inference data after inference
+        if inference_path.exists():
+            shutil.rmtree(inference_path)
+            system_logger.info(
+                f"Deleted inference data at {inference_path} after inference."
+            )
 
     total_end_time = datetime.now()
     total_time_taken = (total_end_time - total_start_time).total_seconds()
