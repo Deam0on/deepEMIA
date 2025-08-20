@@ -159,6 +159,7 @@ def upload_data_to_bucket() -> float:
 def upload_inference_results(dataset_name: str, model_info: str, output_dir: Path, current_dir: Path = None) -> float:
     """
     Upload inference results from various locations to a timestamped GCS archive.
+    Only uploads essential result files, not individual masks or temporary files.
     
     Args:
         dataset_name: Name of the dataset
@@ -176,69 +177,135 @@ def upload_inference_results(dataset_name: str, model_info: str, output_dir: Pat
     
     system_logger.info(f"Starting inference results upload to {archive_path}")
     
-    # Collect files from multiple locations
-    files_to_upload = []
+    # Define essential files to upload (exclude individual masks and temporary files)
+    essential_files = []
     
-    # 1. Primary output directory (split_dir)
+    # 1. Essential files from output directory (split_dir)
     if output_dir.exists():
         system_logger.info(f"Scanning output directory: {output_dir}")
-        for pattern in ["*.csv", "*.txt", "*.png", "*.jpg"]:
+        
+        # Main results files only
+        essential_patterns = {
+            "measurements_results.csv": "Main measurements and analysis results",
+            "R50_flip_results.csv": "RLE encoded masks for all classes",
+            "class_color_legend.txt": "Class color coding reference",
+            "inference_upload_summary.txt": "Upload summary",
+            "*_predictions.png": "Combined prediction visualizations (all classes per image)"
+        }
+        
+        for pattern, description in essential_patterns.items():
             for file_path in output_dir.glob(pattern):
                 if file_path.is_file():
-                    files_to_upload.append(file_path)
-                    system_logger.info(f"Found: {file_path.name}")
+                    # Skip individual mask files - we only want the combined prediction images
+                    if "_mask_" in file_path.name and file_path.name.endswith('.jpg'):
+                        continue
+                    essential_files.append({
+                        "path": file_path,
+                        "description": description
+                    })
+                    system_logger.info(f"Found essential file: {file_path.name} - {description}")
     
-    # 2. Current working directory
+    # 2. Essential files from current working directory
     if current_dir is None:
         current_dir = Path.cwd()
     
     if current_dir.exists():
         system_logger.info(f"Scanning current directory: {current_dir}")
-        for pattern in ["*.csv", "*.png", "*.jpg", "*.txt"]:
+        
+        # Only look for main result files, not individual masks
+        main_result_patterns = [
+            "measurements_results.csv",
+            "R50_flip_results.csv", 
+            "class_color_legend.txt"
+        ]
+        
+        for pattern in main_result_patterns:
             for file_path in current_dir.glob(pattern):
                 if file_path.is_file():
-                    # Avoid duplicates by checking if already in list
-                    if file_path not in files_to_upload:
-                        files_to_upload.append(file_path)
-                        system_logger.info(f"Found: {file_path.name}")
+                    # Check if not already in list
+                    if not any(ef["path"] == file_path for ef in essential_files):
+                        essential_files.append({
+                            "path": file_path,
+                            "description": f"Main result file: {pattern}"
+                        })
+                        system_logger.info(f"Found essential file: {file_path.name}")
+        
+        # Look for prediction images (but not individual masks)
+        for file_path in current_dir.glob("*_predictions.png"):
+            if file_path.is_file():
+                if not any(ef["path"] == file_path for ef in essential_files):
+                    essential_files.append({
+                        "path": file_path,
+                        "description": "Combined prediction visualization"
+                    })
+                    system_logger.info(f"Found prediction visualization: {file_path.name}")
     
-    # 3. Home directory (inference-specific files)
+    # 3. Essential files from home directory (fallback)
     home_dir = Path.home()
-    inference_patterns = [
+    home_result_patterns = [
         "measurements_results.csv",
         "R50_flip_results.csv", 
-        "class_color_legend.txt",
-        "*_predictions.png",
-        "*_mask_*.jpg"
+        "class_color_legend.txt"
     ]
     
-    for pattern in inference_patterns:
+    for pattern in home_result_patterns:
         for file_path in home_dir.glob(pattern):
-            if file_path.is_file() and file_path not in files_to_upload:
-                files_to_upload.append(file_path)
-                system_logger.info(f"Found: {file_path.name}")
+            if file_path.is_file():
+                if not any(ef["path"] == file_path for ef in essential_files):
+                    essential_files.append({
+                        "path": file_path,
+                        "description": f"Main result file: {pattern}"
+                    })
+                    system_logger.info(f"Found essential file in home: {file_path.name}")
     
-    if not files_to_upload:
-        system_logger.warning("No inference result files found to upload")
+    if not essential_files:
+        system_logger.warning("No essential inference result files found to upload")
         return 0.0
     
-    system_logger.info(f"Uploading {len(files_to_upload)} files to {archive_path}")
+    system_logger.info(f"Uploading {len(essential_files)} essential result files to {archive_path}")
     
-    # Upload all files in batch using gsutil -m cp -r
+    # Log what we're uploading vs what we're skipping
+    if output_dir.exists():
+        all_files_count = sum(1 for _ in output_dir.glob("*") if _.is_file())
+        skipped_count = all_files_count - len([ef for ef in essential_files if ef["path"].parent == output_dir])
+        system_logger.info(f"Uploading {len([ef for ef in essential_files if ef["path"].parent == output_dir])}/{all_files_count} files from output directory")
+        system_logger.info(f"Skipped {skipped_count} files (individual masks, temporary files)")
+    
+    # Upload all essential files in batch using gsutil -m cp
     try:
+        file_paths = [str(ef["path"]) for ef in essential_files]
         cmd = [
             "gsutil", "-m", "cp"
-        ] + [str(file_path) for file_path in files_to_upload] + [archive_path]
+        ] + file_paths + [archive_path]
         
         result = run_gsutil_with_retry(cmd)
-        system_logger.info(f"Batch upload completed successfully: {len(files_to_upload)} files uploaded")
-        successful_uploads = len(files_to_upload)
+        system_logger.info(f"Batch upload completed successfully: {len(essential_files)} essential files uploaded")
+        successful_uploads = len(essential_files)
         failed_uploads = 0
         
     except subprocess.CalledProcessError as e:
         system_logger.error(f"Batch upload failed: {e}")
+        system_logger.info("Attempting individual file uploads as fallback...")
+        
+        # Fallback to individual uploads
         successful_uploads = 0
-        failed_uploads = len(files_to_upload)
+        failed_uploads = 0
+        
+        for file_info in essential_files:
+            try:
+                cmd = [
+                    "gsutil", "-m", "cp",
+                    str(file_info["path"]),
+                    f"{archive_path}{file_info['path'].name}"
+                ]
+                
+                result = run_gsutil_with_retry(cmd)
+                system_logger.info(f"Uploaded: {file_info['path'].name} - {file_info['description']}")
+                successful_uploads += 1
+                
+            except subprocess.CalledProcessError as e:
+                system_logger.error(f"Failed to upload {file_info['path'].name}: {e}")
+                failed_uploads += 1
     
     # Create and upload a comprehensive summary
     summary_content = f"""Inference Results Upload Summary
@@ -246,31 +313,46 @@ def upload_inference_results(dataset_name: str, model_info: str, output_dir: Pat
 Dataset: {dataset_name}
 Model Configuration: {model_info}
 Upload Timestamp: {timestamp}
-Total Files Found: {len(files_to_upload)}
+Total Essential Files Found: {len(essential_files)}
 Successfully Uploaded: {successful_uploads}
 Failed Uploads: {failed_uploads}
 Archive Location: {archive_path}
-Upload Method: Batch upload using gsutil -m cp
+Upload Method: Selective batch upload (essential files only)
 
-File Listing:
+Files Uploaded:
 """
     
-    for i, file_path in enumerate(files_to_upload, 1):
-        summary_content += f"{i:3d}. {file_path.name} ({file_path.stat().st_size} bytes)\n"
+    for i, file_info in enumerate(essential_files, 1):
+        file_path = file_info["path"]
+        description = file_info["description"]
+        summary_content += f"{i:3d}. {file_path.name} ({file_path.stat().st_size} bytes) - {description}\n"
+    
+    summary_content += f"""
+Files Excluded from Upload:
+- Individual mask images (*_mask_*.jpg)
+- Temporary processing files
+- Duplicate files from multiple locations
+
+Note: This upload contains only essential result files. Individual particle masks 
+are not uploaded to reduce storage usage and upload time. The main measurements 
+CSV contains all analysis results, and the RLE CSV contains mask data for 
+reconstruction if needed.
+"""
     
     summary_path = output_dir / "inference_upload_summary.txt"
     try:
         with open(summary_path, "w") as f:
             f.write(summary_content)
         
-        # Upload summary
-        cmd = [
-            "gsutil", "-m", "cp",
-            str(summary_path),
-            f"{archive_path}inference_upload_summary.txt"
-        ]
-        run_gsutil_with_retry(cmd)
-        system_logger.info("Upload summary created and uploaded")
+        # Upload summary (if not already included)
+        if not any(ef["path"] == summary_path for ef in essential_files):
+            cmd = [
+                "gsutil", "-m", "cp",
+                str(summary_path),
+                f"{archive_path}inference_upload_summary.txt"
+            ]
+            run_gsutil_with_retry(cmd)
+            system_logger.info("Upload summary created and uploaded")
         
     except Exception as e:
         system_logger.error(f"Failed to create/upload summary: {e}")
@@ -280,10 +362,11 @@ File Listing:
     elapsed_time = (upload_end_time - upload_start_time).total_seconds()
     
     if successful_uploads > 0:
-        system_logger.info(f"INFERENCE BATCH UPLOAD COMPLETED: {successful_uploads}/{len(files_to_upload)} files uploaded")
+        system_logger.info(f"SELECTIVE INFERENCE UPLOAD COMPLETED: {successful_uploads}/{len(essential_files)} essential files uploaded")
         system_logger.info(f"Upload time: {elapsed_time:.2f} seconds")
         system_logger.info(f"Results available at: {archive_path}")
+        system_logger.info("Individual mask files excluded to optimize upload size and time")
     else:
-        system_logger.error("Batch inference upload failed!")
+        system_logger.error("Essential file uploads failed!")
     
     return elapsed_time
