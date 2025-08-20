@@ -804,15 +804,19 @@ def run_inference(
                         pixelsPerMetric = 1
                         contour_area = cv2.contourArea(c)
                         
-                        # Class-dependent area threshold
-                        if cls == 0:  # First class
-                            min_area = 100
-                        else:  # Other classes
-                            min_area = 25
+                        # ADAPTIVE: Scale thresholds based on image size
+                        image_area = im.shape[0] * im.shape[1]
+                        base_threshold = image_area * 0.000005  # 0.0005% of image area
+                        
+                        # if cls == 0:  # First class
+                        #     min_area = max(25, base_threshold * 2)
+                        # else:  # Other classes
+                        min_area = max(5, base_threshold * 0.5)
                         
                         if contour_area < min_area:
+                            system_logger.debug(f"Skipping contour in mask {instance_id} (class {cls}): area {contour_area:.1f} < {min_area:.1f}")
                             continue
-                            
+
                         measurements = calculate_measurements(
                             c,
                             single_im_mask,
