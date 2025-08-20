@@ -267,8 +267,9 @@ def upload_inference_results(dataset_name: str, model_info: str, output_dir: Pat
     # Log what we're uploading vs what we're skipping
     if output_dir.exists():
         all_files_count = sum(1 for _ in output_dir.glob("*") if _.is_file())
-        skipped_count = all_files_count - len([ef for ef in essential_files if ef["path"].parent == output_dir])
-        system_logger.info(f"Uploading {len([ef for ef in essential_files if ef["path"].parent == output_dir])}/{all_files_count} files from output directory")
+        output_essential_files = [ef for ef in essential_files if ef["path"].parent == output_dir]
+        skipped_count = all_files_count - len(output_essential_files)
+        system_logger.info(f"Uploading {len(output_essential_files)}/{all_files_count} files from output directory")
         system_logger.info(f"Skipped {skipped_count} files (individual masks, temporary files)")
     
     # Upload all essential files in batch using gsutil -m cp
