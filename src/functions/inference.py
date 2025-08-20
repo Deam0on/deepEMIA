@@ -715,6 +715,11 @@ def run_inference(
 
                 system_logger.info(f"Processing {len(masks)} masks for image {test_img}")
 
+                # Track measurements statistics
+                measurements_written = 0
+                masks_filtered = 0
+                class_measurements = {}
+
                 # MODIFIED: Single visualization per image with color-coded classes
                 if visualize:
                     vis_img = im.copy()
@@ -771,7 +776,7 @@ def run_inference(
                         
                         del colored_mask
                     
-                    # MODIFIED: Single PNG per image
+                    # Single PNG per image
                     vis_save_path = os.path.join(output_dir, f"{test_img}_predictions.png")
                     cv2.imwrite(vis_save_path, vis_img)
                     del vis_img
@@ -793,11 +798,21 @@ def run_inference(
                     )
                     single_cnts = imutils.grab_contours(single_cnts)
 
+                    # Track measurements for this mask
+                    mask_measurements = 0
                     for c in single_cnts:
                         pixelsPerMetric = 1
-                        if cv2.contourArea(c) < 100:
+                        contour_area = cv2.contourArea(c)
+                        
+                        # Class-dependent area threshold
+                        if cls == 0:  # First class
+                            min_area = 100
+                        else:  # Other classes
+                            min_area = 25
+                        
+                        if contour_area < min_area:
                             continue
-
+                            
                         measurements = calculate_measurements(
                             c,
                             single_im_mask,
@@ -810,7 +825,7 @@ def run_inference(
                         # Get class name for CSV
                         class_name = metadata.thing_classes[cls] if cls < len(metadata.thing_classes) else f"class_{cls}"
 
-                        # MODIFIED: Include class information in CSV
+                        # Include class information in CSV
                         csvwriter.writerow(
                             [
                                 f"{test_img}_{instance_id}",
@@ -835,11 +850,32 @@ def run_inference(
                                 test_img,   
                             ]
                         )
+                        
+                        mask_measurements += 1
+                        measurements_written += 1
+                        
+                        # Track by class
+                        if cls not in class_measurements:
+                            class_measurements[cls] = 0
+                        class_measurements[cls] += 1
+                    
+                    if mask_measurements == 0:
+                        masks_filtered += 1
                     
                     # Memory optimization: Clear mask data
                     del binary_mask, single_im_mask, mask_3ch, single_cnts
                     gc.collect()
                 
+                # ADDED: Report measurement statistics
+                system_logger.info(f"Measurements written: {measurements_written}/{len(masks)} masks processed")
+                system_logger.info(f"Masks filtered out: {masks_filtered}")
+                
+                if class_measurements:
+                    class_summary = ", ".join([f"class {cls}: {count}" for cls, count in sorted(class_measurements.items())])
+                    system_logger.info(f"Final measurements by class: {class_summary}")
+                else:
+                    system_logger.warning("No measurements written for any class!")
+
                 # Memory optimization: Clear image data
                 del im
                 
