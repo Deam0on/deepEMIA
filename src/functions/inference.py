@@ -800,6 +800,8 @@ def run_inference(
 
                     # Track measurements for this mask
                     mask_measurements = 0
+                    total_contours = len(single_cnts)  # Add this line
+                    
                     for c in single_cnts:
                         pixelsPerMetric = 1
                         contour_area = cv2.contourArea(c)
@@ -863,8 +865,12 @@ def run_inference(
                             class_measurements[cls] = 0
                         class_measurements[cls] += 1
                     
+                    # Add this logging block to show why masks are filtered
                     if mask_measurements == 0:
                         masks_filtered += 1
+                        system_logger.info(f"Mask {instance_id} (class {cls}) filtered out: all {total_contours} contours too small (min_area: {min_area:.1f})")
+                    else:
+                        system_logger.debug(f"Mask {instance_id} (class {cls}): {mask_measurements}/{total_contours} contours kept")
                     
                     # Memory optimization: Clear mask data
                     del binary_mask, single_im_mask, mask_3ch, single_cnts
