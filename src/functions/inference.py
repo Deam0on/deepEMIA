@@ -814,7 +814,7 @@ def run_inference(
                         min_area = max(5, base_threshold * 0.5)
                         
                         if contour_area < min_area:
-                            system_logger.debug(f"Skipping contour in mask {instance_id} (class {cls}): area {contour_area:.1f} < {min_area:.1f}")
+                            system_logger.info(f"Skipping contour in mask {instance_id} (class {cls}): area {contour_area:.1f} < {min_area:.1f}")
                             continue
 
                         measurements = calculate_measurements(
