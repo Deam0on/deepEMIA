@@ -813,8 +813,8 @@ def run_inference(
                         # if cls == 0:  # First class
                         #     min_area = max(25, base_threshold * 2)
                         # else:  # Other classes
-                        # min_area = max(5, base_threshold * 0.5)
-                        min_area = 10e-5 # debug 
+                        min_area = max(5, base_threshold * 0.05)
+                        # min_area = 10e-5 # debug 
 
                         if contour_area < min_area:
                             system_logger.info(f"Skipping contour in mask {instance_id} (class {cls}): area {contour_area:.1f} < {min_area:.1f}")
