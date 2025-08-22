@@ -1428,54 +1428,104 @@ def run_multiscale_class_inference(
     small_classes=set(),
 ):
     """
-    Multi-scale inference with ITERATIVE passes for small particles.
-    Now includes proper iterative inference at each scale.
+    Adaptive multi-scale inference with smart scale selection.
+    Starts with conservative scales and gets more aggressive based on performance.
     """
-    scales = [0.8, 1.0, 1.2, 1.5]  # Multiple scales to catch small particles
+    return run_adaptive_multiscale_inference(
+        predictor, image, target_class, confidence_threshold, max_iters, small_classes
+    )
+
+
+def run_adaptive_multiscale_inference(
+    predictor,
+    image,
+    target_class,
+    confidence_threshold=0.3,
+    max_iters=5,
+    small_classes=set(),
+):
+    """
+    Smart adaptive multi-scale inference that progressively tries more aggressive scales.
+    
+    Strategy:
+    1. Start with conservative scales: [0.7, 1.0, 1.5]
+    2. If upscaling (1.5x) provides benefit, try more aggressive upscaling: [2.0, 2.5]
+    3. If downscaling (0.7x) provides benefit, try more aggressive downscaling: [0.5, 0.6]
+    4. Stop when additional scales don't improve results
+    """
     all_masks = []
     all_scores = []
     all_classes = []
-
-    for scale in scales:
-        system_logger.info(f"Scale {scale}: Processing class {target_class}")
-
-        # Resize image
-        if scale != 1.0:
-            h, w = image.shape[:2]
-            new_h, new_w = int(h * scale), int(w * scale)
-            scaled_image = cv2.resize(image, (new_w, new_h))
-        else:
-            scaled_image = image
-
-        # **NEW: Run ITERATIVE inference at this scale**
-        scale_masks, scale_scores, scale_classes = run_iterative_class_inference(
-            predictor,
-            scaled_image,
-            target_class,
-            small_classes,
-            confidence_threshold,
-            max_iters,
+    
+    # Phase 1: Conservative baseline scales
+    baseline_scales = [0.7, 1.0, 1.5]
+    scale_performance = {}  # Track performance per scale
+    
+    system_logger.info(f"Adaptive multiscale inference - Phase 1: Baseline scales {baseline_scales}")
+    
+    for scale in baseline_scales:
+        masks, scores, classes = process_single_scale(
+            predictor, image, target_class, small_classes, 
+            confidence_threshold, max_iters, scale
         )
-
-        # Scale masks back to original size
-        if scale != 1.0 and scale_masks:
-            original_size_masks = []
-            for mask in scale_masks:
-                resized_mask = cv2.resize(
-                    mask.astype(np.uint8),
-                    (image.shape[1], image.shape[0]),
-                    interpolation=cv2.INTER_NEAREST,
-                )
-                original_size_masks.append(resized_mask.astype(bool))
-            scale_masks = original_size_masks
-
-        all_masks.extend(scale_masks)
-        all_scores.extend(scale_scores)
-        all_classes.extend(scale_classes)
-
-        system_logger.info(
-            f"Scale {scale}: Found {len(scale_masks)} instances after iterations"
-        )
+        
+        scale_performance[scale] = len(masks)
+        all_masks.extend(masks)
+        all_scores.extend(scores)
+        all_classes.extend(classes)
+        
+        system_logger.info(f"Scale {scale}: Found {len(masks)} instances")
+    
+    # Analyze baseline performance to decide on aggressive scaling
+    baseline_1x = scale_performance.get(1.0, 0)
+    upscale_benefit = scale_performance.get(1.5, 0) > baseline_1x * 0.1  # 10% improvement threshold
+    downscale_benefit = scale_performance.get(0.7, 0) > baseline_1x * 0.1
+    
+    system_logger.info(f"Baseline analysis - 1.0x: {baseline_1x}, upscale benefit: {upscale_benefit}, downscale benefit: {downscale_benefit}")
+    
+    # Phase 2: Aggressive upscaling if beneficial
+    if upscale_benefit:
+        aggressive_upscales = [2.0, 2.5]
+        system_logger.info(f"Phase 2a: Trying aggressive upscaling {aggressive_upscales}")
+        
+        for scale in aggressive_upscales:
+            masks, scores, classes = process_single_scale(
+                predictor, image, target_class, small_classes,
+                confidence_threshold, max_iters, scale
+            )
+            
+            # Stop if this scale doesn't add meaningful detections
+            if len(masks) < baseline_1x * 0.05:  # Less than 5% of baseline
+                system_logger.info(f"Scale {scale}: Low yield ({len(masks)} masks), stopping upscaling")
+                break
+                
+            all_masks.extend(masks)
+            all_scores.extend(scores)
+            all_classes.extend(classes)
+            system_logger.info(f"Scale {scale}: Found {len(masks)} instances")
+    
+    # Phase 3: Aggressive downscaling if beneficial  
+    if downscale_benefit:
+        aggressive_downscales = [0.5, 0.6]
+        system_logger.info(f"Phase 2b: Trying aggressive downscaling {aggressive_downscales}")
+        
+        for scale in aggressive_downscales:
+            masks, scores, classes = process_single_scale(
+                predictor, image, target_class, small_classes,
+                confidence_threshold, max_iters, scale
+            )
+            
+            # Stop if this scale doesn't add meaningful detections
+            if len(masks) < baseline_1x * 0.05:  # Less than 5% of baseline
+                system_logger.info(f"Scale {scale}: Low yield ({len(masks)} masks), stopping downscaling")
+                break
+                
+            all_masks.extend(masks)
+            all_scores.extend(scores)
+            all_classes.extend(classes)
+            system_logger.info(f"Scale {scale}: Found {len(masks)} instances")
+    
+    # Deduplicate across all scales
 
     # Deduplicate across scales
     unique_masks = []
@@ -1499,10 +1549,50 @@ def run_multiscale_class_inference(
                 unique_scores.append(score)
                 unique_classes.append(cls)
 
+    total_scales_tried = len(baseline_scales) + (2 if upscale_benefit else 0) + (2 if downscale_benefit else 0)
     system_logger.info(
-        f"Multiscale iterative inference completed: {len(unique_masks)} unique masks for class {target_class}"
+        f"Adaptive multiscale completed: {len(unique_masks)} unique masks from {total_scales_tried} scales for class {target_class}"
     )
     return unique_masks, unique_scores, unique_classes
+
+
+def process_single_scale(predictor, image, target_class, small_classes, confidence_threshold, max_iters, scale):
+    """
+    Process inference at a single scale and return results.
+    """
+    system_logger.debug(f"Processing scale {scale} for class {target_class}")
+    
+    # Resize image
+    if scale != 1.0:
+        h, w = image.shape[:2]
+        new_h, new_w = int(h * scale), int(w * scale)
+        scaled_image = cv2.resize(image, (new_w, new_h))
+    else:
+        scaled_image = image
+
+    # Run iterative inference at this scale
+    scale_masks, scale_scores, scale_classes = run_iterative_class_inference(
+        predictor,
+        scaled_image,
+        target_class,
+        small_classes,
+        confidence_threshold,
+        max_iters,
+    )
+
+    # Scale masks back to original size
+    if scale != 1.0 and scale_masks:
+        original_size_masks = []
+        for mask in scale_masks:
+            resized_mask = cv2.resize(
+                mask.astype(np.uint8),
+                (image.shape[1], image.shape[0]),
+                interpolation=cv2.INTER_NEAREST,
+            )
+            original_size_masks.append(resized_mask.astype(bool))
+        scale_masks = original_size_masks
+
+    return scale_masks, scale_scores, scale_classes
 
 
 def run_iterative_class_inference(
