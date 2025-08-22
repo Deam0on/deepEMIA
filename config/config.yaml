@@ -52,6 +52,11 @@ rcnn_hyperparameters:
   #     batch_size_per_image: 96
 inference_settings:
   use_class_specific_inference: true  # Set to false to use traditional approach
+  iterative_stopping:
+    min_total_masks: 10          # Minimum masks before considering early stop
+    min_relative_increase: 0.25  # 25% minimum increase requirement
+    max_consecutive_zero: 2      # Stop after N iterations with no new masks
+    min_iterations: 3            # Always run at least this many iterations
   class_specific_settings:
     class_0:  # Large particles
       confidence_threshold: 0.5

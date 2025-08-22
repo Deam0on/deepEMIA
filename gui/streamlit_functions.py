@@ -35,16 +35,18 @@ from src.utils.logger_utils import system_logger
 config = get_config()
 bucket = config["bucket"]
 
+
 # Secure password handling
 def verify_admin_password(input_password):
     """Verify admin password using environment variable hash."""
-    stored_hash = os.environ.get('ADMIN_PASSWORD_HASH')
+    stored_hash = os.environ.get("ADMIN_PASSWORD_HASH")
     if not stored_hash:
         # Fallback for development - hash of "admin"
         stored_hash = "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918"
-    
+
     input_hash = hashlib.sha256(input_password.encode()).hexdigest()
     return stored_hash == input_hash
+
 
 # Absolute path to main.py
 MAIN_SCRIPT_PATH = Path(config["paths"]["main_script"]).expanduser().resolve()
@@ -192,18 +194,22 @@ def run_command(command):
     process = None
     try:
         process = subprocess.Popen(
-            command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            command,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         while process.poll() is None:
             output = process.stdout.readline()
             if output:
                 stdout.append(output.strip())
-        
+
         # Ensure process has finished and get remaining output
         remaining_stdout, stderr_output = process.communicate()
         if remaining_stdout:
-            stdout.extend(remaining_stdout.strip().split('\n'))
-            
+            stdout.extend(remaining_stdout.strip().split("\n"))
+
         return "\n".join(stdout), stderr_output, process.returncode == 0
     except Exception as e:
         return "", f"Process execution failed: {str(e)}", False

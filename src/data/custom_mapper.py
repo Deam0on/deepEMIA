@@ -13,11 +13,11 @@ from detectron2.data import transforms as T
 def custom_mapper(dataset_dict, augment=False):
     """
     Custom data mapper function for Detectron2 training.
-    
+
     Args:
         dataset_dict (dict): Dictionary containing image and annotation data.
         augment (bool): Whether to apply data augmentation.
-        
+
     Returns:
         dict: Processed dataset dictionary with image tensor and instances.
     """

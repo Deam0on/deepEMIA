@@ -66,11 +66,17 @@ def setup_config():
     proximity = input("  proximity threshold [default 50]: ").strip() or "50"
 
     print("\nConfigure measurement settings:")
-    measure_contrast = input("  measure_contrast_distribution [default false] (true/false): ").strip() or "false"
+    measure_contrast = (
+        input("  measure_contrast_distribution [default false] (true/false): ").strip()
+        or "false"
+    )
     measure_contrast = measure_contrast.lower() == "true"
-    
+
     print("\nConfigure inference settings:")
-    class_specific_default = input("  use_class_specific_inference [default true] (true/false): ").strip() or "true"
+    class_specific_default = (
+        input("  use_class_specific_inference [default true] (true/false): ").strip()
+        or "true"
+    )
     use_class_specific_default = class_specific_default.lower() == "true"
 
     print("\nConfigure RCNN hyperparameters (press Enter to use defaults):")
@@ -79,14 +85,18 @@ def setup_config():
     r50_ims_per_batch = input("    ims_per_batch [default 2]: ").strip() or "2"
     r50_warmup_iters = input("    warmup_iters [default 1000]: ").strip() or "1000"
     r50_gamma = input("    gamma [default 0.1]: ").strip() or "0.1"
-    r50_batch_size_per_image = input("    batch_size_per_image [default 64]: ").strip() or "64"
+    r50_batch_size_per_image = (
+        input("    batch_size_per_image [default 64]: ").strip() or "64"
+    )
 
     print("  R101 settings:")
     r101_base_lr = input("    base_lr [default 0.00025]: ").strip() or "0.00025"
     r101_ims_per_batch = input("    ims_per_batch [default 2]: ").strip() or "2"
     r101_warmup_iters = input("    warmup_iters [default 1000]: ").strip() or "1000"
     r101_gamma = input("    gamma [default 0.1]: ").strip() or "0.1"
-    r101_batch_size_per_image = input("    batch_size_per_image [default 64]: ").strip() or "64"
+    r101_batch_size_per_image = (
+        input("    batch_size_per_image [default 64]: ").strip() or "64"
+    )
 
     config = {
         "bucket": bucket,
@@ -118,15 +128,15 @@ def setup_config():
                 "class_0": {
                     "confidence_threshold": 0.5,
                     "iou_threshold": 0.7,
-                    "min_size": 25
+                    "min_size": 25,
                 },
                 "class_1": {
                     "confidence_threshold": 0.3,
                     "iou_threshold": 0.5,
                     "min_size": 5,
-                    "use_multiscale": True
-                }
-            }
+                    "use_multiscale": True,
+                },
+            },
         },
         "rcnn_hyperparameters": {
             "default": {
@@ -164,9 +174,9 @@ def main():
     """
     parser = argparse.ArgumentParser(
         description="deepEMIA - Deep Learning Computer Vision Pipeline for Scientific Image Analysis.\n"
-                   "This tool provides dataset preparation, model training, evaluation, and inference capabilities.\n\n"
-                   "For an easier, interactive experience, use: python cli_main.py\n"
-                   "The CLI wizard guides you through all options step-by-step.",
+        "This tool provides dataset preparation, model training, evaluation, and inference capabilities.\n\n"
+        "For an easier, interactive experience, use: python cli_main.py\n"
+        "The CLI wizard guides you through all options step-by-step.",
         epilog="""
 QUICK START EXAMPLES:
 
@@ -455,7 +465,7 @@ For guided interactive mode: python cli_main.py
             rcnn=args.rcnn,
             pass_mode=pass_mode,
             max_iters=max_iters,
-            use_class_specific=getattr(args, 'class_specific', None),
+            use_class_specific=getattr(args, "class_specific", None),
         )
 
         task_end_time = datetime.now()
@@ -465,29 +475,31 @@ For guided interactive mode: python cli_main.py
         # UPDATED: Use dedicated inference upload function
         if args.upload:
             system_logger.info("Uploading inference results to GCP...")
-            
+
             # Import the new function
             from src.utils.gcs_utils import upload_inference_results
-            
+
             # Determine model info for remote path
             if args.rcnn == "combo":
                 model_info = f"combo_{pass_mode}"
             else:
                 model_info = f"R{args.rcnn}_{pass_mode}"
-            
+
             try:
                 upload_time_taken = upload_inference_results(
                     dataset_name=args.dataset_name,
                     model_info=model_info,
                     output_dir=output_dir,
-                    current_dir=Path.cwd()
+                    current_dir=Path.cwd(),
                 )
-                
+
                 if upload_time_taken > 0:
-                    system_logger.info(f"Inference results uploaded successfully in {upload_time_taken:.2f} seconds")
+                    system_logger.info(
+                        f"Inference results uploaded successfully in {upload_time_taken:.2f} seconds"
+                    )
                 else:
                     system_logger.warning("No files were uploaded")
-                    
+
             except Exception as e:
                 system_logger.error(f"Failed to upload inference results: {e}")
 

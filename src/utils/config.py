@@ -33,22 +33,29 @@ def get_config():
         try:
             with open(config_path, "r") as f:
                 raw_config = yaml.safe_load(f)
-            
+
             # Validate configuration
             try:
                 from src.utils.config_validator import validate_config
+
                 _config = validate_config(raw_config)
-                system_logger.info(f"Loaded and validated configuration from {config_path}")
+                system_logger.info(
+                    f"Loaded and validated configuration from {config_path}"
+                )
             except ImportError:
                 # Fallback if validator is not available
                 _config = raw_config
-                system_logger.warning("Configuration validator not available, using unvalidated config")
+                system_logger.warning(
+                    "Configuration validator not available, using unvalidated config"
+                )
             except Exception as e:
                 system_logger.error(f"Configuration validation failed: {e}")
                 # Use raw config but log warning
                 _config = raw_config
-                system_logger.warning("Using unvalidated configuration due to validation error")
-                
+                system_logger.warning(
+                    "Using unvalidated configuration due to validation error"
+                )
+
         except FileNotFoundError:
             system_logger.error(f"Configuration file not found: {config_path}")
             raise

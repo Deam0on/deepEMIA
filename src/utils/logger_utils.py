@@ -15,7 +15,7 @@ from pathlib import Path
 def get_log_dir():
     """
     Get the appropriate log directory based on the environment.
-    
+
     Returns:
         Path: Path to the log directory.
     """
