@@ -1376,16 +1376,17 @@ def run_multiscale_class_inference(
     predictor, image, target_class, confidence_threshold=0.3, max_iters=5
 ):
     """
-    Multi-scale inference specifically for small particles (class 1).
+    Multi-scale inference with ITERATIVE passes for small particles (class 1).
+    Now includes proper iterative inference at each scale.
     """
     scales = [0.8, 1.0, 1.2, 1.5]  # Multiple scales to catch small particles
     all_masks = []
     all_scores = []
     all_classes = []
-
+    
     for scale in scales:
         system_logger.info(f"Scale {scale}: Processing class {target_class}")
-
+        
         # Resize image
         if scale != 1.0:
             h, w = image.shape[:2]
@@ -1393,49 +1394,161 @@ def run_multiscale_class_inference(
             scaled_image = cv2.resize(image, (new_w, new_h))
         else:
             scaled_image = image
-
-        # Run class-specific inference
-        scale_masks, scale_scores, scale_classes = run_class_specific_inference(
-            predictor, scaled_image, target_class, confidence_threshold
+        
+        # **NEW: Run ITERATIVE inference at this scale**
+        scale_masks, scale_scores, scale_classes = run_iterative_class_inference(
+            predictor, scaled_image, target_class, confidence_threshold, max_iters
         )
-
+        
         # Scale masks back to original size
         if scale != 1.0 and scale_masks:
             original_size_masks = []
             for mask in scale_masks:
                 resized_mask = cv2.resize(
-                    mask.astype(np.uint8),
-                    (image.shape[1], image.shape[0]),
-                    interpolation=cv2.INTER_NEAREST,
+                    mask.astype(np.uint8), 
+                    (image.shape[1], image.shape[0]), 
+                    interpolation=cv2.INTER_NEAREST
                 )
                 original_size_masks.append(resized_mask.astype(bool))
             scale_masks = original_size_masks
-
+        
         all_masks.extend(scale_masks)
         all_scores.extend(scale_scores)
         all_classes.extend(scale_classes)
-
-        system_logger.info(f"Scale {scale}: Found {len(scale_masks)} instances")
-
+        
+        system_logger.info(f"Scale {scale}: Found {len(scale_masks)} instances after iterations")
+    
     # Deduplicate across scales
     unique_masks = []
     unique_scores = []
     unique_classes = []
-
+    
     # Sort by confidence
-    sorted_indices = np.argsort(all_scores)[::-1]
+    if all_scores:
+        sorted_indices = np.argsort(all_scores)[::-1]
+        
+        for idx in sorted_indices:
+            mask = all_masks[idx]
+            score = all_scores[idx]
+            cls = all_classes[idx]
+            
+            # Check for duplicates (lenient for small particles)
+            is_duplicate = any(iou(mask, um) > 0.4 for um in unique_masks)
+            
+            if not is_duplicate:
+                unique_masks.append(mask)
+                unique_scores.append(score)
+                unique_classes.append(cls)
+    
+    system_logger.info(f"Multiscale iterative inference completed: {len(unique_masks)} unique masks for class {target_class}")
+    return unique_masks, unique_scores, unique_classes
 
-    for idx in sorted_indices:
-        mask = all_masks[idx]
-        score = all_scores[idx]
-        cls = all_classes[idx]
-
-        # Check for duplicates (lenient for small particles)
-        is_duplicate = any(iou(mask, um) > 0.4 for um in unique_masks)
-
-        if not is_duplicate:
-            unique_masks.append(mask)
-            unique_scores.append(score)
-            unique_classes.append(cls)
-
+def run_iterative_class_inference(
+    predictor, image, target_class, confidence_threshold=0.3, max_iters=5
+):
+    """
+    FIXED: Run iterative inference for a specific class with proper class-specific processing.
+    Now includes the same class-optimized postprocessing as run_class_specific_inference.
+    """
+    all_masks = []
+    all_scores = []
+    all_classes = []
+    prev_count = 0
+    no_new_mask_iters = 0
+    
+    # Class-specific parameters (from run_class_specific_inference)
+    if target_class == 0:  # Large particles
+        iou_threshold = 0.7
+        min_size = 25
+    else:  # Small particles
+        iou_threshold = 0.5  # More lenient for small particles
+        min_size = 5
+    
+    for iteration in range(max_iters):
+        system_logger.info(f"  Iteration {iteration + 1}/{max_iters} for class {target_class}")
+        
+        # Memory optimization
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            
+        # Run prediction
+        outputs = predictor(image)
+        pred_masks = outputs["instances"].to("cpu")._fields["pred_masks"].numpy()
+        pred_scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
+        pred_classes = outputs["instances"].to("cpu")._fields["pred_classes"].numpy()
+        
+        del outputs
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        # Filter for target class and confidence
+        class_mask = (pred_classes == target_class) & (pred_scores >= confidence_threshold)
+        filtered_masks = pred_masks[class_mask]
+        filtered_scores = pred_scores[class_mask]
+        filtered_classes = pred_classes[class_mask]
+        
+        # ADDED: Class-specific postprocessing (this was missing!)
+        if len(filtered_masks) > 0:
+            if target_class == 0:  # Large particles
+                processed_masks = postprocess_masks(
+                    filtered_masks, filtered_scores, image, min_crys_size=min_size
+                )
+            else:  # Small particles
+                processed_masks = postprocess_masks_small_particles(
+                    filtered_masks, filtered_scores, image, min_crys_size=min_size
+                )
+            
+            # Add processed masks from this iteration
+            if processed_masks:
+                for i, mask in enumerate(processed_masks):
+                    all_masks.append(mask)
+                    all_scores.append(filtered_scores[i])
+                    all_classes.append(target_class)
+        
+        # Deduplicate all masks with class-specific IoU threshold
+        unique_masks = []
+        unique_scores = []
+        unique_classes = []
+        
+        for i, mask in enumerate(all_masks):
+            is_duplicate = any(iou(mask, um) > iou_threshold for um in unique_masks)
+            if not is_duplicate:
+                unique_masks.append(mask)
+                unique_scores.append(all_scores[i])
+                unique_classes.append(all_classes[i])
+        
+        new_count = len(unique_masks)
+        added = new_count - prev_count
+        
+        system_logger.info(f"    Added {added} new masks (total: {new_count})")
+        
+        # EARLY STOPPING CONDITIONS
+        if added == 0:
+            no_new_mask_iters += 1
+        else:
+            no_new_mask_iters = 0
+        
+        # Stop if no new masks for 2 consecutive iterations
+        if no_new_mask_iters >= 2:
+            system_logger.info(f"    Stopping: No new masks for 2 consecutive iterations")
+            break
+        
+        # Your stopping condition: need at least 10 masks and 25% increase
+        if new_count >= 10 and iteration >= 2:
+            required_increase = max(1, int(prev_count * 0.25))  # 25% increase
+            if added < required_increase:
+                system_logger.info(
+                    f"    Stopping: Added {added} masks < required {required_increase} "
+                    f"(25% of {prev_count} existing masks). Total masks: {new_count}"
+                )
+                break
+        elif new_count < 10:
+            system_logger.info(f"    Continuing: Only {new_count} masks (need at least 10)")
+        
+        prev_count = new_count
+        all_masks = unique_masks.copy()
+        all_scores = unique_scores.copy()
+        all_classes = unique_classes.copy()
+    
+    system_logger.info(f"  Iterative class inference completed: {len(unique_masks)} masks after {iteration + 1} iterations")
     return unique_masks, unique_scores, unique_classes
