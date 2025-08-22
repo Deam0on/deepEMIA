@@ -386,14 +386,16 @@ def run_inference(
     threshold=0.65,
     draw_id=False,
     dataset_format="json",
-    rcnn=50,
-    pass_mode="single",
-    max_iters=10,
-    use_class_specific=None,
+    max_iters=1,
 ):
     """
     Runs inference on a dataset and saves the results.
-    Includes memory optimization to prevent OOM errors.
+    
+    SIMPLIFIED APPROACH:
+    - Auto-detects available models (R50/R101)
+    - Always uses class-specific iterative inference
+    - Universal postprocessing based on mask size heuristics
+    - Single parameter (max_iters) controls single vs multi-pass
     """
     dataset_info = read_dataset_info(CATEGORY_JSON)
     register_datasets(dataset_info, dataset_name, dataset_format=dataset_format)
@@ -408,20 +410,43 @@ def run_inference(
     del d
     gc.collect()
 
-    if rcnn == "combo":
-        predictors = []
-        for r in [50, 101]:
-            trained_model_paths = get_trained_model_paths(SPLIT_DIR, r)
-            predictor, _ = choose_and_use_model(
-                trained_model_paths, dataset_name, threshold, metadata, r
-            )
-            predictors.append(predictor)
+    # AUTO-DETECT AVAILABLE MODELS
+    system_logger.info("Auto-detecting available trained models...")
+    available_models = []
+    available_predictors = []
+    
+    for r in [50, 101]:
+        trained_model_paths = get_trained_model_paths(SPLIT_DIR, r)
+        if dataset_name in trained_model_paths:
+            system_logger.info(f"Found trained R{r} model for dataset {dataset_name}")
+            try:
+                predictor, _ = choose_and_use_model(
+                    trained_model_paths, dataset_name, threshold, metadata, r
+                )
+                if predictor is not None:
+                    available_models.append(r)
+                    available_predictors.append(predictor)
+            except Exception as e:
+                system_logger.warning(f"Failed to load R{r} model: {e}")
+        else:
+            system_logger.info(f"No trained R{r} model found for dataset {dataset_name}")
+    
+    # GRACEFUL EXIT IF NO MODELS FOUND
+    if not available_predictors:
+        error_msg = f"No trained models found for dataset '{dataset_name}'"
+        system_logger.error(error_msg)
+        system_logger.error("Please train models first using the train task")
+        raise FileNotFoundError(error_msg)
+    
+    # LOG DETECTED MODELS
+    model_info = ", ".join([f"R{r}" for r in available_models])
+    if len(available_predictors) > 1:
+        system_logger.info(f"Using COMBO inference with models: {model_info}")
     else:
-        trained_model_paths = get_trained_model_paths(SPLIT_DIR, rcnn)
-        predictor, _ = choose_and_use_model(
-            trained_model_paths, dataset_name, threshold, metadata, rcnn
-        )
-        predictors = [predictor]
+        system_logger.info(f"Using single model inference with: {model_info}")
+    
+    # Set predictors for inference
+    predictors = available_predictors
 
     image_folder_path = get_image_folder_path()
 
@@ -430,6 +455,18 @@ def run_inference(
     os.makedirs(path, exist_ok=True)
     inpath = image_folder_path
     images_name = [f for f in os.listdir(inpath) if is_image_file(f)]
+
+    # CALCULATE SIZE HEURISTIC
+    system_logger.info("Calculating mask size heuristics to determine small vs large classes...")
+    sample_images = [os.path.join(inpath, name) for name in images_name[:5]]  # Sample first 5 images
+    class_avg_sizes = calculate_average_mask_sizes(predictors, sample_images, metadata)
+    small_classes = determine_small_classes(class_avg_sizes, threshold_percentile=50)
+    
+    # Log inference strategy
+    if max_iters == 1:
+        system_logger.info("Using SINGLE-PASS class-specific inference")
+    else:
+        system_logger.info(f"Using MULTI-PASS class-specific inference (max {max_iters} iterations)")
 
     # Memory optimization: Process in smaller batches
     batch_size = min(10, len(images_name))
@@ -472,7 +509,7 @@ def run_inference(
         for idx_in_batch, name in enumerate(batch_names):
             idx = batch_start + idx_in_batch + 1
             system_logger.info(
-                f"Preparing masks for image {name} ({idx} out of {total_images})"
+                f"Processing image {name} ({idx} out of {total_images})"
             )
 
             # Memory optimization: Load image and clear previous image data
@@ -483,259 +520,118 @@ def run_inference(
                 system_logger.warning(f"Could not load image: {image_path}")
                 continue
 
-            # Load configuration for inference approach
-            if use_class_specific is not None:
-                # Use parameter passed to function (from CLI)
-                use_class_specific_inference = use_class_specific
-            else:
-                # Use config file setting
-                inference_settings = config.get("inference_settings", {})
-                use_class_specific_inference = inference_settings.get(
-                    "use_class_specific_inference", False
+            # SIMPLIFIED: Always run class-specific iterative inference
+            system_logger.info(f"Running class-specific inference for image {name}")
+
+            # Get number of classes from metadata
+            num_classes = len(metadata.thing_classes)
+
+            all_unique_masks = []
+            all_unique_scores = []
+            all_unique_classes = []
+
+            # Process each class separately
+            for target_class in range(num_classes):
+                class_name = metadata.thing_classes[target_class]
+                system_logger.info(f"Processing class {target_class} ({class_name})...")
+
+                # Class-specific parameters based on size heuristic
+                is_small_class = target_class in small_classes
+                
+                if is_small_class:
+                    confidence_thresh = 0.3  # Lower threshold for small particles
+                    iou_thresh = 0.5  # More lenient overlap
+                else:
+                    confidence_thresh = 0.5
+                    iou_thresh = 0.7
+
+                # Run inference for this class (iterative or single pass)
+                if max_iters > 1 and is_small_class:
+                    # Multi-scale + iterative for small particles
+                    class_masks, class_scores, class_classes = (
+                        run_multiscale_class_inference(
+                            predictors[0],  # Use first available predictor
+                            image,
+                            target_class,
+                            confidence_thresh,
+                            max_iters,
+                            small_classes,
+                        )
+                    )
+                elif max_iters > 1:
+                    # Iterative for large particles
+                    class_masks, class_scores, class_classes = (
+                        run_iterative_class_inference(
+                            predictors[0],
+                            image,
+                            target_class,
+                            small_classes,
+                            confidence_thresh,
+                            max_iters,
+                        )
+                    )
+                else:
+                    # Single pass for any class
+                    class_masks, class_scores, class_classes = (
+                        run_class_specific_inference(
+                            predictors[0],
+                            image,
+                            target_class,
+                            small_classes,
+                            confidence_thresh,
+                            iou_thresh,
+                        )
+                    )
+
+                system_logger.info(
+                    f"Class {target_class}: Found {len(class_masks)} instances"
                 )
 
-            if use_class_specific_inference:
-                # NEW: Class-specific inference approach
-                system_logger.info(f"Running class-specific inference for image {name}")
+                # Add to combined results
+                all_unique_masks.extend(class_masks)
+                all_unique_scores.extend(class_scores)
+                all_unique_classes.extend(class_classes)
 
-                # Get number of classes from metadata
-                num_classes = len(metadata.thing_classes)
+            # Final cross-class deduplication (optional, more lenient)
+            final_masks = []
+            final_scores = []
+            final_classes = []
 
-                all_unique_masks = []
-                all_unique_scores = []
-                all_unique_classes = []
-
-                # Process each class separately
-                for target_class in range(num_classes):
-                    class_name = metadata.thing_classes[target_class]
-                    system_logger.info(
-                        f"Processing class {target_class} ({class_name})..."
-                    )
-
-                    # Class-specific parameters
-                    if target_class == 0:  # Large particles
-                        confidence_thresh = 0.5
-                        iou_thresh = 0.7
-                    elif target_class == 1:  # Small particles
-                        confidence_thresh = 0.3  # Lower threshold for small particles
-                        iou_thresh = 0.5  # More lenient overlap
-                    else:
-                        confidence_thresh = 0.4
-                        iou_thresh = 0.6
-
-                    if pass_mode == "multi" and target_class == 1:
-                        # Multi-scale for small particles only
-                        class_masks, class_scores, class_classes = (
-                            run_multiscale_class_inference(
-                                predictors[0],
-                                image,
-                                target_class,
-                                confidence_thresh,
-                                max_iters,
-                            )
-                        )
-                    else:
-                        # Single pass for this class
-                        class_masks, class_scores, class_classes = (
-                            run_class_specific_inference(
-                                predictors[0],
-                                image,
-                                target_class,
-                                confidence_thresh,
-                                iou_thresh,
-                            )
-                        )
-
-                    system_logger.info(
-                        f"Class {target_class}: Found {len(class_masks)} instances"
-                    )
-
-                    # Add to combined results
-                    all_unique_masks.extend(class_masks)
-                    all_unique_scores.extend(class_scores)
-                    all_unique_classes.extend(class_classes)
-
-                # Final cross-class deduplication (optional, more lenient)
-                final_masks = []
-                final_scores = []
-                final_classes = []
-
-                for i, (mask, score, cls) in enumerate(
-                    zip(all_unique_masks, all_unique_scores, all_unique_classes)
+            for i, (mask, score, cls) in enumerate(
+                zip(all_unique_masks, all_unique_scores, all_unique_classes)
+            ):
+                # Only check against same class or very high overlap with different class
+                is_duplicate = False
+                for j, (existing_mask, existing_cls) in enumerate(
+                    zip(final_masks, final_classes)
                 ):
-                    # Only check against same class or very high overlap with different class
-                    is_duplicate = False
-                    for j, (existing_mask, existing_cls) in enumerate(
-                        zip(final_masks, final_classes)
-                    ):
-                        overlap = iou(mask, existing_mask)
+                    overlap = iou(mask, existing_mask)
 
-                        if cls == existing_cls:
-                            # Same class: normal threshold
-                            threshold_val = 0.7
-                        else:
-                            # Different class: only remove if very high overlap
-                            threshold_val = 0.9
+                    if cls == existing_cls:
+                        # Same class: normal threshold
+                        threshold_val = 0.7
+                    else:
+                        # Different class: only remove if very high overlap
+                        threshold_val = 0.9
 
-                        if overlap > threshold_val:
-                            # Keep the one with higher confidence
-                            if score > final_scores[j]:
-                                final_masks[j] = mask
-                                final_scores[j] = score
-                                final_classes[j] = cls
-                            is_duplicate = True
-                            break
+                    if overlap > threshold_val:
+                        # Keep the one with higher confidence
+                        if score > final_scores[j]:
+                            final_masks[j] = mask
+                            final_scores[j] = score
+                            final_classes[j] = cls
+                        is_duplicate = True
+                        break
 
-                    if not is_duplicate:
-                        final_masks.append(mask)
-                        final_scores.append(score)
-                        final_classes.append(cls)
+                if not is_duplicate:
+                    final_masks.append(mask)
+                    final_scores.append(score)
+                    final_classes.append(cls)
 
-                unique_masks = final_masks
-                unique_scores = final_scores
-                unique_classes = final_classes
-                unique_sources = [0] * len(unique_masks)  # All from same source
-
-            else:
-                # ORIGINAL: Traditional inference approach
-                if rcnn == "combo":
-                    if pass_mode == "multi":
-                        unique_masks, unique_scores, unique_sources = (
-                            iterative_combo_predictors(
-                                predictors,
-                                image,
-                                iou_threshold=0.7,
-                                min_increase=0.10,
-                                max_iters=max_iters,
-                            )
-                        )
-                        # For combo mode, we need to get class predictions for each mask
-                        unique_classes = []
-                        # Use the first predictor to get class information
-                        temp_outputs = predictors[0](image)
-                        temp_classes = (
-                            temp_outputs["instances"]
-                            .to("cpu")
-                            ._fields["pred_classes"]
-                            .numpy()
-                        )
-
-                        # Assign classes to masks (simplified - assumes same order)
-                        for i in range(len(unique_masks)):
-                            class_idx = temp_classes[i] if i < len(temp_classes) else 0
-                            unique_classes.append(class_idx)
-
-                        del temp_outputs
-                        gc.collect()
-
-                    else:  # single pass
-                        all_masks = []
-                        all_scores = []
-                        all_sources = []
-                        all_classes = []
-
-                        for pred_idx, predictor in enumerate(predictors):
-                            if torch.cuda.is_available():
-                                torch.cuda.empty_cache()
-
-                            outputs = predictor(image)
-                            masks = postprocess_masks(
-                                np.asarray(
-                                    outputs["instances"].to("cpu")._fields["pred_masks"]
-                                ),
-                                outputs["instances"]
-                                .to("cpu")
-                                ._fields["scores"]
-                                .numpy(),
-                                image,
-                            )
-                            scores = (
-                                outputs["instances"].to("cpu")._fields["scores"].numpy()
-                            )
-                            classes = (
-                                outputs["instances"]
-                                .to("cpu")
-                                ._fields["pred_classes"]
-                                .numpy()
-                            )
-
-                            del outputs
-                            if torch.cuda.is_available():
-                                torch.cuda.empty_cache()
-
-                            if masks:
-                                for i, mask in enumerate(masks):
-                                    all_masks.append(mask)
-                                    all_scores.append(scores[i])
-                                    all_sources.append(pred_idx)
-                                    all_classes.append(classes[i])
-
-                            del masks, scores, classes
-                            gc.collect()
-                        # Deduplicate while preserving class information
-                        unique_masks = []
-                        unique_scores = []
-                        unique_sources = []
-                        unique_classes = []
-
-                        for i, mask in enumerate(all_masks):
-                            if not any(iou(mask, um) > 0.7 for um in unique_masks):
-                                unique_masks.append(mask)
-                                unique_scores.append(all_scores[i])
-                                unique_sources.append(all_sources[i])
-                                unique_classes.append(all_classes[i])
-
-                        del all_masks, all_scores, all_sources, all_classes
-                        gc.collect()
-                else:
-                    # Single model logic with class prediction
-                    if pass_mode == "multi":
-                        system_logger.info(
-                            f"Running iterative single model (R{rcnn}) inference for {max_iters} iterations"
-                        )
-                        unique_masks, unique_scores, unique_sources, unique_classes = (
-                            iterative_single_predictor_with_classes(
-                                predictors[0],  # Single predictor
-                                image,
-                                iou_threshold=0.7,
-                                min_increase=0.10,
-                                max_iters=max_iters,
-                            )
-                        )
-                    else:  # single pass
-                        system_logger.info(f"Running single-pass R{rcnn} inference")
-                        if torch.cuda.is_available():
-                            torch.cuda.empty_cache()
-
-                        outputs = predictors[0](image)
-                        masks = postprocess_masks(
-                            np.asarray(
-                                outputs["instances"].to("cpu")._fields["pred_masks"]
-                            ),
-                            outputs["instances"].to("cpu")._fields["scores"].numpy(),
-                            image,
-                        )
-                        scores = (
-                            outputs["instances"].to("cpu")._fields["scores"].numpy()
-                        )
-                        classes = (
-                            outputs["instances"]
-                            .to("cpu")
-                            ._fields["pred_classes"]
-                            .numpy()
-                        )
-
-                        del outputs
-                        if torch.cuda.is_available():
-                            torch.cuda.empty_cache()
-
-                        unique_masks = masks if masks else []
-                        unique_scores = scores.tolist() if len(scores) > 0 else []
-                        unique_sources = [0] * len(unique_masks)
-                        unique_classes = classes.tolist() if len(classes) > 0 else []
-
-                        del masks, scores, classes
-                        gc.collect()
+            unique_masks = final_masks
+            unique_scores = final_scores
+            unique_classes = final_classes
+            unique_sources = [0] * len(unique_masks)  # All from same source
 
             # FIXED: Log results with class distribution for ALL classes
             class_counts = {}
@@ -1317,7 +1213,7 @@ def run_class_specific_inference(
         )
     else:  # Small particles (class 1+)
         min_size = 5  # Much smaller minimum
-        processed_masks = postprocess_masks_small_particles(
+        processed_masks = postprocess_masks(
             filtered_masks, filtered_scores, image, min_crys_size=min_size
         )
 
@@ -1339,44 +1235,168 @@ def run_class_specific_inference(
     return unique_masks, unique_scores, unique_classes
 
 
-def postprocess_masks_small_particles(ori_mask, ori_score, image, min_crys_size=5):
+def calculate_average_mask_sizes(predictors, images_sample, metadata):
     """
-    Gentler postprocessing specifically for small particles.
+    Calculate average mask sizes per class to determine which classes are "small" vs "large".
+    
+    This heuristic samples a few images to determine typical mask sizes for each class,
+    enabling universal postprocessing without hardcoded assumptions.
+    
+    Parameters:
+    - predictors: List of model predictors
+    - images_sample: Sample of image paths to analyze
+    - metadata: Dataset metadata
+    
+    Returns:
+    - dict: {class_id: average_mask_size} for each detected class
+    """
+    system_logger.info("Calculating average mask sizes per class for heuristic...")
+    
+    class_sizes = {}  # {class_id: [sizes]}
+    
+    # Process a sample of images (max 5 to be fast)
+    sample_size = min(5, len(images_sample))
+    sample_images = images_sample[:sample_size]
+    
+    for i, image_path in enumerate(sample_images):
+        system_logger.info(f"Analyzing sample image {i+1}/{sample_size} for size heuristic")
+        
+        image = cv2.imread(image_path)
+        if image is None:
+            continue
+            
+        # Use first available predictor for sampling
+        predictor = predictors[0]
+        outputs = predictor(image)
+        
+        pred_masks = outputs["instances"].to("cpu")._fields["pred_masks"].numpy()
+        pred_classes = outputs["instances"].to("cpu")._fields["pred_classes"].numpy()
+        pred_scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
+        
+        # Only consider high-confidence predictions for size analysis
+        confident_mask = pred_scores >= 0.7
+        confident_masks = pred_masks[confident_mask]
+        confident_classes = pred_classes[confident_mask]
+        
+        for mask, cls in zip(confident_masks, confident_classes):
+            mask_size = np.sum(mask)
+            if cls not in class_sizes:
+                class_sizes[cls] = []
+            class_sizes[cls].append(mask_size)
+        
+        del outputs, pred_masks, pred_classes, pred_scores, image
+        gc.collect()
+    
+    # Calculate averages
+    class_avg_sizes = {}
+    for cls, sizes in class_sizes.items():
+        if sizes:
+            avg_size = np.mean(sizes)
+            class_avg_sizes[cls] = avg_size
+            class_name = metadata.thing_classes[cls] if cls < len(metadata.thing_classes) else f"class_{cls}"
+            system_logger.info(f"Class {cls} ({class_name}): average mask size = {avg_size:.1f} pixels")
+    
+    return class_avg_sizes
+
+
+def determine_small_classes(class_avg_sizes, threshold_percentile=50):
+    """
+    Determine which classes should be considered "small" based on average mask sizes.
+    
+    Parameters:
+    - class_avg_sizes: Dict of {class_id: average_mask_size}
+    - threshold_percentile: Percentile threshold (classes below this are "small")
+    
+    Returns:
+    - set: Set of class IDs that are considered "small"
+    """
+    if not class_avg_sizes:
+        return set()
+    
+    sizes = list(class_avg_sizes.values())
+    threshold_size = np.percentile(sizes, threshold_percentile)
+    
+    small_classes = {cls for cls, size in class_avg_sizes.items() if size <= threshold_size}
+    
+    system_logger.info(f"Size threshold: {threshold_size:.1f} pixels (50th percentile)")
+    system_logger.info(f"Small classes (≤ threshold): {sorted(small_classes)}")
+    system_logger.info(f"Large classes (> threshold): {sorted(set(class_avg_sizes.keys()) - small_classes)}")
+    
+    return small_classes
+
+
+def postprocess_masks_universal(ori_mask, ori_score, image, target_class, is_small_class, min_crys_size=None):
+    """
+    UNIVERSAL postprocessing that adapts based on whether the class is determined to be "small" or "large".
+    
+    Parameters:
+    - ori_mask: Original masks
+    - ori_score: Original scores
+    - image: Input image
+    - target_class: Target class ID
+    - is_small_class: Boolean indicating if this class is considered "small"
+    - min_crys_size: Minimum crystal size (auto-calculated if None)
+    
+    Returns:
+    - list: Processed masks
     """
     if len(ori_mask) == 0:
         return []
-
-    # Much lower score threshold for small particles
-    score_threshold = 0.2
+    
+    # Adaptive parameters based on class type
+    if is_small_class:
+        # Gentler processing for small particles
+        score_threshold = 0.2
+        kernel_size = 1  # Minimal morphological operations
+        fill_holes = True  # Fill holes but preserve small features
+        
+        # Auto-calculate minimum size if not provided
+        if min_crys_size is None:
+            image_area = image.shape[0] * image.shape[1]
+            min_crys_size = max(5, int(image_area * 0.00001))  # 0.001% of image area
+            
+    else:
+        # Standard processing for large particles
+        score_threshold = 0.3
+        kernel_size = 2
+        fill_holes = True
+        
+        # Auto-calculate minimum size if not provided
+        if min_crys_size is None:
+            image_area = image.shape[0] * image.shape[1]
+            min_crys_size = max(25, int(image_area * 0.0001))  # 0.01% of image area
+    
+    # Apply score filtering
     keep_indices = ori_score >= score_threshold
-
     if not np.any(keep_indices):
         return []
-
+    
     filtered_masks = ori_mask[keep_indices]
-
+    
     processed_masks = []
     for mask in filtered_masks:
-        # Fill holes but preserve small features
-        mask = binary_fill_holes(mask).astype(np.uint8)
-
-        # Very gentle morphological operations
-        small_kernel = disk(1)  # Smallest possible kernel
-        mask = erosion(mask, small_kernel)
-        mask = dilation(mask, small_kernel)
-
-        # Keep if above minimum size
+        # Fill holes
+        if fill_holes:
+            mask = binary_fill_holes(mask).astype(np.uint8)
+        
+        # Morphological operations
+        if kernel_size > 0:
+            kernel = disk(kernel_size)
+            mask = erosion(mask, kernel)
+            mask = dilation(mask, kernel)
+        
+        # Size filtering
         if np.sum(mask) >= min_crys_size:
             processed_masks.append(mask)
-
+    
     return processed_masks
 
 
 def run_multiscale_class_inference(
-    predictor, image, target_class, confidence_threshold=0.3, max_iters=5
+    predictor, image, target_class, confidence_threshold=0.3, max_iters=5, small_classes=set()
 ):
     """
-    Multi-scale inference with ITERATIVE passes for small particles (class 1).
+    Multi-scale inference with ITERATIVE passes for small particles.
     Now includes proper iterative inference at each scale.
     """
     scales = [0.8, 1.0, 1.2, 1.5]  # Multiple scales to catch small particles
@@ -1397,7 +1417,7 @@ def run_multiscale_class_inference(
         
         # **NEW: Run ITERATIVE inference at this scale**
         scale_masks, scale_scores, scale_classes = run_iterative_class_inference(
-            predictor, scaled_image, target_class, confidence_threshold, max_iters
+            predictor, scaled_image, target_class, small_classes, confidence_threshold, max_iters
         )
         
         # Scale masks back to original size
@@ -1444,11 +1464,10 @@ def run_multiscale_class_inference(
     return unique_masks, unique_scores, unique_classes
 
 def run_iterative_class_inference(
-    predictor, image, target_class, confidence_threshold=0.3, max_iters=5
+    predictor, image, target_class, small_classes, confidence_threshold=0.3, max_iters=5
 ):
     """
-    FIXED: Run iterative inference for a specific class with proper class-specific processing.
-    Now includes the same class-optimized postprocessing as run_class_specific_inference.
+    Run iterative inference for a specific class with universal postprocessing.
     """
     all_masks = []
     all_scores = []
@@ -1456,13 +1475,12 @@ def run_iterative_class_inference(
     prev_count = 0
     no_new_mask_iters = 0
     
-    # Class-specific parameters (from run_class_specific_inference)
-    if target_class == 0:  # Large particles
-        iou_threshold = 0.7
-        min_size = 25
-    else:  # Small particles
+    # Class-specific parameters based on size heuristic
+    is_small_class = target_class in small_classes
+    if is_small_class:
         iou_threshold = 0.5  # More lenient for small particles
-        min_size = 5
+    else:
+        iou_threshold = 0.7
     
     for iteration in range(max_iters):
         system_logger.info(f"  Iteration {iteration + 1}/{max_iters} for class {target_class}")
@@ -1487,16 +1505,11 @@ def run_iterative_class_inference(
         filtered_scores = pred_scores[class_mask]
         filtered_classes = pred_classes[class_mask]
         
-        # ADDED: Class-specific postprocessing (this was missing!)
+        # UNIVERSAL postprocessing based on size heuristic
         if len(filtered_masks) > 0:
-            if target_class == 0:  # Large particles
-                processed_masks = postprocess_masks(
-                    filtered_masks, filtered_scores, image, min_crys_size=min_size
-                )
-            else:  # Small particles
-                processed_masks = postprocess_masks_small_particles(
-                    filtered_masks, filtered_scores, image, min_crys_size=min_size
-                )
+            processed_masks = postprocess_masks_universal(
+                filtered_masks, filtered_scores, image, target_class, is_small_class
+            )
             
             # Add processed masks from this iteration
             if processed_masks:

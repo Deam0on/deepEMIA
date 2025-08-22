@@ -197,11 +197,11 @@ Evaluation:
   python main.py --task evaluate --dataset_name polyhipes --visualize --rcnn combo
 
 Inference:
-  # Single pass inference
-  python main.py --task inference --dataset_name polyhipes --threshold 0.7 --visualize
+  # Single pass inference (auto-detects available models)
+  python main.py --task inference --dataset_name polyhipes --threshold 0.7 --max_iters 1 --visualize
   
-  # Multi-pass inference with deduplication
-  python main.py --task inference --dataset_name polyhipes --threshold 0.65 --pass multi 10 --visualize --id
+  # Multi-pass inference with iterative refinement
+  python main.py --task inference --dataset_name polyhipes --threshold 0.65 --max_iters 10 --visualize --id
 
 TASK DESCRIPTIONS:
 
@@ -221,7 +221,8 @@ ADVANCED FEATURES:
 
 • Hyperparameter Optimization: Use --optimize --n-trials N for automated tuning
 • Data Augmentation: Use --augment for enhanced training robustness  
-• Multi-pass Inference: Use --pass multi N for iterative deduplication
+• Multi-iteration Inference: Use --max_iters N for iterative refinement (N>1)
+• Universal Class Processing: Inference always uses class-specific processing with size heuristics
 • Visualization: Use --visualize to save prediction overlays
 • Instance IDs: Use --id to draw instance identifiers on visualizations
 
@@ -293,14 +294,21 @@ For guided interactive mode: python cli_main.py
     )
     parser.set_defaults(draw_id=False)
     parser.add_argument(
+        "--max_iters",
+        type=int,
+        default=1,
+        help="Number of inference iterations. 1 = single-pass (faster), >1 = multi-pass iterative (more accurate). [default: 1]",
+    )
+    parser.add_argument(
         "--rcnn",
         type=str,
         default="101",
         choices=["50", "101", "combo"],
-        help="RCNN backbone architecture:\n"
+        help="RCNN backbone architecture for train/evaluate tasks:\n"
         "• '50': ResNet-50 (faster, good for small particles)\n"
         "• '101': ResNet-101 (slower, good for large particles)\n"
-        "• 'combo': Both models for universal detection [default: 101]",
+        "• 'combo': Both models [default: 101]\n"
+        "Note: Inference task auto-detects available models",
     )
     parser.add_argument(
         "--augment",
@@ -320,20 +328,10 @@ For guided interactive mode: python cli_main.py
         help="Number of Optuna optimization trials to run. More trials = better optimization but longer time. [default: 10]",
     )
     parser.add_argument(
-        "--pass",
-        dest="pass_mode",
-        nargs="+",
-        default=["single"],
-        metavar=("MODE", "MAX_ITERS"),
-        help="Inference pass mode:\n"
-        "• 'single': One inference pass per image (faster)\n"
-        "• 'multi [N]': Multi-pass with iterative deduplication up to N iterations (more accurate)\n"
-        "Example: --pass multi 5",
-    )
-    parser.add_argument(
-        "--class-specific",
-        action="store_true",
-        help="Use class-specific inference (processes each class separately). Recommended for datasets with small particles that might be filtered out during traditional inference.",
+        "--max_iters",
+        type=int,
+        default=1,
+        help="Number of inference iterations. 1 = single-pass (faster), >1 = multi-pass iterative (more accurate). [default: 1]",
     )
 
     args = parser.parse_args()
@@ -341,17 +339,6 @@ For guided interactive mode: python cli_main.py
     # Validate arguments
     if args.task != "setup" and not args.dataset_name:
         parser.error(f"--dataset_name is required for task '{args.task}'")
-
-    # Parse pass_mode and max_iters
-    if args.pass_mode[0] == "multi":
-        pass_mode = "multi"
-        try:
-            max_iters = int(args.pass_mode[1])
-        except (IndexError, ValueError):
-            max_iters = 10  # Default if not provided
-    else:
-        pass_mode = "single"
-        max_iters = 1  # Not used in single mode
 
     if args.task == "setup":
         setup_config()
@@ -433,7 +420,7 @@ For guided interactive mode: python cli_main.py
 
     elif args.task == "inference":
         system_logger.info(
-            f"Running inference on dataset {args.dataset_name} using '{args.dataset_format}' format and RCNN {args.rcnn}..."
+            f"Running inference on dataset {args.dataset_name} using '{args.dataset_format}' format with auto-detected models..."
         )
 
         # Remove .png, .csv, .jpg files in the current directory
@@ -462,10 +449,7 @@ For guided interactive mode: python cli_main.py
             threshold=args.threshold,
             draw_id=args.draw_id,
             dataset_format=args.dataset_format,
-            rcnn=args.rcnn,
-            pass_mode=pass_mode,
-            max_iters=max_iters,
-            use_class_specific=getattr(args, "class_specific", None),
+            max_iters=args.max_iters,
         )
 
         task_end_time = datetime.now()
@@ -480,10 +464,9 @@ For guided interactive mode: python cli_main.py
             from src.utils.gcs_utils import upload_inference_results
 
             # Determine model info for remote path
-            if args.rcnn == "combo":
-                model_info = f"combo_{pass_mode}"
-            else:
-                model_info = f"R{args.rcnn}_{pass_mode}"
+            # Create model info for upload path
+            mode_info = "multi" if args.max_iters > 1 else "single"
+            model_info = f"auto_models_{mode_info}_{args.max_iters}iters"
 
             try:
                 upload_time_taken = upload_inference_results(

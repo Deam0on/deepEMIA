@@ -589,6 +589,7 @@ def inference_task():
     print("\nINFERENCE TASK")
     print("This will run inference on new images using your trained model.")
     print("The system will detect, measure, and analyze particles in your images.")
+    print("\nNOTE: System now auto-detects available models and always uses class-specific inference")
 
     dataset_name = get_dataset_selection_with_retry("Select dataset for inference")
 
@@ -603,18 +604,6 @@ def inference_task():
         max_val=1.0,
     )
 
-    # RCNN backbone
-    rcnn = get_user_choice(
-        "\nSelect RCNN backbone architecture:",
-        [
-            "50 (R50 - faster, good for small particles)",
-            "101 (R101 - slower, good for large particles)",
-            "combo (both models - most accurate, recommended)",
-        ],
-        default="combo (both models - most accurate, recommended)",
-    )
-    rcnn_value = rcnn.split()[0]
-
     # Dataset format
     dataset_format = get_user_choice(
         "\nDataset annotation format:",
@@ -623,31 +612,12 @@ def inference_task():
     )
     dataset_format_value = dataset_format.split()[0]
 
-    # Pass mode
-    print("\nInference Pass Mode:")
-    print("   Single: One detection pass per image (faster)")
-    print("   Multi: Multiple passes with iterative deduplication (more accurate)")
-    pass_mode = get_user_choice(
-        "Choose inference mode:",
-        ["single (one pass, faster)", "multi (iterative deduplication, more accurate)"],
-        default="single (one pass, faster)",
-    )
-
-    max_iters = None
-    if pass_mode.startswith("multi"):
-        max_iters = get_int_input(
-            "Maximum iterations for multi-pass", default=10, min_val=1, max_val=50
-        )
-
-    # Class-specific inference option
-    print("\nClass-Specific Inference:")
-    print("   Traditional: Detects all classes together (standard approach)")
-    print(
-        "   Class-specific: Processes each class separately (better for small particles)"
-    )
-    use_class_specific = get_yes_no(
-        "Use class-specific inference (recommended for datasets with small particles)?",
-        default=True,
+    # Simplified iteration control
+    print("\nInference Mode:")
+    print("   1 iteration = Single-pass (faster)")
+    print("   Multiple iterations = Multi-pass with iterative refinement (more accurate)")
+    max_iters = get_int_input(
+        "Number of iterations", default=1, min_val=1, max_val=50
     )
 
     # Visualization options
@@ -668,21 +638,11 @@ def inference_task():
         dataset_name,
         "--threshold",
         str(threshold),
-        "--rcnn",
-        rcnn_value,
         "--dataset_format",
         dataset_format_value,
+        "--max_iters",
+        str(max_iters),
     ]
-
-    # Pass mode
-    if pass_mode.startswith("multi"):
-        args.extend(["--pass", "multi", str(max_iters)])
-    else:
-        args.extend(["--pass", "single"])
-
-    # Class-specific inference
-    if use_class_specific:
-        args.append("--class-specific")
 
     if visualize:
         args.append("--visualize")
