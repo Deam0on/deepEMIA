@@ -327,12 +327,6 @@ For guided interactive mode: python cli_main.py
         default=10,
         help="Number of Optuna optimization trials to run. More trials = better optimization but longer time. [default: 10]",
     )
-    parser.add_argument(
-        "--max_iters",
-        type=int,
-        default=1,
-        help="Number of inference iterations. 1 = single-pass (faster), >1 = multi-pass iterative (more accurate). [default: 1]",
-    )
 
     args = parser.parse_args()
 
