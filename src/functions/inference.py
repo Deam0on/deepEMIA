@@ -35,10 +35,8 @@ import yaml
 from detectron2.data import (
     DatasetCatalog,
     MetadataCatalog,
-    build_detection_train_loader,
 )
 from detectron2.data import detection_utils as utils
-from detectron2.engine import DefaultTrainer
 from detectron2.utils.visualizer import ColorMode, Visualizer
 from skimage.morphology import disk, erosion, dilation
 from scipy.ndimage import binary_fill_holes
@@ -96,30 +94,6 @@ def custom_mapper(dataset_dicts):
     instances = utils.annotations_to_instances(annos, image.shape[:2])
     dataset_dicts["instances"] = utils.filter_empty_instances(instances)
     return dataset_dicts
-
-
-class CustomTrainer(DefaultTrainer):
-    """
-    Custom trainer class extending Detectron2's DefaultTrainer to use a custom data mapper.
-
-    This trainer implements:
-    - Custom data loading pipeline
-    - Data augmentation during training
-    - Instance segmentation support
-    """
-
-    @classmethod
-    def build_train_loader(cls, cfg):
-        """
-        Builds a custom training data loader with the custom mapper.
-
-        Parameters:
-        - cfg (CfgNode): Detectron2 configuration object
-
-        Returns:
-        - DataLoader: PyTorch DataLoader with custom mapper
-        """
-        return build_detection_train_loader(cfg, mapper=custom_mapper)
 
 
 def get_image_folder_path(base_path=Path.home() / "DATASET" / "INFERENCE"):

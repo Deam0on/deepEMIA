@@ -48,19 +48,6 @@ class DefaultHyperparameters:
     MAX_ITER = None  # Will be calculated based on dataset size
 
 
-# File and directory patterns
-class FilePatterns:
-    """File patterns and extensions."""
-
-    IMAGE_EXTENSIONS = (".tif", ".tiff", ".png", ".jpg", ".jpeg", ".bmp", ".gif")
-    LABEL_EXTENSIONS = (".json",)
-    MODEL_EXTENSIONS = (".pth", ".pkl")
-
-    # File naming patterns
-    LOG_FILE_PATTERN = "system_{timestamp}.log"
-    MODEL_FILE_PATTERN = "{dataset_name}_{backbone}_model.pth"
-
-
 # Processing limits and constraints
 class ProcessingLimits:
     """Limits for processing operations."""
@@ -90,25 +77,6 @@ class ScaleBarDefaults:
     HEIGHT_FACTOR = 0.067
 
 
-# Color and visualization settings
-class VisualizationDefaults:
-    """Default settings for visualization."""
-
-    # Colors (BGR format for OpenCV)
-    BBOX_COLOR = (0, 255, 0)  # Green
-    MASK_COLOR = (255, 0, 0)  # Blue
-    TEXT_COLOR = (255, 255, 255)  # White
-    SCALE_BAR_COLOR = (0, 0, 255)  # Red
-
-    # Font settings
-    FONT_SCALE = 0.5
-    FONT_THICKNESS = 1
-
-    # Transparency
-    MASK_ALPHA = 0.3
-    OVERLAY_ALPHA = 0.7
-
-
 # Dataset splitting defaults
 class DatasetDefaults:
     """Default settings for dataset operations."""
@@ -121,16 +89,6 @@ class DatasetDefaults:
     FLIP_PROB = 0.5
     ROTATION_PROB = 0.3
     BRIGHTNESS_PROB = 0.2
-
-
-# Network and communication settings
-class NetworkDefaults:
-    """Default network and communication settings."""
-
-    CONNECTION_TIMEOUT = 30  # seconds
-    READ_TIMEOUT = 300  # seconds
-    MAX_RETRIES = 3
-    BACKOFF_FACTOR = 2.0
 
 
 # Measurement defaults
@@ -148,57 +106,3 @@ class MeasurementDefaults:
     D10_PERCENTILE = 0.10
     D50_PERCENTILE = 0.50
     D90_PERCENTILE = 0.90
-
-
-# Configuration for various tasks
-TASK_CONFIGS: Dict[str, Dict[str, Any]] = {
-    "prepare": {
-        "default_test_size": DatasetDefaults.TEST_SIZE,
-        "random_seed": DatasetDefaults.RANDOM_SEED,
-    },
-    "train": {
-        "default_lr": DefaultHyperparameters.BASE_LR,
-        "default_batch_size": DefaultHyperparameters.IMS_PER_BATCH,
-        "max_iterations": ProcessingLimits.MAX_ITERATIONS,
-    },
-    "inference": {
-        "default_threshold": DefaultThresholds.SCORE_THRESHOLD,
-        "iou_threshold": DefaultThresholds.IOU_THRESHOLD,
-        "max_iterations": ProcessingLimits.MAX_ITERATIONS,
-    },
-    "evaluate": {
-        "confidence_threshold": DefaultThresholds.SCORE_THRESHOLD,
-        "iou_threshold": DefaultThresholds.IOU_THRESHOLD,
-    },
-}
-
-
-# Error messages
-class ErrorMessages:
-    """Standard error messages."""
-
-    CONFIG_NOT_FOUND = "Configuration file not found: {path}"
-    INVALID_CONFIG = "Invalid configuration: {details}"
-    MODEL_LOAD_FAILED = "Failed to load model: {path}"
-    DATASET_NOT_FOUND = "Dataset not found: {name}"
-    INSUFFICIENT_SPACE = (
-        "Insufficient disk space: {required} GB required, {available} GB available"
-    )
-    NETWORK_ERROR = "Network operation failed: {details}"
-    FILE_OPERATION_FAILED = "File operation failed: {operation} on {path}"
-
-
-# Success messages
-class SuccessMessages:
-    """Standard success messages."""
-
-    CONFIG_LOADED = "Configuration loaded successfully from {path}"
-    MODEL_SAVED = "Model saved successfully to {path}"
-    DATASET_PREPARED = (
-        "Dataset prepared successfully: {train_size} train, {test_size} test samples"
-    )
-    TRAINING_COMPLETE = "Training completed successfully in {duration:.2f} seconds"
-    INFERENCE_COMPLETE = (
-        "Inference completed on {num_images} images in {duration:.2f} seconds"
-    )
-    EVALUATION_COMPLETE = "Evaluation completed: AP = {ap:.3f}"

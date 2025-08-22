@@ -508,15 +508,6 @@ For guided interactive mode: python cli_main.py
             except subprocess.CalledProcessError as e:
                 system_logger.warning(f"Failed to upload logs directory: {e}")
 
-            # # Delete logs directory after upload
-            # try:
-            #     shutil.rmtree(logs_dir)
-            #     system_logger.info(f"Deleted local logs directory: {logs_dir}")
-            # except Exception as e:
-            #     system_logger.warning(
-            #         f"Could not delete local logs directory {logs_dir}: {e}"
-            #     )
-
         # Delete result files after upload
         for pattern in ("*.png", "*.csv"):
             for file_path in Path.home().glob(pattern):
