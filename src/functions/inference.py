@@ -1032,6 +1032,32 @@ def run_inference(
             f.write(f"Class {i} ({class_name}): RGB{color_rgb}\n")
 
     system_logger.info(f"Class color legend saved to: {legend_path}")
+    
+    # ADD THIS CLEANUP CODE AT THE END:
+    # Clean up individual mask files after inference completion
+    system_logger.info("Cleaning up individual mask files...")
+    
+    mask_files_removed = 0
+    mask_pattern = os.path.join(output_dir, "*_mask_*_*.jpg")
+    
+    try:
+        import glob
+        for mask_file in glob.glob(mask_pattern):
+            try:
+                os.remove(mask_file)
+                mask_files_removed += 1
+            except Exception as e:
+                system_logger.warning(f"Could not remove mask file {mask_file}: {e}")
+        
+        if mask_files_removed > 0:
+            system_logger.info(f"Cleaned up {mask_files_removed} individual mask files")
+        else:
+            system_logger.debug("No mask files found to clean up")
+            
+    except Exception as e:
+        system_logger.warning(f"Error during mask file cleanup: {e}")
+    
+    system_logger.info("Inference completed successfully")
 
 
 def iterative_single_predictor_with_classes(
