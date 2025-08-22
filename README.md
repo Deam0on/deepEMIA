@@ -112,6 +112,26 @@ paths:
   category_json: "~/deepEMIA/dataset_info.json"
   # ... other paths
 measure_contrast_distribution: false  # Enable for particle analysis
+
+# Inference configuration
+inference_settings:
+  use_class_specific_inference: true  # Use class-specific processing
+  iterative_stopping:
+    min_total_masks: 10          # Minimum masks before considering early stop
+    min_relative_increase: 0.25  # 25% minimum increase requirement
+    max_consecutive_zero: 1      # Stop after N iterations with no new masks
+    min_iterations: 2            # Always run at least this many iterations
+  class_specific_settings:
+    class_0:  # Large particles
+      confidence_threshold: 0.5
+      iou_threshold: 0.7
+      min_size: 25
+    class_1:  # Small particles  
+      confidence_threshold: 0.3
+      iou_threshold: 0.5
+      min_size: 5
+      use_multiscale: true
+
 rcnn_hyperparameters:
   default:
     R50:
@@ -190,6 +210,8 @@ python main.py --task inference --dataset_name polyhipes --threshold 0.7 --visua
 - `--pass`: Inference mode (`single` or `multi [max_iters]`) - default: `single`
   - `single`: One inference pass per image
   - `multi N`: Iterative deduplication up to N iterations (default: 10)
+    - Early stopping based on configuration: `max_consecutive_zero`, `min_total_masks`, `min_relative_increase`
+    - Configurable via `inference_settings.iterative_stopping` in config.yaml
 
 For complete usage information and examples:
 

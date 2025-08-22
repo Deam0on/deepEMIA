@@ -54,6 +54,13 @@ with open(Path.home() / "deepEMIA" / "config" / "config.yaml", "r") as f:
 
 measure_contrast_distribution = config.get("measure_contrast_distribution", False)
 
+# Load iterative stopping settings
+iterative_stopping = config.get("inference_settings", {}).get("iterative_stopping", {})
+MIN_TOTAL_MASKS = iterative_stopping.get("min_total_masks", 10)
+MIN_RELATIVE_INCREASE = iterative_stopping.get("min_relative_increase", 0.25)
+MAX_CONSECUTIVE_ZERO = iterative_stopping.get("max_consecutive_zero", 2)
+MIN_ITERATIONS = iterative_stopping.get("min_iterations", 2)
+
 # Resolve paths
 SPLIT_DIR = Path(config["paths"]["split_dir"]).expanduser().resolve()
 CATEGORY_JSON = Path(config["paths"]["category_json"]).expanduser().resolve()
@@ -316,18 +323,18 @@ def iterative_combo_predictors(
         else:
             no_new_mask_iters = 0
 
-        # Stop if no new masks for 2 consecutive iterations
-        if no_new_mask_iters >= 2:
+        # Stop if no new masks for configured consecutive iterations
+        if no_new_mask_iters >= MAX_CONSECUTIVE_ZERO:
             system_logger.debug(
-                "Stopping: No new masks found in two consecutive iterations."
+                f"Stopping: No new masks found in {MAX_CONSECUTIVE_ZERO} consecutive iterations."
             )
             break
 
         # Check stopping conditions only if we have enough masks
-        if new_count >= 10:  # Must have at least 10 masks
-            if iteration >= 2:  # Allow at least 3 iterations
-                # Calculate required increase (25% of current total)
-                required_increase = max(1, int(prev_count * min_increase))
+        if new_count >= MIN_TOTAL_MASKS:  # Must have at least configured minimum masks
+            if iteration >= MIN_ITERATIONS:  # Allow at least configured minimum iterations
+                # Calculate required increase (configured % of current total)
+                required_increase = max(1, int(prev_count * MIN_RELATIVE_INCREASE))
 
                 if added < required_increase:
                     system_logger.debug(
@@ -339,7 +346,7 @@ def iterative_combo_predictors(
         else:
             # Continue if we don't have enough masks yet
             system_logger.debug(
-                f"Continuing: Only {new_count} masks (need at least 10 before considering early stop)"
+                f"Continuing: Only {new_count} masks (need at least {MIN_TOTAL_MASKS} before considering early stop)"
             )
 
         prev_count = new_count
@@ -1040,10 +1047,10 @@ def iterative_single_predictor_with_classes(
     """
     Run a single predictor iteratively while preserving class information.
 
-    Updated stopping conditions:
-    - Must have at least 10 total masks before considering stopping
-    - Must add at least 25% of current total OR continue if under 10 masks
-    - Stop after 2 consecutive iterations with no new masks
+    Updated stopping conditions (configurable via config.yaml):
+    - Must have at least MIN_TOTAL_MASKS total masks before considering stopping
+    - Must add at least MIN_RELATIVE_INCREASE of current total OR continue if under minimum masks
+    - Stop after MAX_CONSECUTIVE_ZERO consecutive iterations with no new masks
     """
     all_masks = []
     all_scores = []
@@ -1125,18 +1132,18 @@ def iterative_single_predictor_with_classes(
         else:
             no_new_mask_iters = 0
 
-        # 2. Stop if no new masks for 2 consecutive iterations
-        if no_new_mask_iters >= 2:
+        # 2. Stop if no new masks for configured consecutive iterations
+        if no_new_mask_iters >= MAX_CONSECUTIVE_ZERO:
             system_logger.info(
-                "Stopping: No new masks found in two consecutive iterations."
+                f"Stopping: No new masks found in {MAX_CONSECUTIVE_ZERO} consecutive iterations."
             )
             break
 
         # 3. YOUR REQUIREMENTS: Check stopping conditions only if we have enough masks
-        if new_count >= 10:  # Only consider stopping if we have at least 10 masks
-            if iteration >= 2:  # Allow at least 3 iterations
-                # Calculate required increase (25% of current total)
-                required_increase = max(1, int(prev_count * min_increase))
+        if new_count >= MIN_TOTAL_MASKS:  # Only consider stopping if we have at least configured minimum masks
+            if iteration >= MIN_ITERATIONS:  # Allow at least configured minimum iterations
+                # Calculate required increase (configured % of current total)
+                required_increase = max(1, int(prev_count * MIN_RELATIVE_INCREASE))
 
                 if added < required_increase:
                     system_logger.info(
@@ -1148,7 +1155,7 @@ def iterative_single_predictor_with_classes(
         else:
             # Continue if we don't have enough masks yet
             system_logger.info(
-                f"Continuing: Only {new_count} masks (need at least 10 before considering early stop)"
+                f"Continuing: Only {new_count} masks (need at least {MIN_TOTAL_MASKS} before considering early stop)"
             )
 
         prev_count = new_count
@@ -1580,25 +1587,25 @@ def run_iterative_class_inference(
         else:
             no_new_mask_iters = 0
 
-        # Stop if no new masks for 2 consecutive iterations
-        if no_new_mask_iters >= 2:
+        # Stop if no new masks for configured consecutive iterations
+        if no_new_mask_iters >= MAX_CONSECUTIVE_ZERO:
             system_logger.debug(
-                f"    Stopping: No new masks for 2 consecutive iterations"
+                f"    Stopping: No new masks for {MAX_CONSECUTIVE_ZERO} consecutive iterations"
             )
             break
 
-        # Your stopping condition: need at least 10 masks and 25% increase
-        if new_count >= 10 and iteration >= 2:
-            required_increase = max(1, int(prev_count * 0.25))  # 25% increase
+        # Your stopping condition: need at least configured minimum masks and configured % increase
+        if new_count >= MIN_TOTAL_MASKS and iteration >= MIN_ITERATIONS:
+            required_increase = max(1, int(prev_count * MIN_RELATIVE_INCREASE))  # Configured % increase
             if added < required_increase:
                 system_logger.debug(
                     f"    Stopping: Added {added} masks < required {required_increase} "
                     f"(25% of {prev_count} existing masks). Total masks: {new_count}"
                 )
                 break
-        elif new_count < 10:
+        elif new_count < MIN_TOTAL_MASKS:
             system_logger.debug(
-                f"    Continuing: Only {new_count} masks (need at least 10)"
+                f"    Continuing: Only {new_count} masks (need at least {MIN_TOTAL_MASKS})"
             )
 
         prev_count = new_count
