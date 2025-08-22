@@ -330,7 +330,7 @@ def iterative_combo_predictors(
 
         new_count = len(unique_masks)
         added = new_count - prev_count
-        system_logger.info(
+        system_logger.debug(
             f"Iteration {iteration + 1}: Added {added} new masks (total: {new_count})"
         )
 
@@ -344,7 +344,7 @@ def iterative_combo_predictors(
 
         # Stop if no new masks for 2 consecutive iterations
         if no_new_mask_iters >= 2:
-            system_logger.info(
+            system_logger.debug(
                 "Stopping: No new masks found in two consecutive iterations."
             )
             break
@@ -356,7 +356,7 @@ def iterative_combo_predictors(
                 required_increase = max(1, int(prev_count * min_increase))
 
                 if added < required_increase:
-                    system_logger.info(
+                    system_logger.debug(
                         f"Stopping: Added {added} masks < required {required_increase} "
                         f"({min_increase:.0%} of {prev_count} existing masks). "
                         f"Total masks: {new_count}"
@@ -364,7 +364,7 @@ def iterative_combo_predictors(
                     break
         else:
             # Continue if we don't have enough masks yet
-            system_logger.info(
+            system_logger.debug(
                 f"Continuing: Only {new_count} masks (need at least 10 before considering early stop)"
             )
 
@@ -373,7 +373,7 @@ def iterative_combo_predictors(
         all_scores = unique_scores
         all_sources = unique_sources
 
-    system_logger.info(
+    system_logger.debug(
         f"Combo inference completed with {len(unique_masks)} total masks"
     )
     return unique_masks, unique_scores, unique_sources
@@ -401,10 +401,10 @@ def run_inference(
     register_datasets(dataset_info, dataset_name, dataset_format=dataset_format)
 
     # Force metadata population
-    system_logger.info("Forcing metadata population from DatasetCatalog...")
+    system_logger.debug("Forcing metadata population from DatasetCatalog...")
     d = DatasetCatalog.get(f"{dataset_name}_train")
     metadata = MetadataCatalog.get(f"{dataset_name}_train")
-    system_logger.info("Metadata populated successfully.")
+    system_logger.debug("Metadata populated successfully.")
 
     # Memory optimization: Clear unnecessary data
     del d
@@ -418,7 +418,7 @@ def run_inference(
     for r in [50, 101]:
         trained_model_paths = get_trained_model_paths(SPLIT_DIR, r)
         if dataset_name in trained_model_paths:
-            system_logger.info(f"Found trained R{r} model for dataset {dataset_name}")
+            system_logger.debug(f"Found trained R{r} model for dataset {dataset_name}")
             try:
                 predictor, _ = choose_and_use_model(
                     trained_model_paths, dataset_name, threshold, metadata, r
@@ -429,7 +429,7 @@ def run_inference(
             except Exception as e:
                 system_logger.warning(f"Failed to load R{r} model: {e}")
         else:
-            system_logger.info(
+            system_logger.debug(
                 f"No trained R{r} model found for dataset {dataset_name}"
             )
 
@@ -496,7 +496,7 @@ def run_inference(
     # Get the specific ROI config for this dataset
     roi_profiles = full_config.get("scale_bar_rois", {})
     roi_config = roi_profiles.get(dataset_name, roi_profiles["default"])
-    system_logger.info(
+    system_logger.debug(
         f"Using scale bar ROI profile for '{dataset_name}': {roi_config}"
     )
 
@@ -539,7 +539,7 @@ def run_inference(
             # Process each class separately
             for target_class in range(num_classes):
                 class_name = metadata.thing_classes[target_class]
-                system_logger.info(f"Processing class {target_class} ({class_name})...")
+                system_logger.debug(f"Processing class {target_class} ({class_name})...")
 
                 # Class-specific parameters based on size heuristic
                 is_small_class = target_class in small_classes
@@ -589,7 +589,7 @@ def run_inference(
                         )
                     )
 
-                system_logger.info(
+                system_logger.debug(
                     f"Class {target_class}: Found {len(class_masks)} instances"
                 )
 
@@ -649,11 +649,11 @@ def run_inference(
                 [f"class {cls}: {count}" for cls, count in sorted(class_counts.items())]
             )
             if class_summary:
-                system_logger.info(
+                system_logger.debug(
                     f"After processing: {len(unique_masks)} unique masks for image {name} ({class_summary})"
                 )
             else:
-                system_logger.info(
+                system_logger.debug(
                     f"After processing: {len(unique_masks)} unique masks for image {name} (no classes detected)"
                 )
 
@@ -678,7 +678,7 @@ def run_inference(
 
     overall_elapsed = time.perf_counter() - overall_start_time
     average_time = overall_elapsed / total_images if total_images else 0
-    system_logger.info(
+    system_logger.debug(
         f"Average mask generation and deduplication time per image: {average_time:.3f} seconds"
     )
 
@@ -762,7 +762,7 @@ def run_inference(
             for idx_in_batch, test_img in enumerate(batch_images):
                 idx = batch_start + idx_in_batch + 1
                 start_time = time.perf_counter()
-                system_logger.info(
+                system_logger.debug(
                     f"Processing measurements for image {idx} out of {num_images}: {test_img}"
                 )
 
@@ -788,7 +788,7 @@ def run_inference(
                     )
                     continue
 
-                system_logger.info(
+                system_logger.debug(
                     f"Processing {len(masks)} masks for image {test_img}"
                 )
 
@@ -963,7 +963,7 @@ def run_inference(
                     # Add this logging block to show why masks are filtered
                     if mask_measurements == 0:
                         masks_filtered += 1
-                        system_logger.info(
+                        system_logger.debug(
                             f"Mask {instance_id} (class {cls}) filtered out: all {total_contours} contours too small (min_area: {min_area:.1f})"
                         )
                     else:
@@ -997,7 +997,7 @@ def run_inference(
 
                 elapsed = time.perf_counter() - start_time
                 total_time += elapsed
-                system_logger.info(f"Time taken for image {idx}: {elapsed:.3f} seconds")
+                system_logger.debug(f"Time taken for image {idx}: {elapsed:.3f} seconds")
 
             # Memory optimization: Force cleanup after each batch
             gc.collect()
@@ -1265,7 +1265,7 @@ def calculate_average_mask_sizes(predictors, images_sample, metadata):
     sample_images = images_sample[:sample_size]
 
     for i, image_path in enumerate(sample_images):
-        system_logger.info(
+        system_logger.debug(
             f"Analyzing sample image {i+1}/{sample_size} for size heuristic"
         )
 
@@ -1306,7 +1306,7 @@ def calculate_average_mask_sizes(predictors, images_sample, metadata):
                 if cls < len(metadata.thing_classes)
                 else f"class_{cls}"
             )
-            system_logger.info(
+            system_logger.debug(
                 f"Class {cls} ({class_name}): average mask size = {avg_size:.1f} pixels"
             )
 
@@ -1334,7 +1334,7 @@ def determine_small_classes(class_avg_sizes, threshold_percentile=50):
         cls for cls, size in class_avg_sizes.items() if size <= threshold_size
     }
 
-    system_logger.info(f"Size threshold: {threshold_size:.1f} pixels (50th percentile)")
+    system_logger.debug(f"Size threshold: {threshold_size:.1f} pixels (50th percentile)")
     system_logger.info(f"Small classes (≤ threshold): {sorted(small_classes)}")
     system_logger.info(
         f"Large classes (> threshold): {sorted(set(class_avg_sizes.keys()) - small_classes)}"
@@ -1518,7 +1518,7 @@ def run_iterative_class_inference(
         iou_threshold = 0.7
 
     for iteration in range(max_iters):
-        system_logger.info(
+        system_logger.debug(
             f"  Iteration {iteration + 1}/{max_iters} for class {target_class}"
         )
 
@@ -1572,7 +1572,7 @@ def run_iterative_class_inference(
         new_count = len(unique_masks)
         added = new_count - prev_count
 
-        system_logger.info(f"    Added {added} new masks (total: {new_count})")
+        system_logger.debug(f"    Added {added} new masks (total: {new_count})")
 
         # EARLY STOPPING CONDITIONS
         if added == 0:
@@ -1582,7 +1582,7 @@ def run_iterative_class_inference(
 
         # Stop if no new masks for 2 consecutive iterations
         if no_new_mask_iters >= 2:
-            system_logger.info(
+            system_logger.debug(
                 f"    Stopping: No new masks for 2 consecutive iterations"
             )
             break
@@ -1591,13 +1591,13 @@ def run_iterative_class_inference(
         if new_count >= 10 and iteration >= 2:
             required_increase = max(1, int(prev_count * 0.25))  # 25% increase
             if added < required_increase:
-                system_logger.info(
+                system_logger.debug(
                     f"    Stopping: Added {added} masks < required {required_increase} "
                     f"(25% of {prev_count} existing masks). Total masks: {new_count}"
                 )
                 break
         elif new_count < 10:
-            system_logger.info(
+            system_logger.debug(
                 f"    Continuing: Only {new_count} masks (need at least 10)"
             )
 
