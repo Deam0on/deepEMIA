@@ -589,7 +589,9 @@ def inference_task():
     print("\nINFERENCE TASK")
     print("This will run inference on new images using your trained model.")
     print("The system will detect, measure, and analyze particles in your images.")
-    print("\nNOTE: System now auto-detects available models and always uses class-specific inference")
+    print(
+        "\nNOTE: System now auto-detects available models and always uses class-specific inference"
+    )
 
     dataset_name = get_dataset_selection_with_retry("Select dataset for inference")
 
@@ -615,10 +617,10 @@ def inference_task():
     # Simplified iteration control
     print("\nInference Mode:")
     print("   1 iteration = Single-pass (faster)")
-    print("   Multiple iterations = Multi-pass with iterative refinement (more accurate)")
-    max_iters = get_int_input(
-        "Number of iterations", default=1, min_val=1, max_val=50
+    print(
+        "   Multiple iterations = Multi-pass with iterative refinement (more accurate)"
     )
+    max_iters = get_int_input("Number of iterations", default=1, min_val=1, max_val=50)
 
     # Visualization options
     print("\nVisualization Options:")

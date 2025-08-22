@@ -390,7 +390,7 @@ def run_inference(
 ):
     """
     Runs inference on a dataset and saves the results.
-    
+
     SIMPLIFIED APPROACH:
     - Auto-detects available models (R50/R101)
     - Always uses class-specific iterative inference
@@ -414,7 +414,7 @@ def run_inference(
     system_logger.info("Auto-detecting available trained models...")
     available_models = []
     available_predictors = []
-    
+
     for r in [50, 101]:
         trained_model_paths = get_trained_model_paths(SPLIT_DIR, r)
         if dataset_name in trained_model_paths:
@@ -429,22 +429,24 @@ def run_inference(
             except Exception as e:
                 system_logger.warning(f"Failed to load R{r} model: {e}")
         else:
-            system_logger.info(f"No trained R{r} model found for dataset {dataset_name}")
-    
+            system_logger.info(
+                f"No trained R{r} model found for dataset {dataset_name}"
+            )
+
     # GRACEFUL EXIT IF NO MODELS FOUND
     if not available_predictors:
         error_msg = f"No trained models found for dataset '{dataset_name}'"
         system_logger.error(error_msg)
         system_logger.error("Please train models first using the train task")
         raise FileNotFoundError(error_msg)
-    
+
     # LOG DETECTED MODELS
     model_info = ", ".join([f"R{r}" for r in available_models])
     if len(available_predictors) > 1:
         system_logger.info(f"Using COMBO inference with models: {model_info}")
     else:
         system_logger.info(f"Using single model inference with: {model_info}")
-    
+
     # Set predictors for inference
     predictors = available_predictors
 
@@ -457,16 +459,22 @@ def run_inference(
     images_name = [f for f in os.listdir(inpath) if is_image_file(f)]
 
     # CALCULATE SIZE HEURISTIC
-    system_logger.info("Calculating mask size heuristics to determine small vs large classes...")
-    sample_images = [os.path.join(inpath, name) for name in images_name[:5]]  # Sample first 5 images
+    system_logger.info(
+        "Calculating mask size heuristics to determine small vs large classes..."
+    )
+    sample_images = [
+        os.path.join(inpath, name) for name in images_name[:5]
+    ]  # Sample first 5 images
     class_avg_sizes = calculate_average_mask_sizes(predictors, sample_images, metadata)
     small_classes = determine_small_classes(class_avg_sizes, threshold_percentile=50)
-    
+
     # Log inference strategy
     if max_iters == 1:
         system_logger.info("Using SINGLE-PASS class-specific inference")
     else:
-        system_logger.info(f"Using MULTI-PASS class-specific inference (max {max_iters} iterations)")
+        system_logger.info(
+            f"Using MULTI-PASS class-specific inference (max {max_iters} iterations)"
+        )
 
     # Memory optimization: Process in smaller batches
     batch_size = min(10, len(images_name))
@@ -508,9 +516,7 @@ def run_inference(
 
         for idx_in_batch, name in enumerate(batch_names):
             idx = batch_start + idx_in_batch + 1
-            system_logger.info(
-                f"Processing image {name} ({idx} out of {total_images})"
-            )
+            system_logger.info(f"Processing image {name} ({idx} out of {total_images})")
 
             # Memory optimization: Load image and clear previous image data
             image_path = os.path.join(inpath, name)
@@ -537,7 +543,7 @@ def run_inference(
 
                 # Class-specific parameters based on size heuristic
                 is_small_class = target_class in small_classes
-                
+
                 if is_small_class:
                     confidence_thresh = 0.3  # Lower threshold for small particles
                     iou_thresh = 0.5  # More lenient overlap
@@ -1238,97 +1244,111 @@ def run_class_specific_inference(
 def calculate_average_mask_sizes(predictors, images_sample, metadata):
     """
     Calculate average mask sizes per class to determine which classes are "small" vs "large".
-    
+
     This heuristic samples a few images to determine typical mask sizes for each class,
     enabling universal postprocessing without hardcoded assumptions.
-    
+
     Parameters:
     - predictors: List of model predictors
     - images_sample: Sample of image paths to analyze
     - metadata: Dataset metadata
-    
+
     Returns:
     - dict: {class_id: average_mask_size} for each detected class
     """
     system_logger.info("Calculating average mask sizes per class for heuristic...")
-    
+
     class_sizes = {}  # {class_id: [sizes]}
-    
+
     # Process a sample of images (max 5 to be fast)
     sample_size = min(5, len(images_sample))
     sample_images = images_sample[:sample_size]
-    
+
     for i, image_path in enumerate(sample_images):
-        system_logger.info(f"Analyzing sample image {i+1}/{sample_size} for size heuristic")
-        
+        system_logger.info(
+            f"Analyzing sample image {i+1}/{sample_size} for size heuristic"
+        )
+
         image = cv2.imread(image_path)
         if image is None:
             continue
-            
+
         # Use first available predictor for sampling
         predictor = predictors[0]
         outputs = predictor(image)
-        
+
         pred_masks = outputs["instances"].to("cpu")._fields["pred_masks"].numpy()
         pred_classes = outputs["instances"].to("cpu")._fields["pred_classes"].numpy()
         pred_scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
-        
+
         # Only consider high-confidence predictions for size analysis
         confident_mask = pred_scores >= 0.7
         confident_masks = pred_masks[confident_mask]
         confident_classes = pred_classes[confident_mask]
-        
+
         for mask, cls in zip(confident_masks, confident_classes):
             mask_size = np.sum(mask)
             if cls not in class_sizes:
                 class_sizes[cls] = []
             class_sizes[cls].append(mask_size)
-        
+
         del outputs, pred_masks, pred_classes, pred_scores, image
         gc.collect()
-    
+
     # Calculate averages
     class_avg_sizes = {}
     for cls, sizes in class_sizes.items():
         if sizes:
             avg_size = np.mean(sizes)
             class_avg_sizes[cls] = avg_size
-            class_name = metadata.thing_classes[cls] if cls < len(metadata.thing_classes) else f"class_{cls}"
-            system_logger.info(f"Class {cls} ({class_name}): average mask size = {avg_size:.1f} pixels")
-    
+            class_name = (
+                metadata.thing_classes[cls]
+                if cls < len(metadata.thing_classes)
+                else f"class_{cls}"
+            )
+            system_logger.info(
+                f"Class {cls} ({class_name}): average mask size = {avg_size:.1f} pixels"
+            )
+
     return class_avg_sizes
 
 
 def determine_small_classes(class_avg_sizes, threshold_percentile=50):
     """
     Determine which classes should be considered "small" based on average mask sizes.
-    
+
     Parameters:
     - class_avg_sizes: Dict of {class_id: average_mask_size}
     - threshold_percentile: Percentile threshold (classes below this are "small")
-    
+
     Returns:
     - set: Set of class IDs that are considered "small"
     """
     if not class_avg_sizes:
         return set()
-    
+
     sizes = list(class_avg_sizes.values())
     threshold_size = np.percentile(sizes, threshold_percentile)
-    
-    small_classes = {cls for cls, size in class_avg_sizes.items() if size <= threshold_size}
-    
+
+    small_classes = {
+        cls for cls, size in class_avg_sizes.items() if size <= threshold_size
+    }
+
     system_logger.info(f"Size threshold: {threshold_size:.1f} pixels (50th percentile)")
     system_logger.info(f"Small classes (≤ threshold): {sorted(small_classes)}")
-    system_logger.info(f"Large classes (> threshold): {sorted(set(class_avg_sizes.keys()) - small_classes)}")
-    
+    system_logger.info(
+        f"Large classes (> threshold): {sorted(set(class_avg_sizes.keys()) - small_classes)}"
+    )
+
     return small_classes
 
 
-def postprocess_masks_universal(ori_mask, ori_score, image, target_class, is_small_class, min_crys_size=None):
+def postprocess_masks_universal(
+    ori_mask, ori_score, image, target_class, is_small_class, min_crys_size=None
+):
     """
     UNIVERSAL postprocessing that adapts based on whether the class is determined to be "small" or "large".
-    
+
     Parameters:
     - ori_mask: Original masks
     - ori_score: Original scores
@@ -1336,64 +1356,69 @@ def postprocess_masks_universal(ori_mask, ori_score, image, target_class, is_sma
     - target_class: Target class ID
     - is_small_class: Boolean indicating if this class is considered "small"
     - min_crys_size: Minimum crystal size (auto-calculated if None)
-    
+
     Returns:
     - list: Processed masks
     """
     if len(ori_mask) == 0:
         return []
-    
+
     # Adaptive parameters based on class type
     if is_small_class:
         # Gentler processing for small particles
         score_threshold = 0.2
         kernel_size = 1  # Minimal morphological operations
         fill_holes = True  # Fill holes but preserve small features
-        
+
         # Auto-calculate minimum size if not provided
         if min_crys_size is None:
             image_area = image.shape[0] * image.shape[1]
             min_crys_size = max(5, int(image_area * 0.00001))  # 0.001% of image area
-            
+
     else:
         # Standard processing for large particles
         score_threshold = 0.3
         kernel_size = 2
         fill_holes = True
-        
+
         # Auto-calculate minimum size if not provided
         if min_crys_size is None:
             image_area = image.shape[0] * image.shape[1]
             min_crys_size = max(25, int(image_area * 0.0001))  # 0.01% of image area
-    
+
     # Apply score filtering
     keep_indices = ori_score >= score_threshold
     if not np.any(keep_indices):
         return []
-    
+
     filtered_masks = ori_mask[keep_indices]
-    
+
     processed_masks = []
     for mask in filtered_masks:
         # Fill holes
         if fill_holes:
             mask = binary_fill_holes(mask).astype(np.uint8)
-        
+
         # Morphological operations
         if kernel_size > 0:
             kernel = disk(kernel_size)
             mask = erosion(mask, kernel)
             mask = dilation(mask, kernel)
-        
+
         # Size filtering
         if np.sum(mask) >= min_crys_size:
             processed_masks.append(mask)
-    
+
     return processed_masks
 
 
 def run_multiscale_class_inference(
-    predictor, image, target_class, confidence_threshold=0.3, max_iters=5, small_classes=set()
+    predictor,
+    image,
+    target_class,
+    confidence_threshold=0.3,
+    max_iters=5,
+    small_classes=set(),
 ):
     """
     Multi-scale inference with ITERATIVE passes for small particles.
@@ -1403,10 +1428,10 @@ def run_multiscale_class_inference(
     all_masks = []
     all_scores = []
     all_classes = []
-    
+
     for scale in scales:
         system_logger.info(f"Scale {scale}: Processing class {target_class}")
-        
+
         # Resize image
         if scale != 1.0:
             h, w = image.shape[:2]
@@ -1414,54 +1439,64 @@ def run_multiscale_class_inference(
             scaled_image = cv2.resize(image, (new_w, new_h))
         else:
             scaled_image = image
-        
+
         # **NEW: Run ITERATIVE inference at this scale**
         scale_masks, scale_scores, scale_classes = run_iterative_class_inference(
-            predictor, scaled_image, target_class, small_classes, confidence_threshold, max_iters
+            predictor,
+            scaled_image,
+            target_class,
+            small_classes,
+            confidence_threshold,
+            max_iters,
         )
-        
+
         # Scale masks back to original size
         if scale != 1.0 and scale_masks:
             original_size_masks = []
             for mask in scale_masks:
                 resized_mask = cv2.resize(
-                    mask.astype(np.uint8), 
-                    (image.shape[1], image.shape[0]), 
-                    interpolation=cv2.INTER_NEAREST
+                    mask.astype(np.uint8),
+                    (image.shape[1], image.shape[0]),
+                    interpolation=cv2.INTER_NEAREST,
                 )
                 original_size_masks.append(resized_mask.astype(bool))
             scale_masks = original_size_masks
-        
+
         all_masks.extend(scale_masks)
         all_scores.extend(scale_scores)
         all_classes.extend(scale_classes)
-        
-        system_logger.info(f"Scale {scale}: Found {len(scale_masks)} instances after iterations")
-    
+
+        system_logger.info(
+            f"Scale {scale}: Found {len(scale_masks)} instances after iterations"
+        )
+
     # Deduplicate across scales
     unique_masks = []
     unique_scores = []
     unique_classes = []
-    
+
     # Sort by confidence
     if all_scores:
         sorted_indices = np.argsort(all_scores)[::-1]
-        
+
         for idx in sorted_indices:
             mask = all_masks[idx]
             score = all_scores[idx]
             cls = all_classes[idx]
-            
+
             # Check for duplicates (lenient for small particles)
             is_duplicate = any(iou(mask, um) > 0.4 for um in unique_masks)
-            
+
             if not is_duplicate:
                 unique_masks.append(mask)
                 unique_scores.append(score)
                 unique_classes.append(cls)
-    
-    system_logger.info(f"Multiscale iterative inference completed: {len(unique_masks)} unique masks for class {target_class}")
+
+    system_logger.info(
+        f"Multiscale iterative inference completed: {len(unique_masks)} unique masks for class {target_class}"
+    )
     return unique_masks, unique_scores, unique_classes
+
 
 def run_iterative_class_inference(
     predictor, image, target_class, small_classes, confidence_threshold=0.3, max_iters=5
@@ -1474,78 +1509,84 @@ def run_iterative_class_inference(
     all_classes = []
     prev_count = 0
     no_new_mask_iters = 0
-    
+
     # Class-specific parameters based on size heuristic
     is_small_class = target_class in small_classes
     if is_small_class:
         iou_threshold = 0.5  # More lenient for small particles
     else:
         iou_threshold = 0.7
-    
+
     for iteration in range(max_iters):
-        system_logger.info(f"  Iteration {iteration + 1}/{max_iters} for class {target_class}")
-        
+        system_logger.info(
+            f"  Iteration {iteration + 1}/{max_iters} for class {target_class}"
+        )
+
         # Memory optimization
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-            
+
         # Run prediction
         outputs = predictor(image)
         pred_masks = outputs["instances"].to("cpu")._fields["pred_masks"].numpy()
         pred_scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
         pred_classes = outputs["instances"].to("cpu")._fields["pred_classes"].numpy()
-        
+
         del outputs
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        
+
         # Filter for target class and confidence
-        class_mask = (pred_classes == target_class) & (pred_scores >= confidence_threshold)
+        class_mask = (pred_classes == target_class) & (
+            pred_scores >= confidence_threshold
+        )
         filtered_masks = pred_masks[class_mask]
         filtered_scores = pred_scores[class_mask]
         filtered_classes = pred_classes[class_mask]
-        
+
         # UNIVERSAL postprocessing based on size heuristic
         if len(filtered_masks) > 0:
             processed_masks = postprocess_masks_universal(
                 filtered_masks, filtered_scores, image, target_class, is_small_class
             )
-            
+
             # Add processed masks from this iteration
             if processed_masks:
                 for i, mask in enumerate(processed_masks):
                     all_masks.append(mask)
                     all_scores.append(filtered_scores[i])
                     all_classes.append(target_class)
-        
+
         # Deduplicate all masks with class-specific IoU threshold
         unique_masks = []
         unique_scores = []
         unique_classes = []
-        
+
         for i, mask in enumerate(all_masks):
             is_duplicate = any(iou(mask, um) > iou_threshold for um in unique_masks)
             if not is_duplicate:
                 unique_masks.append(mask)
                 unique_scores.append(all_scores[i])
                 unique_classes.append(all_classes[i])
-        
+
         new_count = len(unique_masks)
         added = new_count - prev_count
-        
+
         system_logger.info(f"    Added {added} new masks (total: {new_count})")
-        
+
         # EARLY STOPPING CONDITIONS
         if added == 0:
             no_new_mask_iters += 1
         else:
             no_new_mask_iters = 0
-        
+
         # Stop if no new masks for 2 consecutive iterations
         if no_new_mask_iters >= 2:
-            system_logger.info(f"    Stopping: No new masks for 2 consecutive iterations")
+            system_logger.info(
+                f"    Stopping: No new masks for 2 consecutive iterations"
+            )
             break
-        
+
         # Your stopping condition: need at least 10 masks and 25% increase
         if new_count >= 10 and iteration >= 2:
             required_increase = max(1, int(prev_count * 0.25))  # 25% increase
@@ -1556,12 +1597,16 @@ def run_iterative_class_inference(
                 )
                 break
         elif new_count < 10:
-            system_logger.info(f"    Continuing: Only {new_count} masks (need at least 10)")
-        
+            system_logger.info(
+                f"    Continuing: Only {new_count} masks (need at least 10)"
+            )
+
         prev_count = new_count
         all_masks = unique_masks.copy()
         all_scores = unique_scores.copy()
         all_classes = unique_classes.copy()
-    
-    system_logger.info(f"  Iterative class inference completed: {len(unique_masks)} masks after {iteration + 1} iterations")
+
+    system_logger.info(
+        f"  Iterative class inference completed: {len(unique_masks)} masks after {iteration + 1} iterations"
+    )
     return unique_masks, unique_scores, unique_classes
