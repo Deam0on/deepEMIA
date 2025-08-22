@@ -68,6 +68,10 @@ def setup_config():
     print("\nConfigure measurement settings:")
     measure_contrast = input("  measure_contrast_distribution [default false] (true/false): ").strip() or "false"
     measure_contrast = measure_contrast.lower() == "true"
+    
+    print("\nConfigure inference settings:")
+    class_specific_default = input("  use_class_specific_inference [default true] (true/false): ").strip() or "true"
+    use_class_specific_default = class_specific_default.lower() == "true"
 
     print("\nConfigure RCNN hyperparameters (press Enter to use defaults):")
     print("  R50 settings:")
@@ -108,6 +112,22 @@ def setup_config():
             "proximity": int(proximity),
         },
         "measure_contrast_distribution": measure_contrast,
+        "inference_settings": {
+            "use_class_specific_inference": use_class_specific_default,
+            "class_specific_settings": {
+                "class_0": {
+                    "confidence_threshold": 0.5,
+                    "iou_threshold": 0.7,
+                    "min_size": 25
+                },
+                "class_1": {
+                    "confidence_threshold": 0.3,
+                    "iou_threshold": 0.5,
+                    "min_size": 5,
+                    "use_multiscale": True
+                }
+            }
+        },
         "rcnn_hyperparameters": {
             "default": {
                 "R50": {
@@ -300,6 +320,11 @@ For guided interactive mode: python cli_main.py
         "• 'multi [N]': Multi-pass with iterative deduplication up to N iterations (more accurate)\n"
         "Example: --pass multi 5",
     )
+    parser.add_argument(
+        "--class-specific",
+        action="store_true",
+        help="Use class-specific inference (processes each class separately). Recommended for datasets with small particles that might be filtered out during traditional inference.",
+    )
 
     args = parser.parse_args()
 
@@ -430,6 +455,7 @@ For guided interactive mode: python cli_main.py
             rcnn=args.rcnn,
             pass_mode=pass_mode,
             max_iters=max_iters,
+            use_class_specific=getattr(args, 'class_specific', None),
         )
 
         task_end_time = datetime.now()

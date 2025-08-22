@@ -40,6 +40,8 @@ from detectron2.data import (
 from detectron2.data import detection_utils as utils
 from detectron2.engine import DefaultTrainer
 from detectron2.utils.visualizer import ColorMode, Visualizer
+from skimage.morphology import disk, erosion, dilation
+from scipy.ndimage import binary_fill_holes
 
 from src.data.datasets import read_dataset_info, register_datasets
 from src.data.models import choose_and_use_model, get_trained_model_paths
@@ -368,6 +370,7 @@ def run_inference(
     rcnn=50,
     pass_mode="single",
     max_iters=10,
+    use_class_specific=None,
 ):
     """
     Runs inference on a dataset and saves the results.
@@ -459,44 +462,190 @@ def run_inference(
                 system_logger.warning(f"Could not load image: {image_path}")
                 continue
 
-            if rcnn == "combo":
-                if pass_mode == "multi":
-                    unique_masks, unique_scores, unique_sources = (
-                        iterative_combo_predictors(
-                            predictors,
-                            image,
-                            iou_threshold=0.7,
-                            min_increase=0.10,
-                            max_iters=max_iters,
+            # Load configuration for inference approach
+            if use_class_specific is not None:
+                # Use parameter passed to function (from CLI)
+                use_class_specific_inference = use_class_specific
+            else:
+                # Use config file setting
+                inference_settings = config.get("inference_settings", {})
+                use_class_specific_inference = inference_settings.get("use_class_specific_inference", False)
+            
+            if use_class_specific_inference:
+                # NEW: Class-specific inference approach
+                system_logger.info(f"Running class-specific inference for image {name}")
+                
+                # Get number of classes from metadata
+                num_classes = len(metadata.thing_classes)
+                
+                all_unique_masks = []
+                all_unique_scores = []
+                all_unique_classes = []
+                
+                # Process each class separately
+                for target_class in range(num_classes):
+                    class_name = metadata.thing_classes[target_class]
+                    system_logger.info(f"Processing class {target_class} ({class_name})...")
+                    
+                    # Class-specific parameters
+                    if target_class == 0:  # Large particles
+                        confidence_thresh = 0.5
+                        iou_thresh = 0.7
+                    elif target_class == 1:  # Small particles
+                        confidence_thresh = 0.3  # Lower threshold for small particles
+                        iou_thresh = 0.5  # More lenient overlap
+                    else:
+                        confidence_thresh = 0.4
+                        iou_thresh = 0.6
+                    
+                    if pass_mode == "multi" and target_class == 1:
+                        # Multi-scale for small particles only
+                        class_masks, class_scores, class_classes = run_multiscale_class_inference(
+                            predictors[0], image, target_class, confidence_thresh, max_iters
                         )
-                    )
-                    # FIXED: For combo mode, we need to get class predictions for each mask
-                    unique_classes = []
-                    # For iterative combo, we need to run a separate prediction to get classes
-                    # Use the first predictor to get class information
-                    temp_outputs = predictors[0](image)
-                    temp_classes = temp_outputs["instances"].to("cpu")._fields["pred_classes"].numpy()
+                    else:
+                        # Single pass for this class
+                        class_masks, class_scores, class_classes = run_class_specific_inference(
+                            predictors[0], image, target_class, confidence_thresh, iou_thresh
+                        )
                     
-                    # Assign classes to masks (simplified - assumes same order)
-                    # This is a limitation of the current iterative approach
-                    for i in range(len(unique_masks)):
-                        class_idx = temp_classes[i] if i < len(temp_classes) else 0
-                        unique_classes.append(class_idx)
+                    system_logger.info(f"Class {target_class}: Found {len(class_masks)} instances")
                     
-                    del temp_outputs
-                    gc.collect()
+                    # Add to combined results
+                    all_unique_masks.extend(class_masks)
+                    all_unique_scores.extend(class_scores)
+                    all_unique_classes.extend(class_classes)
+                
+                # Final cross-class deduplication (optional, more lenient)
+                final_masks = []
+                final_scores = []
+                final_classes = []
+                
+                for i, (mask, score, cls) in enumerate(zip(all_unique_masks, all_unique_scores, all_unique_classes)):
+                    # Only check against same class or very high overlap with different class
+                    is_duplicate = False
+                    for j, (existing_mask, existing_cls) in enumerate(zip(final_masks, final_classes)):
+                        overlap = iou(mask, existing_mask)
+                        
+                        if cls == existing_cls:
+                            # Same class: normal threshold
+                            threshold_val = 0.7
+                        else:
+                            # Different class: only remove if very high overlap
+                            threshold_val = 0.9
+                        
+                        if overlap > threshold_val:
+                            # Keep the one with higher confidence
+                            if score > final_scores[j]:
+                                final_masks[j] = mask
+                                final_scores[j] = score
+                                final_classes[j] = cls
+                            is_duplicate = True
+                            break
                     
-                else:  # single pass
-                    all_masks = []
-                    all_scores = []
-                    all_sources = []
-                    all_classes = []
-                    
-                    for pred_idx, predictor in enumerate(predictors):
+                    if not is_duplicate:
+                        final_masks.append(mask)
+                        final_scores.append(score)
+                        final_classes.append(cls)
+                
+                unique_masks = final_masks
+                unique_scores = final_scores
+                unique_classes = final_classes
+                unique_sources = [0] * len(unique_masks)  # All from same source
+                
+            else:
+                # ORIGINAL: Traditional inference approach
+                if rcnn == "combo":
+                    if pass_mode == "multi":
+                        unique_masks, unique_scores, unique_sources = (
+                            iterative_combo_predictors(
+                                predictors,
+                                image,
+                                iou_threshold=0.7,
+                                min_increase=0.10,
+                                max_iters=max_iters,
+                            )
+                        )
+                        # For combo mode, we need to get class predictions for each mask
+                        unique_classes = []
+                        # Use the first predictor to get class information
+                        temp_outputs = predictors[0](image)
+                        temp_classes = temp_outputs["instances"].to("cpu")._fields["pred_classes"].numpy()
+                        
+                        # Assign classes to masks (simplified - assumes same order)
+                        for i in range(len(unique_masks)):
+                            class_idx = temp_classes[i] if i < len(temp_classes) else 0
+                            unique_classes.append(class_idx)
+                        
+                        del temp_outputs
+                        gc.collect()
+                        
+                    else:  # single pass
+                        all_masks = []
+                        all_scores = []
+                        all_sources = []
+                        all_classes = []
+                        
+                        for pred_idx, predictor in enumerate(predictors):
+                            if torch.cuda.is_available():
+                                torch.cuda.empty_cache()
+                                
+                            outputs = predictor(image)
+                            masks = postprocess_masks(
+                                np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
+                                outputs["instances"].to("cpu")._fields["scores"].numpy(),
+                                image,
+                            )
+                            scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
+                            classes = outputs["instances"].to("cpu")._fields["pred_classes"].numpy()
+                            
+                            del outputs
+                            if torch.cuda.is_available():
+                                torch.cuda.empty_cache()
+                                
+                            if masks:
+                                for i, mask in enumerate(masks):
+                                    all_masks.append(mask)
+                                    all_scores.append(scores[i])
+                                    all_sources.append(pred_idx)
+                                    all_classes.append(classes[i])
+                            
+                            del masks, scores, classes
+                            gc.collect()
+                        # Deduplicate while preserving class information
+                        unique_masks = []
+                        unique_scores = []
+                        unique_sources = []
+                        unique_classes = []
+                        
+                        for i, mask in enumerate(all_masks):
+                            if not any(iou(mask, um) > 0.7 for um in unique_masks):
+                                unique_masks.append(mask)
+                                unique_scores.append(all_scores[i])
+                                unique_sources.append(all_sources[i])
+                                unique_classes.append(all_classes[i])
+                        
+                        del all_masks, all_scores, all_sources, all_classes
+                        gc.collect()
+                else:
+                    # Single model logic with class prediction
+                    if pass_mode == "multi":
+                        system_logger.info(f"Running iterative single model (R{rcnn}) inference for {max_iters} iterations")
+                        unique_masks, unique_scores, unique_sources, unique_classes = (
+                            iterative_single_predictor_with_classes(
+                                predictors[0],  # Single predictor
+                                image,
+                                iou_threshold=0.7,
+                                min_increase=0.10,
+                                max_iters=max_iters,
+                            )
+                        )
+                    else:  # single pass
+                        system_logger.info(f"Running single-pass R{rcnn} inference")
                         if torch.cuda.is_available():
                             torch.cuda.empty_cache()
-                            
-                        outputs = predictor(image)
+                        
+                        outputs = predictors[0](image)
                         masks = postprocess_masks(
                             np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
                             outputs["instances"].to("cpu")._fields["scores"].numpy(),
@@ -508,71 +657,14 @@ def run_inference(
                         del outputs
                         if torch.cuda.is_available():
                             torch.cuda.empty_cache()
-                            
-                        if masks:
-                            for i, mask in enumerate(masks):
-                                all_masks.append(mask)
-                                all_scores.append(scores[i])
-                                all_sources.append(pred_idx)
-                                all_classes.append(classes[i])
+                        
+                        unique_masks = masks if masks else []
+                        unique_scores = scores.tolist() if len(scores) > 0 else []
+                        unique_sources = [0] * len(unique_masks)
+                        unique_classes = classes.tolist() if len(classes) > 0 else []
                         
                         del masks, scores, classes
                         gc.collect()
-                        
-                    # Deduplicate while preserving class information
-                    unique_masks = []
-                    unique_scores = []
-                    unique_sources = []
-                    unique_classes = []
-                    
-                    for i, mask in enumerate(all_masks):
-                        if not any(iou(mask, um) > 0.7 for um in unique_masks):
-                            unique_masks.append(mask)
-                            unique_scores.append(all_scores[i])
-                            unique_sources.append(all_sources[i])
-                            unique_classes.append(all_classes[i])  # FIXED: Preserve class info
-                    
-                    del all_masks, all_scores, all_sources, all_classes
-                    gc.collect()
-            else:
-                # Single model logic with class prediction
-                if pass_mode == "multi":
-                    # FIXED: Use iterative single predictor that preserves classes
-                    system_logger.info(f"Running iterative single model (R{rcnn}) inference for {max_iters} iterations")
-                    unique_masks, unique_scores, unique_sources, unique_classes = (
-                        iterative_single_predictor_with_classes(
-                            predictors[0],  # Single predictor
-                            image,
-                            iou_threshold=0.7,
-                            min_increase=0.10,
-                            max_iters=max_iters,
-                        )
-                    )
-                else:  # single pass
-                    system_logger.info(f"Running single-pass R{rcnn} inference")
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                        
-                    outputs = predictors[0](image)
-                    masks = postprocess_masks(
-                        np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
-                        outputs["instances"].to("cpu")._fields["scores"].numpy(),
-                        image,
-                    )
-                    scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
-                    classes = outputs["instances"].to("cpu")._fields["pred_classes"].numpy()
-                    
-                    del outputs
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                    
-                    unique_masks = masks if masks else []
-                    unique_scores = scores.tolist() if len(scores) > 0 else []
-                    unique_sources = [0] * len(unique_masks)
-                    unique_classes = classes.tolist() if len(classes) > 0 else []
-                    
-                    del masks, scores, classes
-                    gc.collect()
 
             # FIXED: Log results with class distribution for ALL classes
             class_counts = {}
@@ -1033,3 +1125,178 @@ def iterative_single_predictor_with_classes(
         all_classes = unique_classes
     
     return unique_masks, unique_scores, unique_sources, unique_classes
+
+def run_class_specific_inference(
+    predictor, image, target_class, confidence_threshold=0.3, iou_threshold=0.7
+):
+    """
+    Run inference targeting a specific class with class-optimized parameters.
+    
+    Parameters:
+    - predictor: Model predictor
+    - image: Input image  
+    - target_class: Class to focus on (0, 1, etc.)
+    - confidence_threshold: Confidence threshold for this class
+    - iou_threshold: IoU threshold for this class
+    
+    Returns:
+    - tuple: (masks, scores, classes) for the target class only
+    """
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        
+    outputs = predictor(image)
+    
+    # Get all predictions
+    pred_masks = outputs["instances"].to("cpu")._fields["pred_masks"].numpy()
+    pred_scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
+    pred_classes = outputs["instances"].to("cpu")._fields["pred_classes"].numpy()
+    
+    # Filter for target class only
+    class_mask = pred_classes == target_class
+    class_pred_masks = pred_masks[class_mask]
+    class_pred_scores = pred_scores[class_mask]
+    class_pred_classes = pred_classes[class_mask]
+    
+    # Apply class-specific confidence threshold
+    confidence_mask = class_pred_scores >= confidence_threshold
+    filtered_masks = class_pred_masks[confidence_mask]
+    filtered_scores = class_pred_scores[confidence_mask]
+    filtered_classes = class_pred_classes[confidence_mask]
+    
+    # Memory cleanup
+    del outputs
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    
+    if len(filtered_masks) == 0:
+        return [], [], []
+    
+    # Class-specific postprocessing
+    if target_class == 0:  # Large particles
+        min_size = 25
+        processed_masks = postprocess_masks(
+            filtered_masks, filtered_scores, image, min_crys_size=min_size
+        )
+    else:  # Small particles (class 1+)
+        min_size = 5  # Much smaller minimum
+        processed_masks = postprocess_masks_small_particles(
+            filtered_masks, filtered_scores, image, min_crys_size=min_size
+        )
+    
+    # Class-specific deduplication
+    unique_masks = []
+    unique_scores = []
+    unique_classes = []
+    
+    if processed_masks:
+        for i, mask in enumerate(processed_masks):
+            # More lenient IoU for small particles
+            current_iou_threshold = 0.5 if target_class > 0 else iou_threshold
+            
+            if not any(iou(mask, um) > current_iou_threshold for um in unique_masks):
+                unique_masks.append(mask)
+                unique_scores.append(filtered_scores[i])
+                unique_classes.append(target_class)
+    
+    return unique_masks, unique_scores, unique_classes
+
+def postprocess_masks_small_particles(ori_mask, ori_score, image, min_crys_size=5):
+    """
+    Gentler postprocessing specifically for small particles.
+    """
+    if len(ori_mask) == 0:
+        return []
+    
+    # Much lower score threshold for small particles
+    score_threshold = 0.2
+    keep_indices = ori_score >= score_threshold
+    
+    if not np.any(keep_indices):
+        return []
+    
+    filtered_masks = ori_mask[keep_indices]
+    
+    processed_masks = []
+    for mask in filtered_masks:
+        # Fill holes but preserve small features
+        mask = binary_fill_holes(mask).astype(np.uint8)
+        
+        # Very gentle morphological operations
+        small_kernel = disk(1)  # Smallest possible kernel
+        mask = erosion(mask, small_kernel)
+        mask = dilation(mask, small_kernel)
+        
+        # Keep if above minimum size
+        if np.sum(mask) >= min_crys_size:
+            processed_masks.append(mask)
+    
+    return processed_masks
+
+def run_multiscale_class_inference(
+    predictor, image, target_class, confidence_threshold=0.3, max_iters=5
+):
+    """
+    Multi-scale inference specifically for small particles (class 1).
+    """
+    scales = [0.8, 1.0, 1.2, 1.5]  # Multiple scales to catch small particles
+    all_masks = []
+    all_scores = []
+    all_classes = []
+    
+    for scale in scales:
+        system_logger.info(f"Scale {scale}: Processing class {target_class}")
+        
+        # Resize image
+        if scale != 1.0:
+            h, w = image.shape[:2]
+            new_h, new_w = int(h * scale), int(w * scale)
+            scaled_image = cv2.resize(image, (new_w, new_h))
+        else:
+            scaled_image = image
+        
+        # Run class-specific inference
+        scale_masks, scale_scores, scale_classes = run_class_specific_inference(
+            predictor, scaled_image, target_class, confidence_threshold
+        )
+        
+        # Scale masks back to original size
+        if scale != 1.0 and scale_masks:
+            original_size_masks = []
+            for mask in scale_masks:
+                resized_mask = cv2.resize(
+                    mask.astype(np.uint8), 
+                    (image.shape[1], image.shape[0]), 
+                    interpolation=cv2.INTER_NEAREST
+                )
+                original_size_masks.append(resized_mask.astype(bool))
+            scale_masks = original_size_masks
+        
+        all_masks.extend(scale_masks)
+        all_scores.extend(scale_scores)
+        all_classes.extend(scale_classes)
+        
+        system_logger.info(f"Scale {scale}: Found {len(scale_masks)} instances")
+    
+    # Deduplicate across scales
+    unique_masks = []
+    unique_scores = []
+    unique_classes = []
+    
+    # Sort by confidence
+    sorted_indices = np.argsort(all_scores)[::-1]
+    
+    for idx in sorted_indices:
+        mask = all_masks[idx]
+        score = all_scores[idx]
+        cls = all_classes[idx]
+        
+        # Check for duplicates (lenient for small particles)
+        is_duplicate = any(iou(mask, um) > 0.4 for um in unique_masks)
+        
+        if not is_duplicate:
+            unique_masks.append(mask)
+            unique_scores.append(score)
+            unique_classes.append(cls)
+    
+    return unique_masks, unique_scores, unique_classes

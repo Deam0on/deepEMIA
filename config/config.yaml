@@ -50,3 +50,15 @@ rcnn_hyperparameters:
   #     warmup_iters: 1200
   #     gamma: 0.12
   #     batch_size_per_image: 96
+inference_settings:
+  use_class_specific_inference: true  # Set to false to use traditional approach
+  class_specific_settings:
+    class_0:  # Large particles
+      confidence_threshold: 0.5
+      iou_threshold: 0.7
+      min_size: 25
+    class_1:  # Small particles
+      confidence_threshold: 0.3
+      iou_threshold: 0.5
+      min_size: 5
+      use_multiscale: true

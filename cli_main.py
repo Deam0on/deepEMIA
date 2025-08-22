@@ -584,6 +584,12 @@ def inference_task():
     if pass_mode.startswith("multi"):
         max_iters = get_int_input("Maximum iterations for multi-pass", default=10, min_val=1, max_val=50)
     
+    # Class-specific inference option
+    print("\nClass-Specific Inference:")
+    print("   Traditional: Detects all classes together (standard approach)")
+    print("   Class-specific: Processes each class separately (better for small particles)")
+    use_class_specific = get_yes_no("Use class-specific inference (recommended for datasets with small particles)?", default=True)
+    
     # Visualization options
     print("\nVisualization Options:")
     visualize = get_yes_no("Generate visualization overlays showing detections?", default=True)
@@ -604,6 +610,10 @@ def inference_task():
         args.extend(["--pass", "multi", str(max_iters)])
     else:
         args.extend(["--pass", "single"])
+    
+    # Class-specific inference
+    if use_class_specific:
+        args.append("--class-specific")
     
     if visualize:
         args.append("--visualize")
