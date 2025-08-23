@@ -227,20 +227,10 @@ def smart_memory_cleanup(iteration, cleanup_frequency=None):
                     pass
 
 
-def stream_measurements_to_csv(csv_writer, measurements_batch):
-    """
-    Stream measurements to CSV without storing all in memory.
-    Critical for 16GB RAM constraint.
-    
-    Parameters:
-    - csv_writer: CSV writer object
-    - measurements_batch: Batch of measurements to write
-    """
+def stream_measurements_to_csv(csv_writer, csvfile, measurements_batch):
     for measurement in measurements_batch:
         csv_writer.writerow(measurement)
-    
-    # Force write to disk immediately
-    csv_writer._f.flush()
+    csvfile.flush()
 
 
 # =============================================================================
@@ -1202,7 +1192,7 @@ def run_inference(
 
             # L4 OPTIMIZATION: Stream measurements batch to CSV using config
             if measurements_batch and STREAM_MEASUREMENTS:
-                stream_measurements_to_csv(csvwriter, measurements_batch)
+                stream_measurements_to_csv(csvwriter, csvfile, measurements_batch)
                 system_logger.debug(f"Streamed {len(measurements_batch)} measurements to CSV")
                 measurements_batch.clear()  # Clear batch from memory
             elif measurements_batch:
