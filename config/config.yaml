@@ -51,22 +51,30 @@ rcnn_hyperparameters:
   #     gamma: 0.12
   #     batch_size_per_image: 96
 inference_settings:
-  use_class_specific_inference: true  # Set to false to use traditional approach
+  use_class_specific_inference: true
   iterative_stopping:
-    min_total_masks: 10          # Minimum masks before considering early stop
-    min_relative_increase: 0.25  # 25% minimum increase requirement
-    max_consecutive_zero: 1      # Stop after N iterations with no new masks
-    min_iterations: 2            # Always run at least this many iterations
+    min_total_masks: 10
+    min_relative_increase: 0.25
+    max_consecutive_zero: 1
+    min_iterations: 2
   class_specific_settings:
     class_0:  # Large particles
       confidence_threshold: 0.5
       iou_threshold: 0.7
       min_size: 25
+      min_size_factor: 0.0001  # 0.01% of image area
     class_1:  # Small particles
       confidence_threshold: 0.3
       iou_threshold: 0.5
-      min_size: 5
+      min_size: 3  # Absolute minimum
+      min_size_factor: 0.000005  # 0.0005% of image area (very aggressive)
       use_multiscale: true
+  
+  # Multi-scale settings
+  multiscale_settings:
+    baseline_scales: [0.7, 1.0, 1.5, 2.0]  # Standard scales
+    aggressive_scales: [1.0, 1.5, 2.0, 2.5, 3.0]  # For very small particles
+    max_scale: 3.0
 
 # L4 GPU Performance Optimizations
 # Specifically tuned for g2-standard-4 (4 vCPUs, 16GB RAM, 1x NVIDIA L4)

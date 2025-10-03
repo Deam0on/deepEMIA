@@ -660,7 +660,7 @@ def run_inference(
     # L4 OPTIMIZATION: Use configured batch sizes for optimal performance
     batch_size = min(INFERENCE_BATCH_SIZE, len(images_name))
     system_logger.info(
-        f"L4 OPTIMIZED: Processing {len(images_name)} images in batches of {batch_size} (configured for L4: {INFERENCE_BATCH_SIZE})"
+        f"L4 OPTIMIZED: Processing {len(images_name)} images in batches of {batch_size} (configured for 16GB RAM)"
     )
 
     Img_ID = []
@@ -1491,6 +1491,31 @@ def run_class_specific_inference(
     return unique_masks, unique_scores, unique_classes
 
 
+def log_scale_detection_summary(scale, masks_before, masks_after, original_shape, scaled_shape):
+    """
+    Log detailed summary of what happened at each scale.
+    
+    Parameters:
+    - scale: Scale factor
+    - masks_before: Number of masks before rescaling
+    - masks_after: Number of masks after rescaling and deduplication
+    - original_shape: Original image shape
+    - scaled_shape: Scaled image shape
+    """
+    if masks_before == 0:
+        status = "❌ No detections"
+    elif masks_after < masks_before:
+        status = f"⚠️ {masks_before - masks_after} filtered as duplicates"
+    else:
+        status = "✅ All unique"
+    
+    system_logger.info(
+        f"Scale {scale}x: {original_shape[1]}x{original_shape[0]} → "
+        f"{scaled_shape[1]}x{scaled_shape[0]} | "
+        f"Detected: {masks_before} | Kept: {masks_after} | {status}"
+    )
+
+
 def calculate_average_mask_sizes(predictors, images_sample, metadata):
     """
     Calculate average mask sizes per class to determine which classes are "small" vs "large".
@@ -1608,44 +1633,37 @@ def postprocess_masks_universal(
     ori_mask, ori_score, image, target_class, is_small_class, min_crys_size=None
 ):
     """
-    UNIVERSAL postprocessing that adapts based on whether the class is determined to be "small" or "large".
-
+    Universal postprocessing for masks with class-specific size thresholds.
+    
     Parameters:
     - ori_mask: Original masks
-    - ori_score: Original scores
+    - ori_score: Confidence scores
     - image: Input image
     - target_class: Target class ID
-    - is_small_class: Boolean indicating if this class is considered "small"
-    - min_crys_size: Minimum crystal size (auto-calculated if None)
-
+    - is_small_class: Whether this is a small class
+    - min_crys_size: Minimum size threshold (if None, calculated from image)
+    
     Returns:
     - list: Processed masks
     """
     if len(ori_mask) == 0:
         return []
 
-    # Adaptive parameters based on class type
-    if is_small_class:
-        # Gentler processing for small particles
-        score_threshold = 0.2
-        kernel_size = 1  # Minimal morphological operations
-        fill_holes = True  # Fill holes but preserve small features
+    image_area = image.shape[0] * image.shape[1]
+    height, width = image.shape[:2]
 
-        # Auto-calculate minimum size if not provided
-        if min_crys_size is None:
-            image_area = image.shape[0] * image.shape[1]
-            min_crys_size = max(5, int(image_area * 0.00001))  # 0.001% of image area
-
-    else:
-        # Standard processing for large particles
-        score_threshold = 0.3
-        kernel_size = 2
-        fill_holes = True
-
-        # Auto-calculate minimum size if not provided
-        if min_crys_size is None:
-            image_area = image.shape[0] * image.shape[1]
-            min_crys_size = max(25, int(image_area * 0.0001))  # 0.01% of image area
+    # ONLY calculate from image if not provided
+    if min_crys_size is None:
+        if is_small_class:
+            # More aggressive for small particles
+            min_crys_size = max(3, int(image_area * 0.000005))  # 0.0005%
+        else:
+            min_crys_size = max(25, int(image_area * 0.0001))  # 0.01%
+    
+    system_logger.debug(
+        f"Postprocessing: min_size={min_crys_size}px (class={target_class}, "
+        f"small={is_small_class}, image_area={image_area}px)"
+    )
 
     # Apply score filtering
     keep_indices = ori_score >= score_threshold
@@ -1813,6 +1831,19 @@ def run_adaptive_multiscale_inference(
 def process_single_scale(predictor, image, target_class, small_classes, confidence_threshold, max_iters, scale):
     """
     Process inference at a single scale and return results.
+    FIXED: Now uses scale-invariant minimum size thresholds.
+    
+    Parameters:
+    - predictor: Detectron2 predictor
+    - image: Original (unscaled) image
+    - target_class: Target class ID
+    - small_classes: Set of small class IDs
+    - confidence_threshold: Confidence threshold for detections
+    - max_iters: Maximum iterations
+    - scale: Scale factor (e.g., 1.0, 1.5, 2.0)
+    
+    Returns:
+    - tuple: (masks, scores, classes) at original image scale
     """
     system_logger.debug(f"Processing scale {scale} for class {target_class}")
     
@@ -1820,11 +1851,31 @@ def process_single_scale(predictor, image, target_class, small_classes, confiden
     if scale != 1.0:
         h, w = image.shape[:2]
         new_h, new_w = int(h * scale), int(w * scale)
-        scaled_image = cv2.resize(image, (new_w, new_h))
+        scaled_image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
     else:
         scaled_image = image
 
-    # Run iterative inference at this scale
+    # CRITICAL FIX: Calculate minimum size threshold based on ORIGINAL image, then scale it
+    original_image_area = image.shape[0] * image.shape[1]
+    is_small_class = target_class in small_classes
+    
+    if is_small_class:
+        # For small particles: 0.001% of ORIGINAL image (more aggressive)
+        base_min_size = max(3, int(original_image_area * 0.000005))  # Even lower threshold
+    else:
+        # For large particles: 0.01% of ORIGINAL image
+        base_min_size = max(25, int(original_image_area * 0.0001))
+    
+    # Scale the threshold proportionally to match the scaled image
+    # At 2x scale, area is 4x larger, so threshold should be 4x
+    scaled_min_size = int(base_min_size * (scale ** 2))
+    
+    system_logger.debug(
+        f"Scale {scale}x: Original min_size={base_min_size}px → Scaled min_size={scaled_min_size}px "
+        f"(image: {image.shape[1]}x{image.shape[0]} → {scaled_image.shape[1]}x{scaled_image.shape[0]})"
+    )
+
+    # Run iterative inference at this scale with SCALED threshold
     scale_masks, scale_scores, scale_classes = run_iterative_class_inference(
         predictor,
         scaled_image,
@@ -1832,12 +1883,18 @@ def process_single_scale(predictor, image, target_class, small_classes, confiden
         small_classes,
         confidence_threshold,
         max_iters,
+        min_crys_size=scaled_min_size,  # ← PASS SCALED THRESHOLD
+    )
+
+    system_logger.debug(
+        f"Scale {scale}x: Found {len(scale_masks)} masks before rescaling"
     )
 
     # Scale masks back to original size
     if scale != 1.0 and scale_masks:
         original_size_masks = []
         for mask in scale_masks:
+            # Use INTER_NEAREST for binary masks to preserve edges
             resized_mask = cv2.resize(
                 mask.astype(np.uint8),
                 (image.shape[1], image.shape[0]),
@@ -1845,6 +1902,10 @@ def process_single_scale(predictor, image, target_class, small_classes, confiden
             )
             original_size_masks.append(resized_mask.astype(bool))
         scale_masks = original_size_masks
+        
+        system_logger.debug(
+            f"Scale {scale}x: Rescaled {len(scale_masks)} masks to original size"
+        )
 
     return scale_masks, scale_scores, scale_classes
 
@@ -1949,7 +2010,7 @@ def run_iterative_class_inference(
                 break
         elif new_count < MIN_TOTAL_MASKS:
             system_logger.debug(
-                f"    Continuing: Only {new_count} masks (need at least {MIN_TOTAL_MASKS})"
+                f"    Continuing: Only {new_count} masks (need at least {MIN_TOTAL_MASKS} before considering early stop)"
             )
 
         prev_count = new_count
@@ -1958,6 +2019,6 @@ def run_iterative_class_inference(
         all_classes = unique_classes.copy()
 
     system_logger.info(
-        f"  Iterative class inference completed: {len(unique_masks)} masks after {iteration + 1} iterations"
+        f"  Iterative class inference completed: {len(unique_masks)} masks after { iteration + 1} iterations"
     )
     return unique_masks, unique_scores, unique_classes
