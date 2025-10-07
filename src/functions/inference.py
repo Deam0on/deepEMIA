@@ -2176,32 +2176,6 @@ def tile_based_inference_pipeline(
 ):
     """
     Tile-based inference for detecting very small particles.
-    
-    Strategy:
-    1. Detect scale bar (done once per image)
-    2. Run standard inference on full image (for large particles)
-    3. Tile image with overlap
-    4. Upscale each tile and run inference (for small particles)
-    5. Map masks back to original coordinates
-    6. Deduplicate across tiles and full-image results
-    7. Correct measurements using scale bar
-    
-    Parameters:
-    - predictor: Detectron2 predictor
-    - image: Original image
-    - target_class: Target class ID
-    - small_classes: Set of small class IDs
-    - confidence_threshold: Detection threshold
-    - tile_size: Size of each tile (before upscaling)
-    - overlap_ratio: Overlap ratio (0.2 = 20%)
-    - upscale_factor: How much to upscale tiles (2.0 = 2x)
-    - scale_bar_info: Dict with scale bar info (pixels per unit)
-    
-    Returns:
-    - all_masks: Combined masks from full image + tiles
-    - all_scores: Confidence scores
-    - all_classes: Class IDs
-    - corrected_sizes: Physical sizes corrected for tiling/upscaling
     """
     
     system_logger.info(f"🔬 Tile-based inference: tile_size={tile_size}px, overlap={overlap_ratio}, upscale={upscale_factor}x")
@@ -2221,7 +2195,7 @@ def tile_based_inference_pipeline(
     # STEP 2: Only do tiling for small classes
     if not is_small_class:
         system_logger.info("Not a small class, skipping tile-based inference")
-        return full_image_masks, full_image_scores, full_image_classes, []
+        return full_image_masks, full_image_scores, full_image_classes
     
     # STEP 3: Generate tiles with overlap
     system_logger.info(f"Step 2: Generating tiles ({tile_size}px with {overlap_ratio*100}% overlap)...")
@@ -2233,7 +2207,6 @@ def tile_based_inference_pipeline(
     all_tile_masks = []
     all_tile_scores = []
     all_tile_classes = []
-    all_tile_coords = []  # Track tile position for coordinate mapping
     
     for tile_idx, (tile_img, x_offset, y_offset) in enumerate(tiles):
         system_logger.debug(f"Processing tile {tile_idx + 1}/{len(tiles)} at ({x_offset}, {y_offset})")
@@ -2245,10 +2218,6 @@ def tile_based_inference_pipeline(
         upscaled_tile = cv2.resize(tile_img, (upscaled_w, upscaled_h), interpolation=cv2.INTER_LINEAR)
         
         # Run inference on upscaled tile
-        # CRITICAL: Adjust min_size threshold for upscaled tile
-        tile_image_area = upscaled_tile.shape[0] * upscaled_tile.shape[1]
-        upscaled_min_size = max(3, int(tile_image_area * 0.000005))  # Very aggressive for small particles
-        
         tile_masks, tile_scores, tile_classes = run_class_specific_inference(
             predictor, upscaled_tile, target_class, small_classes,
             confidence_threshold, iou_threshold=0.5
@@ -2257,8 +2226,9 @@ def tile_based_inference_pipeline(
         system_logger.debug(f"Tile {tile_idx + 1}: Found {len(tile_masks)} instances")
         
         # STEP 5: Map masks back to original image coordinates
+        # FIX: Track which masks pass the edge filter along with their scores
         if tile_masks:
-            for mask in tile_masks:
+            for i, (mask, score, cls) in enumerate(zip(tile_masks, tile_scores, tile_classes)):
                 # Downscale mask back to tile size
                 downscaled_mask = cv2.resize(
                     mask.astype(np.uint8),
@@ -2268,8 +2238,8 @@ def tile_based_inference_pipeline(
                 
                 # Filter edge masks (likely incomplete)
                 if is_edge_mask(downscaled_mask, tile_size, overlap_ratio):
-                    system_logger.debug(f"Tile {tile_idx + 1}: Filtered edge mask")
-                    continue
+                    system_logger.debug(f"Tile {tile_idx + 1}: Filtered edge mask {i+1}")
+                    continue  # Skip this mask - don't add it to lists
                 
                 # Map to global coordinates
                 global_mask = np.zeros((h, w), dtype=bool)
@@ -2277,11 +2247,10 @@ def tile_based_inference_pipeline(
                 x_end = min(x_offset + tile_w, w)
                 global_mask[y_offset:y_end, x_offset:x_end] = downscaled_mask[:y_end-y_offset, :x_end-x_offset]
                 
+                # FIX: Only add mask AND its corresponding score/class if it passed edge filter
                 all_tile_masks.append(global_mask)
-            
-            all_tile_scores.extend(tile_scores)
-            all_tile_classes.extend(tile_classes)
-            all_tile_coords.extend([(x_offset, y_offset)] * len(tile_masks))
+                all_tile_scores.append(score)  # ← Add score for THIS mask
+                all_tile_classes.append(cls)   # ← Add class for THIS mask
     
     system_logger.info(f"Tiles: Found {len(all_tile_masks)} instances total (before deduplication)")
     
@@ -2289,6 +2258,18 @@ def tile_based_inference_pipeline(
     all_masks = full_image_masks + all_tile_masks
     all_scores = list(full_image_scores) + list(all_tile_scores)
     all_classes = list(full_image_classes) + list(all_tile_classes)
+    
+    # FIX: Verify lengths match before deduplication
+    if len(all_masks) != len(all_scores) or len(all_masks) != len(all_classes):
+        system_logger.error(
+            f"Length mismatch! masks: {len(all_masks)}, scores: {len(all_scores)}, classes: {len(all_classes)}"
+        )
+        # Truncate to shortest length as safety measure
+        min_len = min(len(all_masks), len(all_scores), len(all_classes))
+        all_masks = all_masks[:min_len]
+        all_scores = all_scores[:min_len]
+        all_classes = all_classes[:min_len]
+        system_logger.warning(f"Truncated to {min_len} items to match lengths")
     
     # STEP 7: Deduplicate with lenient IoU (tiles may have slight variations)
     system_logger.info("Step 3: Deduplicating across full image + tiles...")
@@ -2383,6 +2364,21 @@ def deduplicate_masks_smart(masks, scores, classes, iou_threshold=0.4):
     if not masks:
         return [], [], []
     
+    # FIX: Add length validation
+    if len(masks) != len(scores) or len(masks) != len(classes):
+        system_logger.error(
+            f"Input length mismatch in deduplicate_masks_smart! "
+            f"masks: {len(masks)}, scores: {len(scores)}, classes: {len(classes)}"
+        )
+        # Use shortest length as safety
+        min_len = min(len(masks), len(scores), len(classes))
+        masks = masks[:min_len]
+        scores = scores[:min_len]
+        classes = classes[:min_len]
+    
+    # Convert to numpy array for safer indexing
+    scores = np.array(scores)
+    
     # Sort by score (descending)
     sorted_indices = np.argsort(scores)[::-1]
     
@@ -2391,6 +2387,11 @@ def deduplicate_masks_smart(masks, scores, classes, iou_threshold=0.4):
     unique_classes = []
     
     for idx in sorted_indices:
+        # FIX: Add bounds checking
+        if idx >= len(masks):
+            system_logger.warning(f"Index {idx} out of range for {len(masks)} masks, skipping")
+            continue
+            
         mask = masks[idx]
         score = scores[idx]
         cls = classes[idx]
@@ -2404,7 +2405,7 @@ def deduplicate_masks_smart(masks, scores, classes, iou_threshold=0.4):
         
         if not is_duplicate:
             unique_masks.append(mask)
-            unique_scores.append(score)
-            unique_classes.append(cls)
+            unique_scores.append(float(score))  # Convert to Python float
+            unique_classes.append(int(cls))     # Convert to Python int
     
     return unique_masks, unique_scores, unique_classes
