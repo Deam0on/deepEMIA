@@ -542,13 +542,6 @@ def run_inference(
 ):
     """
     Runs inference on a dataset and saves the results.
-
-    SIMPLIFIED APPROACH WITH L4 GPU OPTIMIZATIONS:
-    - Auto-detects available models (R50/R101)
-    - Always uses class-specific iterative inference
-    - Universal postprocessing based on mask size heuristics
-    - Single parameter (max_iters) controls single vs multi-pass
-    - L4-optimized: Mixed precision, parallel processing, memory management
     """
     
     # L4 OPTIMIZATION: Comprehensive optimization settings log
@@ -584,6 +577,10 @@ def run_inference(
     d = DatasetCatalog.get(f"{dataset_name}_train")
     metadata = MetadataCatalog.get(f"{dataset_name}_train")
     system_logger.debug("Metadata populated successfully.")
+
+    # FIX 1: Define num_classes from metadata
+    num_classes = len(metadata.thing_classes)
+    system_logger.debug(f"Number of classes: {num_classes} - {metadata.thing_classes}")
 
     # Memory optimization: Clear unnecessary data
     del d
@@ -645,7 +642,7 @@ def run_inference(
     )
     sample_images = [
         os.path.join(inpath, name) for name in images_name[:5]
-    ]  # Sample first 5 images
+    ]
     class_avg_sizes = calculate_average_mask_sizes(predictors, sample_images, metadata)
     small_classes = determine_small_classes(class_avg_sizes, threshold_percentile=50)
 
@@ -657,7 +654,7 @@ def run_inference(
             f"Using MULTI-PASS class-specific inference (max {max_iters} iterations)"
         )
 
-    # L4 OPTIMIZATION: Use configured batch sizes for optimal performance
+    # L4 OPTIMIZATION: Use configured batch sizes
     batch_size = min(INFERENCE_BATCH_SIZE, len(images_name))
     system_logger.info(
         f"L4 OPTIMIZED: Processing {len(images_name)} images in batches of {batch_size} (configured for 16GB RAM)"
@@ -671,14 +668,28 @@ def run_inference(
     total_images = len(images_name)
     overall_start_time = time.perf_counter()
 
+    # FIX 2: Load scale bar ROI configuration from config.yaml
     with open(Path.home() / "deepEMIA" / "config" / "config.yaml", "r") as f:
         full_config = yaml.safe_load(f)
 
+    # Get the scale bar ROI profiles
+    scale_bar_rois = full_config.get("scale_bar_rois", {})
+    
+    # Ensure there's a default profile
+    if "default" not in scale_bar_rois:
+        scale_bar_rois["default"] = {
+            "x_start_factor": 0.667,
+            "y_start_factor": 0.866,
+            "width_factor": 1.0,
+            "height_factor": 0.067
+        }
+        system_logger.warning("No default scale_bar_rois found in config, using hardcoded defaults")
+    
     # Get the specific ROI config for this dataset
-    roi_profiles = full_config.get("scale_bar_rois", {})
-    roi_config = roi_profiles.get(dataset_name, roi_profiles["default"])
+    dataset_roi_key = dataset_name if dataset_name in scale_bar_rois else "default"
+    roi_config = scale_bar_rois[dataset_roi_key]
     system_logger.debug(
-        f"Using scale bar ROI profile for '{dataset_name}': {roi_config}"
+        f"Using scale bar ROI profile for '{dataset_roi_key}': {roi_config}"
     )
 
     conv = lambda l: " ".join(map(str, l))
@@ -722,11 +733,6 @@ def run_inference(
             
             # Attempt scale bar detection
             try:
-                dataset_roi_key = dataset_name if dataset_name in scale_bar_rois else "default"
-                roi_config = scale_bar_rois[dataset_roi_key]
-                system_logger.debug(
-                    f"Using scale bar ROI profile for '{dataset_roi_key}': {roi_config}"
-                )
                 psum, um_pix = detect_scale_bar(image.copy(), roi_config)
                 system_logger.info(
                     f"Scale bar detected: {psum} units = {um_pix:.4f} units/pixel"
@@ -745,7 +751,7 @@ def run_inference(
             all_scores_for_image = []
             all_classes_for_image = []
             
-            for target_class in range(num_classes):
+            for target_class in range(num_classes):  # ← NOW DEFINED!
                 is_small_class = target_class in small_classes
                 class_name = metadata.thing_classes[target_class]
                 
@@ -765,17 +771,17 @@ def run_inference(
                 
                 # Run inference for this class (iterative or single pass)
                 if max_iters > 1 and is_small_class:
-                    # OPTION B: Tile-based inference (NOW WITH VALID um_pix AND psum)
+                    # Tile-based inference for small particles
                     class_masks, class_scores, class_classes = tile_based_inference_pipeline(
                         predictors[0],
                         image,
                         target_class,
                         small_classes,
                         confidence_thresh,
-                        tile_size=512,  # Configurable
+                        tile_size=512,
                         overlap_ratio=0.2,
                         upscale_factor=2.0,
-                        scale_bar_info={"um_pix": um_pix, "psum": psum}  # ← NOW DEFINED!
+                        scale_bar_info={"um_pix": um_pix, "psum": psum}
                     )
                 elif max_iters > 1:
                     # Iterative for large particles
