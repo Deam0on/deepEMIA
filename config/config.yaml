@@ -76,6 +76,18 @@ inference_settings:
     aggressive_scales: [1.0, 1.5, 2.0, 2.5, 3.0]  # For very small particles
     max_scale: 3.0
 
+  # Tile-based inference settings
+  use_tile_based_inference: true  # Enable for small particles
+  
+  tile_settings:
+    tile_size: 512  # Base tile size before upscaling
+    overlap_ratio: 0.2  # 20% overlap
+    upscale_factor: 2.0  # 2x upscaling for small particles
+    edge_filter_enabled: true
+    
+    # Only use tiling for these classes
+    classes_using_tiling: [1]  # e.g., "Pore throat" class
+
 # L4 GPU Performance Optimizations
 # Specifically tuned for g2-standard-4 (4 vCPUs, 16GB RAM, 1x NVIDIA L4)
 l4_performance_optimizations:
