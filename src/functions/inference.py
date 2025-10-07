@@ -710,43 +710,62 @@ def run_inference(
             system_logger.warning(f"Failed to load {failed_count} images in this batch")
 
         for idx_in_batch, (name, image) in enumerate(valid_batch_data):
-            idx = batch_start + idx_in_batch + 1
-            system_logger.info(f"Processing image {name} ({idx} out of {total_images})")
+            global_img_idx = batch_start + idx_in_batch
+            system_logger.info(
+                f"Processing image {name} ({global_img_idx + 1} out of {len(images_name)})"
+            )
 
-            # L4 OPTIMIZATION: Smart memory cleanup using configured frequency
-            smart_memory_cleanup(idx)
+            # === SCALE BAR DETECTION (MUST COME FIRST) ===
+            # Initialize default values
+            um_pix = 1.0
+            psum = "0"
+            
+            # Attempt scale bar detection
+            try:
+                dataset_roi_key = dataset_name if dataset_name in scale_bar_rois else "default"
+                roi_config = scale_bar_rois[dataset_roi_key]
+                system_logger.debug(
+                    f"Using scale bar ROI profile for '{dataset_roi_key}': {roi_config}"
+                )
+                psum, um_pix = detect_scale_bar(image.copy(), roi_config)
+                system_logger.info(
+                    f"Scale bar detected: {psum} units = {um_pix:.4f} units/pixel"
+                )
+            except Exception as e:
+                system_logger.warning(
+                    f"Scale bar detection failed for {name}: {e}. Using defaults (um_pix=1.0)"
+                )
+                um_pix = 1.0
+                psum = "0"
 
-            # SIMPLIFIED: Always run class-specific iterative inference
+            # === NOW RUN CLASS-SPECIFIC INFERENCE ===
             system_logger.info(f"Running class-specific inference for image {name}")
-
-            # Get number of classes from metadata
-            num_classes = len(metadata.thing_classes)
-
-            all_unique_masks = []
-            all_unique_scores = []
-            all_unique_classes = []
-
-            # Process each class separately
+            
+            all_masks_for_image = []
+            all_scores_for_image = []
+            all_classes_for_image = []
+            
             for target_class in range(num_classes):
-                class_name = metadata.thing_classes[target_class]
-                system_logger.debug(f"Processing class {target_class} ({class_name})...")
-
-                # Class-specific parameters based on size heuristic
                 is_small_class = target_class in small_classes
-
-                if is_small_class:
-                    confidence_thresh = 0.3  # Lower threshold for small particles
-                    iou_thresh = 0.5  # More lenient overlap
-                else:
-                    confidence_thresh = 0.5
-                    iou_thresh = 0.7
-
+                class_name = metadata.thing_classes[target_class]
+                
+                system_logger.debug(f"Processing class {target_class} ({class_name})...")
+                
+                # Get class-specific settings
+                class_config = config.get("inference_settings", {}).get(
+                    "class_specific_settings", {}
+                ).get(f"class_{target_class}", {})
+                
+                confidence_thresh = class_config.get(
+                    "confidence_threshold", 0.3 if is_small_class else 0.5
+                )
+                iou_thresh = class_config.get(
+                    "iou_threshold", 0.5 if is_small_class else 0.7
+                )
+                
                 # Run inference for this class (iterative or single pass)
                 if max_iters > 1 and is_small_class:
-                    # OPTION A: Multi-scale inference (current)
-                    # class_masks, class_scores, class_classes = run_multiscale_class_inference(...)
-                    
-                    # OPTION B: Tile-based inference (NEW)
+                    # OPTION B: Tile-based inference (NOW WITH VALID um_pix AND psum)
                     class_masks, class_scores, class_classes = tile_based_inference_pipeline(
                         predictors[0],
                         image,
@@ -756,7 +775,7 @@ def run_inference(
                         tile_size=512,  # Configurable
                         overlap_ratio=0.2,
                         upscale_factor=2.0,
-                        scale_bar_info={"um_pix": um_pix, "psum": psum}  # From scale bar detection
+                        scale_bar_info={"um_pix": um_pix, "psum": psum}  # ← NOW DEFINED!
                     )
                 elif max_iters > 1:
                     # Iterative for large particles
@@ -782,15 +801,15 @@ def run_inference(
                             iou_thresh,
                         )
                     )
-
+                
                 system_logger.debug(
                     f"Class {target_class}: Found {len(class_masks)} instances"
                 )
 
                 # Add to combined results
-                all_unique_masks.extend(class_masks)
-                all_unique_scores.extend(class_scores)
-                all_unique_classes.extend(class_classes)
+                all_masks_for_image.extend(class_masks)
+                all_scores_for_image.extend(class_scores)
+                all_classes_for_image.extend(class_classes)
 
             # Final cross-class deduplication (optional, more lenient)
             final_masks = []
@@ -798,7 +817,7 @@ def run_inference(
             final_classes = []
 
             for i, (mask, score, cls) in enumerate(
-                zip(all_unique_masks, all_unique_scores, all_unique_classes)
+                zip(all_masks_for_image, all_scores_for_image, all_classes_for_image)
             ):
                 # Only check against same class or very high overlap with different class
                 is_duplicate = False
