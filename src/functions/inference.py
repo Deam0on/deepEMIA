@@ -1913,10 +1913,28 @@ def process_single_scale(predictor, image, target_class, small_classes, confiden
 
 
 def run_iterative_class_inference(
-    predictor, image, target_class, small_classes, confidence_threshold=0.3, max_iters=5
+    predictor, 
+    image, 
+    target_class, 
+    small_classes, 
+    confidence_threshold=0.3, 
+    max_iters=5,
+    min_crys_size=None  # ← ADD THIS PARAMETER
 ):
     """
     Run iterative inference for a specific class with universal postprocessing.
+    
+    Parameters:
+    - predictor: Detectron2 predictor
+    - image: Input image (potentially scaled)
+    - target_class: Target class ID
+    - small_classes: Set of small class IDs
+    - confidence_threshold: Confidence threshold
+    - max_iters: Maximum iterations
+    - min_crys_size: Minimum crystal size (if None, calculated from image)
+    
+    Returns:
+    - tuple: (masks, scores, classes)
     """
     all_masks = []
     all_scores = []
@@ -1958,10 +1976,15 @@ def run_iterative_class_inference(
         filtered_scores = pred_scores[class_mask]
         filtered_classes = pred_classes[class_mask]
 
-        # UNIVERSAL postprocessing based on size heuristic
+        # UNIVERSAL postprocessing - NOW WITH OPTIONAL min_crys_size
         if len(filtered_masks) > 0:
             processed_masks = postprocess_masks_universal(
-                filtered_masks, filtered_scores, image, target_class, is_small_class
+                filtered_masks, 
+                filtered_scores, 
+                image, 
+                target_class, 
+                is_small_class,
+                min_crys_size=min_crys_size  # ← PASS IT THROUGH
             )
 
             # Add processed masks from this iteration
@@ -2021,6 +2044,6 @@ def run_iterative_class_inference(
         all_classes = unique_classes.copy()
 
     system_logger.info(
-        f"  Iterative class inference completed: {len(unique_masks)} masks after { iteration + 1} iterations"
+        f"  Iterative class inference completed: {len(unique_masks)} masks after {iteration + 1} iterations"
     )
     return unique_masks, unique_scores, unique_classes
