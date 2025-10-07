@@ -1919,22 +1919,11 @@ def run_iterative_class_inference(
     small_classes, 
     confidence_threshold=0.3, 
     max_iters=5,
-    min_crys_size=None  # ← ADD THIS PARAMETER
+    min_crys_size=None
 ):
     """
     Run iterative inference for a specific class with universal postprocessing.
-    
-    Parameters:
-    - predictor: Detectron2 predictor
-    - image: Input image (potentially scaled)
-    - target_class: Target class ID
-    - small_classes: Set of small class IDs
-    - confidence_threshold: Confidence threshold
-    - max_iters: Maximum iterations
-    - min_crys_size: Minimum crystal size (if None, calculated from image)
-    
-    Returns:
-    - tuple: (masks, scores, classes)
+    NOW WITH COMPREHENSIVE DIAGNOSTIC LOGGING.
     """
     all_masks = []
     all_scores = []
@@ -1945,7 +1934,7 @@ def run_iterative_class_inference(
     # Class-specific parameters based on size heuristic
     is_small_class = target_class in small_classes
     if is_small_class:
-        iou_threshold = 0.5  # More lenient for small particles
+        iou_threshold = 0.5
     else:
         iou_threshold = 0.7
 
@@ -1960,9 +1949,35 @@ def run_iterative_class_inference(
                 outputs = predictor(image)
         else:
             outputs = predictor(image)
+        
         pred_masks = outputs["instances"].to("cpu")._fields["pred_masks"].numpy()
         pred_scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
         pred_classes = outputs["instances"].to("cpu")._fields["pred_classes"].numpy()
+
+        # 🔍 DIAGNOSTIC 1: Log raw detections before ANY filtering
+        raw_class_mask = pred_classes == target_class
+        raw_class_count = np.sum(raw_class_mask)
+        system_logger.info(f"    🔍 DIAGNOSTIC: RAW detections for class {target_class}: {raw_class_count} masks")
+        
+        # Log score distribution of raw detections
+        if raw_class_count > 0:
+            raw_class_scores = pred_scores[raw_class_mask]
+            system_logger.info(
+                f"    🔍 DIAGNOSTIC: Score distribution - "
+                f"min: {raw_class_scores.min():.3f}, "
+                f"max: {raw_class_scores.max():.3f}, "
+                f"mean: {raw_class_scores.mean():.3f}, "
+                f"median: {np.median(raw_class_scores):.3f}"
+            )
+            
+            # Count how many are above/below threshold
+            above_thresh = np.sum(raw_class_scores >= confidence_threshold)
+            below_thresh = np.sum(raw_class_scores < confidence_threshold)
+            system_logger.info(
+                f"    🔍 DIAGNOSTIC: Confidence filtering - "
+                f"above {confidence_threshold}: {above_thresh}, "
+                f"below {confidence_threshold}: {below_thresh} (FILTERED OUT)"
+            )
 
         del outputs
         if torch.cuda.is_available():
@@ -1976,16 +1991,78 @@ def run_iterative_class_inference(
         filtered_scores = pred_scores[class_mask]
         filtered_classes = pred_classes[class_mask]
 
-        # UNIVERSAL postprocessing - NOW WITH OPTIONAL min_crys_size
+        # 🔍 DIAGNOSTIC 2: After confidence filtering
+        system_logger.info(f"    🔍 DIAGNOSTIC: After confidence filter: {len(filtered_masks)} masks")
+        
+        # Log size distribution of filtered masks BEFORE postprocessing
         if len(filtered_masks) > 0:
+            mask_sizes = [np.sum(mask) for mask in filtered_masks]
+            system_logger.info(
+                f"    🔍 DIAGNOSTIC: Mask size distribution (BEFORE postprocessing) - "
+                f"min: {min(mask_sizes)}px, "
+                f"max: {max(mask_sizes)}px, "
+                f"mean: {np.mean(mask_sizes):.1f}px, "
+                f"median: {np.median(mask_sizes):.1f}px"
+            )
+
+        # UNIVERSAL postprocessing
+        if len(filtered_masks) > 0:
+            # 🔍 DIAGNOSTIC 3: Log threshold being used
+            if min_crys_size is None:
+                image_area = image.shape[0] * image.shape[1]
+                calculated_min_size = max(3, int(image_area * 0.000005)) if is_small_class else max(25, int(image_area * 0.0001))
+                system_logger.info(
+                    f"    🔍 DIAGNOSTIC: Size threshold - "
+                    f"calculated min_size={calculated_min_size}px "
+                    f"(image_area={image_area}px, is_small={is_small_class})"
+                )
+            else:
+                system_logger.info(
+                    f"    🔍 DIAGNOSTIC: Size threshold - "
+                    f"provided min_size={min_crys_size}px"
+                )
+            
             processed_masks = postprocess_masks_universal(
                 filtered_masks, 
                 filtered_scores, 
                 image, 
                 target_class, 
                 is_small_class,
-                min_crys_size=min_crys_size  # ← PASS IT THROUGH
+                min_crys_size=min_crys_size
             )
+
+            # 🔍 DIAGNOSTIC 4: After size filtering
+            filtered_by_size = len(filtered_masks) - len(processed_masks)
+            system_logger.info(
+                f"    🔍 DIAGNOSTIC: After size filter: {len(processed_masks)} masks "
+                f"({filtered_by_size} FILTERED OUT by size)"
+            )
+            
+            # Show which sizes were filtered
+            if filtered_by_size > 0 and len(filtered_masks) > 0:
+                removed_sizes = []
+                kept_sizes = []
+                threshold_used = min_crys_size if min_crys_size is not None else calculated_min_size
+                
+                for mask in filtered_masks:
+                    size = np.sum(mask)
+                    if size >= threshold_used:
+                        kept_sizes.append(size)
+                    else:
+                        removed_sizes.append(size)
+                
+                if removed_sizes:
+                    system_logger.info(
+                        f"    🔍 DIAGNOSTIC: Removed mask sizes - "
+                        f"min: {min(removed_sizes)}px, max: {max(removed_sizes)}px, "
+                        f"count: {len(removed_sizes)}"
+                    )
+                if kept_sizes:
+                    system_logger.info(
+                        f"    🔍 DIAGNOSTIC: Kept mask sizes - "
+                        f"min: {min(kept_sizes)}px, max: {max(kept_sizes)}px, "
+                        f"count: {len(kept_sizes)}"
+                    )
 
             # Add processed masks from this iteration
             if processed_masks:
@@ -2008,6 +2085,14 @@ def run_iterative_class_inference(
 
         new_count = len(unique_masks)
         added = new_count - prev_count
+        duplicates_removed = len(all_masks) - new_count
+
+        # 🔍 DIAGNOSTIC 5: After deduplication
+        system_logger.info(
+            f"    🔍 DIAGNOSTIC: After deduplication - "
+            f"unique: {new_count}, duplicates removed: {duplicates_removed}, "
+            f"newly added: {added}"
+        )
 
         system_logger.debug(f"    Added {added} new masks (total: {new_count})")
 
@@ -2017,16 +2102,14 @@ def run_iterative_class_inference(
         else:
             no_new_mask_iters = 0
 
-        # Stop if no new masks for configured consecutive iterations
         if no_new_mask_iters >= MAX_CONSECUTIVE_ZERO:
             system_logger.debug(
                 f"    Stopping: No new masks for {MAX_CONSECUTIVE_ZERO} consecutive iterations"
             )
             break
 
-        # Your stopping condition: need at least configured minimum masks and configured % increase
         if new_count >= MIN_TOTAL_MASKS and iteration >= MIN_ITERATIONS:
-            required_increase = max(1, int(prev_count * MIN_RELATIVE_INCREASE))  # Configured % increase
+            required_increase = max(1, int(prev_count * MIN_RELATIVE_INCREASE))
             if added < required_increase:
                 system_logger.debug(
                     f"    Stopping: Added {added} masks < required {required_increase} "
@@ -2043,7 +2126,9 @@ def run_iterative_class_inference(
         all_scores = unique_scores.copy()
         all_classes = unique_classes.copy()
 
+    # 🔍 DIAGNOSTIC 6: Final summary
     system_logger.info(
-        f"  Iterative class inference completed: {len(unique_masks)} masks after {iteration + 1} iterations"
+        f"  ✅ FINAL: Class {target_class} completed with {len(unique_masks)} masks after {iteration + 1} iterations"
     )
+    
     return unique_masks, unique_scores, unique_classes
