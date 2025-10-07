@@ -1665,29 +1665,31 @@ def postprocess_masks_universal(
         f"small={is_small_class}, image_area={image_area}px)"
     )
 
-    # Apply score filtering
-    keep_indices = ori_score >= score_threshold
-    if not np.any(keep_indices):
-        return []
-
-    filtered_masks = ori_mask[keep_indices]
-
+    # Process each mask
     processed_masks = []
-    for mask in filtered_masks:
+    
+    for i, mask in enumerate(ori_mask):
         # Fill holes
-        if fill_holes:
-            mask = binary_fill_holes(mask).astype(np.uint8)
-
-        # Morphological operations
-        if kernel_size > 0:
-            kernel = disk(kernel_size)
-            mask = erosion(mask, kernel)
-            mask = dilation(mask, kernel)
-
+        filled_mask = binary_fill_holes(mask).astype(np.uint8)
+        
+        # Light morphological operations (erosion then dilation)
+        kernel = disk(1)  # Small kernel for speed
+        eroded = erosion(filled_mask, kernel)
+        dilated = dilation(eroded, kernel)
+        
         # Size filtering
-        if np.sum(mask) >= min_crys_size:
-            processed_masks.append(mask)
+        mask_size = np.sum(dilated)
+        if mask_size >= min_crys_size:
+            processed_masks.append(dilated.astype(bool))
+        else:
+            system_logger.debug(
+                f"Filtered mask {i}: size {mask_size}px < min {min_crys_size}px"
+            )
 
+    system_logger.debug(
+        f"Postprocessing complete: {len(processed_masks)}/{len(ori_mask)} masks kept"
+    )
+    
     return processed_masks
 
 
