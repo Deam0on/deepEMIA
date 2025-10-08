@@ -238,42 +238,6 @@ def stream_measurements_to_csv(csv_writer, csvfile, measurements_batch):
 # =============================================================================
 
 
-def custom_mapper(dataset_dicts):
-    """
-    Custom data mapper function for Detectron2. Applies various transformations to the image and annotations.
-
-    Parameters:
-    - dataset_dicts (dict): Dictionary containing image and annotation data
-
-    Returns:
-    - dict: Updated dictionary with transformed image and annotations
-    """
-    dataset_dicts = copy.deepcopy(dataset_dicts)  # it will be modified by code below
-    image = utils.read_image(dataset_dicts["file_name"], format="BGR")
-    transform_list = [
-        T.Resize((800, 800)),
-        T.RandomBrightness(0.8, 1.8),
-        T.RandomContrast(0.6, 1.3),
-        T.RandomSaturation(0.8, 1.4),
-        T.RandomRotation(angle=[90, 90]),
-        T.RandomLighting(0.7),
-        T.RandomFlip(prob=0.4, horizontal=False, vertical=True),
-    ]
-
-    image, transforms = T.apply_transform_gens(transform_list, image)
-    dataset_dicts["image"] = torch.as_tensor(image.transpose(2, 0, 1).astype("float32"))
-
-    annos = [
-        utils.transform_instance_annotations(obj, transforms, image.shape[:2])
-        for obj in dataset_dicts.pop("annotations")
-        if obj.get("iscrowd", 0) == 0
-    ]
-
-    instances = utils.annotations_to_instances(annos, image.shape[:2])
-    dataset_dicts["instances"] = utils.filter_empty_instances(instances)
-    return dataset_dicts
-
-
 def get_image_folder_path(base_path=Path.home() / "DATASET" / "INFERENCE"):
     """
     Determines the path to the folder containing images for inference.
@@ -311,77 +275,6 @@ def get_image_folder_path(base_path=Path.home() / "DATASET" / "INFERENCE"):
         )
 
 
-def GetInference(im, filtered_instances, metadata, test_img, x_pred):
-    """
-    Annotates each instance with its ID at the center of the bounding box
-    and saves the annotated image.
-
-    Parameters:
-    - im (np.ndarray): Original image
-    - filtered_instances (Instances): Instances filtered by class
-    - metadata (Metadata): Metadata for label mapping
-    - test_img (str): Image name
-    - x_pred (int): Class index
-    """
-    v = Visualizer(
-        im[:, :, ::-1],
-        metadata=metadata,
-        scale=1.0,
-        instance_mode=ColorMode.SEGMENTATION,
-    )
-    out = v.draw_instance_predictions(filtered_instances)
-    img_with_boxes = out.get_image()
-
-    for i, box in enumerate(filtered_instances.pred_boxes.tensor):
-        x = int((box[0] + box[2]) / 2)
-        y = int((box[1] + box[3]) / 2)
-        label = f"{i+1}"
-        cv2.putText(
-            img_with_boxes,
-            label,
-            (x, y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (255, 0, 0),  # Bright red
-            1,
-            cv2.LINE_AA,
-        )
-
-    save_path = f"{test_img}_class_{x_pred}_pred.png"
-    cv2.imwrite(save_path, img_with_boxes[:, :, ::-1])
-
-
-def GetInferenceNoID(predictor, im, x_pred, metadata, test_img):
-    """
-    Performs inference on an image and saves the predicted instances.
-
-    Parameters:
-    - predictor: The predictor object used for inference.
-    - im: The image to perform inference on.
-    - x_pred: The class to filter predicted instances by.
-    - metadata: Metadata for visualization.
-    - test_img: Path to save the test image.
-
-    Returns:
-    - None
-    """
-    outputs = predictor(im)
-
-    # Get all instances
-    inst_out = outputs["instances"]
-
-    # Filter instances by predicted class
-    filtered_instances = inst_out[inst_out.pred_classes == x_pred]
-
-    v = Visualizer(
-        im[:, :, ::-1], metadata=metadata, scale=1, instance_mode=ColorMode.SEGMENTATION
-    )
-    out = v.draw_instance_predictions(filtered_instances.to("cpu"))
-    cv2.imwrite(
-        test_img + "_" + str(x_pred) + "__pred.png", out.get_image()[:, :, ::-1]
-    )
-
-
 def is_image_file(filename):
     """
     Checks if a filename corresponds to a supported image format.
@@ -395,28 +288,6 @@ def is_image_file(filename):
     return filename.lower().endswith(
         (".tif", ".tiff", ".png", ".jpg", ".jpeg", ".bmp", ".gif")
     )
-
-
-def GetCounts(predictor, im, TList, PList):
-    """
-    Counts instances in the image based on predictions.
-
-    Parameters:
-    - predictor (object): Model predictor
-    - im (numpy.ndarray): Input image
-    - TList (list): List of thresholds
-    - PList (list): List of pixel thresholds
-
-    Returns:
-    - tuple: (counts, predictions)
-    """
-    outputs = predictor(im)
-    classes = outputs["instances"].pred_classes.to("cpu").numpy()
-    TotalCount = sum(classes == 0) + sum(classes == 1)
-    TCount = sum(classes == 0)
-    PCount = sum(classes == 1)
-    TList.append(TCount)
-    PList.append(PCount)
 
 
 def iou(mask1, mask2):
@@ -433,104 +304,6 @@ def iou(mask1, mask2):
     intersection = np.logical_and(mask1, mask2).sum()
     union = np.logical_or(mask1, mask2).sum()
     return intersection / union if union > 0 else 0
-
-
-def iterative_combo_predictors(
-    predictors, image, iou_threshold=0.7, min_increase=0.25
-):
-    """
-    Run both predictors iteratively with automatic stopping conditions from config.yaml.
-    """
-    all_masks = []
-    all_scores = []
-    all_sources = []
-    prev_count = 0
-    no_new_mask_iters = 0
-    iteration = 0
-
-    while True:
-        iteration += 1
-        new_masks = []
-        new_scores = []
-        new_sources = []
-        for pred_idx, predictor in enumerate(predictors):
-            outputs = predictor(image)
-            masks = postprocess_masks(
-                np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
-                outputs["instances"].to("cpu")._fields["scores"].numpy(),
-                image,
-            )
-            scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
-            if masks:
-                for i, mask in enumerate(masks):
-                    new_masks.append(mask)
-                    new_scores.append(scores[i])
-                    new_sources.append(pred_idx)
-
-        # Combine with previous masks
-        all_masks.extend(new_masks)
-        all_scores.extend(new_scores)
-        all_sources.extend(new_sources)
-
-        # Deduplicate
-        unique_masks = []
-        unique_scores = []
-        unique_sources = []
-        for i, mask in enumerate(all_masks):
-            if not any(iou(mask, um) > iou_threshold for um in unique_masks):
-                unique_masks.append(mask)
-                unique_scores.append(all_scores[i])
-                unique_sources.append(all_sources[i])
-
-        new_count = len(unique_masks)
-        added = new_count - prev_count
-        system_logger.debug(
-            f"Iteration {iteration}: Added {added} new masks (total: {new_count})"
-        )
-
-        # UPDATED EARLY STOPPING CONDITIONS (same as single predictor)
-
-        # Track consecutive iterations with no new masks
-        if added == 0:
-            no_new_mask_iters += 1
-        else:
-            no_new_mask_iters = 0
-
-        # Stop if no new masks for configured consecutive iterations
-        if no_new_mask_iters >= MAX_CONSECUTIVE_ZERO:
-            system_logger.debug(
-                f"Stopping: No new masks found in {MAX_CONSECUTIVE_ZERO} consecutive iterations."
-            )
-            break
-
-        # Check stopping conditions only if we have enough masks
-        if new_count >= MIN_TOTAL_MASKS:  # Must have at least configured minimum masks
-            if iteration >= MIN_ITERATIONS:  # Allow at least configured minimum iterations
-                # Calculate required increase (configured % of current total)
-                required_increase = max(1, int(prev_count * MIN_RELATIVE_INCREASE))
-
-                if added < required_increase:
-                    system_logger.debug(
-                        f"Stopping: Added {added} masks < required {required_increase} "
-                        f"({min_increase:.0%} of {prev_count} existing masks). "
-                        f"Total masks: {new_count}"
-                    )
-                    break
-        else:
-            # Continue if we don't have enough masks yet
-            system_logger.debug(
-                f"Continuing: Only {new_count} masks (need at least {MIN_TOTAL_MASKS} before considering early stop)"
-            )
-
-        prev_count = new_count
-        all_masks = unique_masks
-        all_scores = unique_scores
-        all_sources = unique_sources
-
-    system_logger.debug(
-        f"Combo inference completed with {len(unique_masks)} total masks"
-    )
-    return unique_masks, unique_scores, unique_sources
 
 
 def run_inference(
@@ -660,12 +433,8 @@ def run_inference(
     total_images = len(images_name)
     overall_start_time = time.perf_counter()
 
-    # FIX 2: Load scale bar ROI configuration from config.yaml
-    with open(Path.home() / "deepEMIA" / "config" / "config.yaml", "r") as f:
-        full_config = yaml.safe_load(f)
-
-    # Get the scale bar ROI profiles
-    scale_bar_rois = full_config.get("scale_bar_rois", {})
+    # Get the scale bar ROI profiles from already-loaded config
+    scale_bar_rois = config.get("scale_bar_rois", {})
     
     # Ensure there's a default profile
     if "default" not in scale_bar_rois:
@@ -788,46 +557,7 @@ def run_inference(
         # Final cross-class deduplication (optional, more lenient)
         system_logger.info("Step 3: Deduplicating across all classes...")
         
-        # OLD SLOW CODE - REMOVE THIS:
-        # final_masks = []
-        # final_scores = []
-        # final_classes = []
-        # 
-        # for i, (mask, score, cls) in enumerate(
-        #     zip(all_masks_for_image, all_scores_for_image, all_classes_for_image)
-        # ):
-        #     # Only check against same class or very high overlap with different class
-        #     is_duplicate = False
-        #     for j, (existing_mask, existing_cls) in enumerate(
-        #         zip(final_masks, final_classes)
-        #     ):
-        #         overlap = iou(mask, existing_mask)
-        # 
-        #         if cls == existing_cls:
-        #             # Same class: normal threshold
-        #             threshold_val = 0.7
-        #         else:
-        #             # Different class: only remove if very high overlap
-        #             threshold_val = 0.9
-        # 
-        #         if overlap > threshold_val:
-        #             # Keep the one with higher confidence
-        #             if score > final_scores[j]:
-        #                 final_masks[j] = mask
-        #                 final_scores[j] = score
-        #                 final_classes[j] = cls
-        #             is_duplicate = True
-        #             break
-        # 
-        #     if not is_duplicate:
-        #         final_masks.append(mask)
-        #         final_scores.append(score)
-        #         final_classes.append(cls)
-        # 
-        #     if (i + 1) % 100 == 0 or (i + 1) == len(all_masks_for_image):
-        #         system_logger.info(f"Processed {i + 1} out of {len(all_masks_for_image)} masks")
-        
-        # NEW OPTIMIZED CODE - USE THIS INSTEAD:
+        # Use optimized deduplication with bounding box pre-filtering
         final_masks, final_scores, final_classes = deduplicate_masks_smart(
             all_masks_for_image, 
             all_scores_for_image, 
@@ -1269,145 +999,6 @@ def run_inference(
         system_logger.warning(f"Error during mask file cleanup: {e}")
     
     system_logger.info("Inference completed successfully")
-
-
-def iterative_single_predictor_with_classes(
-    predictor, image, iou_threshold=0.7, min_increase=0.25
-):
-    """
-    Run a single predictor iteratively while preserving class information.
-
-    Updated stopping conditions (configurable via config.yaml):
-    - Must have at least MIN_TOTAL_MASKS total masks before considering stopping
-    - Must add at least MIN_RELATIVE_INCREASE of current total OR continue if under minimum masks
-    - Stop after MAX_CONSECUTIVE_ZERO consecutive iterations with no new masks
-    """
-    all_masks = []
-    all_scores = []
-    all_sources = []
-    all_classes = []
-    prev_count = 0
-    no_new_mask_iters = 0
-    iteration = 0
-
-    while True:
-        iteration += 1
-        # L4 OPTIMIZATION: Memory cleanup before prediction
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-        # L4 OPTIMIZATION: Use mixed precision for faster inference
-        use_mixed_precision = torch.cuda.is_available()
-        
-        if use_mixed_precision:
-            with torch.cuda.amp.autocast():
-                outputs = predictor(image)
-        else:
-            outputs = predictor(image)
-        masks = postprocess_masks(
-            np.asarray(outputs["instances"].to("cpu")._fields["pred_masks"]),
-            outputs["instances"].to("cpu")._fields["scores"].numpy(),
-            image,
-        )
-        scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
-        classes = outputs["instances"].to("cpu")._fields["pred_classes"].numpy()
-
-        # Memory optimization: Clear GPU memory
-        del outputs
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-        # Add new masks from this iteration
-        if masks:
-            for i, mask in enumerate(masks):
-                all_masks.append(mask)
-                all_scores.append(scores[i])
-                all_sources.append(0)  # Source 0 for single predictor
-                all_classes.append(classes[i])  # Preserve class information
-
-        # Memory optimization: Clear intermediate variables
-        del masks, scores, classes
-        gc.collect()
-
-        # Deduplicate all masks while preserving class info
-        unique_masks = []
-        unique_scores = []
-        unique_sources = []
-        unique_classes = []
-
-        for i, mask in enumerate(all_masks):
-            if not any(iou(mask, um) > iou_threshold for um in unique_masks):
-                unique_masks.append(mask)
-                unique_scores.append(all_scores[i])
-                unique_sources.append(all_sources[i])
-                unique_classes.append(all_classes[i])  # Preserve class
-
-        new_count = len(unique_masks)
-        added = new_count - prev_count
-
-        # Log class distribution in this iteration
-        if added > 0:
-            new_classes = unique_classes[-added:]  # Classes of newly added masks
-            class_counts = {}
-            for cls in new_classes:
-                class_counts[cls] = class_counts.get(cls, 0) + 1
-            class_summary = ", ".join(
-                [f"class {cls}: {count}" for cls, count in sorted(class_counts.items())]
-            )
-            system_logger.info(
-                f"Iteration {iteration}: Added {added} new masks (total: {new_count}) - New: {class_summary}"
-            )
-        else:
-            system_logger.info(
-                f"Iteration {iteration}: Added {added} new masks (total: {new_count})"
-            )
-
-        # UPDATED EARLY STOPPING CONDITIONS
-
-        # 1. Track consecutive iterations with no new masks
-        if added == 0:
-            no_new_mask_iters += 1
-        else:
-            no_new_mask_iters = 0
-
-        # 2. Stop if no new masks for configured consecutive iterations
-        if no_new_mask_iters >= MAX_CONSECUTIVE_ZERO:
-            system_logger.info(
-                f"Stopping: No new masks found in {MAX_CONSECUTIVE_ZERO} consecutive iterations."
-            )
-            break
-
-        # 3. YOUR REQUIREMENTS: Check stopping conditions only if we have enough masks
-        if new_count >= MIN_TOTAL_MASKS:  # Only consider stopping if we have at least configured minimum masks
-            if iteration >= MIN_ITERATIONS:  # Allow at least configured minimum iterations
-                # Calculate required increase (configured % of current total)
-                required_increase = max(1, int(prev_count * MIN_RELATIVE_INCREASE))
-
-                if added < required_increase:
-                    system_logger.info(
-                        f"Stopping: Added {added} masks < required {required_increase} "
-                        f"({min_increase:.0%} of {prev_count} existing masks). "
-                        f"Total masks: {new_count}"
-                    )
-                    break
-        else:
-            # Continue if we don't have enough masks yet
-            system_logger.info(
-                f"Continuing: Only {new_count} masks (need at least {MIN_TOTAL_MASKS} before considering early stop)"
-            )
-
-        prev_count = new_count
-        all_masks = unique_masks
-        all_scores = unique_scores
-        all_sources = unique_sources
-        all_classes = unique_classes
-
-    # Final logging
-    system_logger.info(
-        f"Iterative inference completed with {len(unique_masks)} total masks"
-    )
-
-    return unique_masks, unique_scores, unique_sources, unique_classes
 
 
 def run_class_specific_inference(
@@ -2184,9 +1775,6 @@ def tile_based_inference_pipeline(
     
     h, w = image.shape[:2]
     is_small_class = target_class in small_classes
-    
-    # REMOVED: Early exit check for large classes
-    # Now runs for ALL classes to maximize detection
     
     system_logger.info(f"Running full-image + tile-based inference for class {target_class}")
     
