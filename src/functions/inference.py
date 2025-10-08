@@ -1035,25 +1035,25 @@ def run_inference(
                                 else f"class_{cls}"
                             )
 
-                            # Draw instance ID
+                            # Draw instance ID (REDUCED font size from 0.6 to 0.4)
                             cv2.putText(
                                 vis_img,
                                 f"{i + 1}",
                                 (cX, cY - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX,
-                                0.6,
+                                0.4,  # CHANGED: was 0.6
                                 (255, 255, 255),  # White text
-                                2,
+                                1,  # CHANGED: thickness from 2 to 1
                                 cv2.LINE_AA,
                             )
 
-                            # Draw class name
+                            # Draw class name (REDUCED font size from 0.4 to 0.3)
                             cv2.putText(
                                 vis_img,
                                 class_name,
                                 (cX, cY + 15),
                                 cv2.FONT_HERSHEY_SIMPLEX,
-                                0.4,
+                                0.3,  # CHANGED: was 0.4
                                 (255, 255, 255),  # White text
                                 1,
                                 cv2.LINE_AA,
