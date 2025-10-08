@@ -2175,7 +2175,17 @@ def tile_based_inference_pipeline(
     scale_bar_info=None
 ):
     """
-    Tile-based inference for detecting very small particles.
+    Tile-based inference for detecting particles at multiple scales.
+    NOW RUNS FOR ALL CLASSES (removed small/large class restriction).
+    
+    Strategy:
+    1. Run full-image inference (captures larger particles with full context)
+    2. Run tile-based inference (captures smaller particles via upscaling)
+    3. Combine and deduplicate results
+    
+    This approach improves detection across all particle sizes by:
+    - Full-image pass: Maintains spatial context for large particles
+    - Tile-based pass: Makes small particles appear larger (more detectable)
     """
     
     system_logger.info(f"🔬 Tile-based inference: tile_size={tile_size}px, overlap={overlap_ratio}, upscale={upscale_factor}x")
@@ -2183,20 +2193,12 @@ def tile_based_inference_pipeline(
     h, w = image.shape[:2]
     is_small_class = target_class in small_classes
     
-    # EARLY EXIT: Skip tile-based inference for large classes
-    if not is_small_class:
-        system_logger.info("Not a small class, using standard full-image inference only")
-        full_image_masks, full_image_scores, full_image_classes = run_class_specific_inference(
-            predictor, image, target_class, small_classes, 
-            confidence_threshold, iou_threshold=0.7
-        )
-        system_logger.info(f"Full image: Found {len(full_image_masks)} instances")
-        return full_image_masks, full_image_scores, full_image_classes
+    # REMOVED: Early exit check for large classes
+    # Now runs for ALL classes to maximize detection
     
-    # FOR SMALL CLASSES: Run both full-image AND tile-based inference
-    system_logger.info("Small class detected - running full-image + tile-based inference")
+    system_logger.info(f"Running full-image + tile-based inference for class {target_class}")
     
-    # STEP 1: Full-image inference (for context and larger instances of small class)
+    # STEP 1: Full-image inference (for larger particles and spatial context)
     system_logger.info("Step 1: Full-image inference...")
     full_image_masks, full_image_scores, full_image_classes = run_class_specific_inference(
         predictor, image, target_class, small_classes, 
@@ -2205,7 +2207,7 @@ def tile_based_inference_pipeline(
     
     system_logger.info(f"Full image: Found {len(full_image_masks)} instances")
     
-    # STEP 2: Generate tiles with overlap (ALWAYS for small classes)
+    # STEP 2: Generate tiles with overlap (NOW FOR ALL CLASSES)
     system_logger.info(f"Step 2: Generating tiles ({tile_size}px with {overlap_ratio*100}% overlap)...")
     tiles = generate_tiles_with_overlap(image, tile_size, overlap_ratio)
     
