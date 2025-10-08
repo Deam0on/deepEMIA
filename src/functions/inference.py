@@ -2183,8 +2183,21 @@ def tile_based_inference_pipeline(
     h, w = image.shape[:2]
     is_small_class = target_class in small_classes
     
-    # STEP 1: Full-image inference (for large particles and context)
-    system_logger.info("Step 1: Full-image inference for large particles...")
+    # EARLY EXIT: Skip tile-based inference for large classes
+    if not is_small_class:
+        system_logger.info("Not a small class, using standard full-image inference only")
+        full_image_masks, full_image_scores, full_image_classes = run_class_specific_inference(
+            predictor, image, target_class, small_classes, 
+            confidence_threshold, iou_threshold=0.7
+        )
+        system_logger.info(f"Full image: Found {len(full_image_masks)} instances")
+        return full_image_masks, full_image_scores, full_image_classes
+    
+    # FOR SMALL CLASSES: Run both full-image AND tile-based inference
+    system_logger.info("Small class detected - running full-image + tile-based inference")
+    
+    # STEP 1: Full-image inference (for context and larger instances of small class)
+    system_logger.info("Step 1: Full-image inference...")
     full_image_masks, full_image_scores, full_image_classes = run_class_specific_inference(
         predictor, image, target_class, small_classes, 
         confidence_threshold, iou_threshold=0.7
@@ -2192,18 +2205,13 @@ def tile_based_inference_pipeline(
     
     system_logger.info(f"Full image: Found {len(full_image_masks)} instances")
     
-    # STEP 2: Only do tiling for small classes
-    if not is_small_class:
-        system_logger.info("Not a small class, skipping tile-based inference")
-        return full_image_masks, full_image_scores, full_image_classes
-    
-    # STEP 3: Generate tiles with overlap
+    # STEP 2: Generate tiles with overlap (ALWAYS for small classes)
     system_logger.info(f"Step 2: Generating tiles ({tile_size}px with {overlap_ratio*100}% overlap)...")
     tiles = generate_tiles_with_overlap(image, tile_size, overlap_ratio)
     
     system_logger.info(f"Generated {len(tiles)} tiles")
     
-    # STEP 4: Process each tile
+    # STEP 3: Process each tile
     all_tile_masks = []
     all_tile_scores = []
     all_tile_classes = []
@@ -2225,8 +2233,7 @@ def tile_based_inference_pipeline(
         
         system_logger.debug(f"Tile {tile_idx + 1}: Found {len(tile_masks)} instances")
         
-        # STEP 5: Map masks back to original image coordinates
-        # FIX: Track which masks pass the edge filter along with their scores
+        # Map masks back to original image coordinates
         if tile_masks:
             for i, (mask, score, cls) in enumerate(zip(tile_masks, tile_scores, tile_classes)):
                 # Downscale mask back to tile size
@@ -2239,7 +2246,7 @@ def tile_based_inference_pipeline(
                 # Filter edge masks (likely incomplete)
                 if is_edge_mask(downscaled_mask, tile_size, overlap_ratio):
                     system_logger.debug(f"Tile {tile_idx + 1}: Filtered edge mask {i+1}")
-                    continue  # Skip this mask - don't add it to lists
+                    continue
                 
                 # Map to global coordinates
                 global_mask = np.zeros((h, w), dtype=bool)
@@ -2247,39 +2254,39 @@ def tile_based_inference_pipeline(
                 x_end = min(x_offset + tile_w, w)
                 global_mask[y_offset:y_end, x_offset:x_end] = downscaled_mask[:y_end-y_offset, :x_end-x_offset]
                 
-                # FIX: Only add mask AND its corresponding score/class if it passed edge filter
                 all_tile_masks.append(global_mask)
-                all_tile_scores.append(score)  # ← Add score for THIS mask
-                all_tile_classes.append(cls)   # ← Add class for THIS mask
+                all_tile_scores.append(score)
+                all_tile_classes.append(cls)
     
     system_logger.info(f"Tiles: Found {len(all_tile_masks)} instances total (before deduplication)")
     
-    # STEP 6: Combine full-image and tile results
+    # STEP 4: Combine full-image and tile results
     all_masks = full_image_masks + all_tile_masks
     all_scores = list(full_image_scores) + list(all_tile_scores)
     all_classes = list(full_image_classes) + list(all_tile_classes)
     
-    # FIX: Verify lengths match before deduplication
+    # Verify lengths match
     if len(all_masks) != len(all_scores) or len(all_masks) != len(all_classes):
         system_logger.error(
             f"Length mismatch! masks: {len(all_masks)}, scores: {len(all_scores)}, classes: {len(all_classes)}"
         )
-        # Truncate to shortest length as safety measure
         min_len = min(len(all_masks), len(all_scores), len(all_classes))
         all_masks = all_masks[:min_len]
         all_scores = all_scores[:min_len]
         all_classes = all_classes[:min_len]
         system_logger.warning(f"Truncated to {min_len} items to match lengths")
     
-    # STEP 7: Deduplicate with lenient IoU (tiles may have slight variations)
+    # STEP 5: Deduplicate across full image + tiles
     system_logger.info("Step 3: Deduplicating across full image + tiles...")
     unique_masks, unique_scores, unique_classes = deduplicate_masks_smart(
-        all_masks, all_scores, all_classes, iou_threshold=0.4  # Lenient for small particles
+        all_masks, all_scores, all_classes, iou_threshold=0.4
     )
     
     system_logger.info(f"✅ Final: {len(unique_masks)} unique instances after deduplication")
-    system_logger.info(f"   - From full image: ~{len(full_image_masks)} (original)")
-    system_logger.info(f"   - From tiles: ~{len(unique_masks) - len(full_image_masks)} (new detections)")
+    system_logger.info(f"   - From full image: {len(full_image_masks)} instances")
+    system_logger.info(f"   - From tiles: {len(all_tile_masks)} instances")
+    system_logger.info(f"   - After deduplication: {len(unique_masks)} unique")
+    system_logger.info(f"   - Net gain from tiling: +{len(unique_masks) - len(full_image_masks)} instances")
     
     return unique_masks, unique_scores, unique_classes
 
