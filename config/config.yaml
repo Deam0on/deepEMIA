@@ -93,7 +93,7 @@ inference_settings:
 l4_performance_optimizations:
   # Batch processing (conservative for 16GB RAM)
   inference_batch_size: 3          # Process 3 images at once (conservative)
-  measurement_batch_size: 3        # Measurement batch size
+  measurement_batch_size: 5        # Measurement batch size
   
   # Memory management for L4 GPU (22GB VRAM)
   clear_cache_frequency: 3         # Clear GPU cache every N images

@@ -769,34 +769,20 @@ def run_inference(
                     "iou_threshold", 0.5 if is_small_class else 0.7
                 )
                 
-                # FIXED: Run tile-based inference for ALL classes when max_iters > 1
-                if max_iters > 1:
-                    # Tile-based inference (for both small AND large particles)
-                    system_logger.info(f"Running tile-based inference for class {target_class} (max_iters={max_iters})")
-                    class_masks, class_scores, class_classes = tile_based_inference_pipeline(
-                        predictors[0],
-                        image,
-                        target_class,
-                        small_classes,
-                        confidence_thresh,
-                        tile_size=512,
-                        overlap_ratio=0.2,
-                        upscale_factor=2.0,
-                        scale_bar_info={"um_pix": um_pix, "psum": psum}
-                    )
-                else:
-                    # Single pass for any class (when max_iters == 1)
-                    system_logger.info(f"Running single-pass inference for class {target_class}")
-                    class_masks, class_scores, class_classes = (
-                        run_class_specific_inference(
-                            predictors[0],
-                            image,
-                            target_class,
-                            small_classes,
-                            confidence_thresh,
-                            iou_thresh,
-                        )
-                    )
+                
+                # Tile-based inference (for both small AND large particles)
+                system_logger.info(f"Running tile-based inference for class {target_class} (max_iters={max_iters})")
+                class_masks, class_scores, class_classes = tile_based_inference_pipeline(
+                    predictors[0],
+                    image,
+                    target_class,
+                    small_classes,
+                    confidence_thresh,
+                    tile_size=512,
+                    overlap_ratio=0.2,
+                    upscale_factor=2.0,
+                    scale_bar_info={"um_pix": um_pix, "psum": psum}
+                )
             
                 system_logger.debug(
                     f"Class {target_class}: Found {len(class_masks)} instances"
@@ -842,6 +828,9 @@ def run_inference(
                 final_masks.append(mask)
                 final_scores.append(score)
                 final_classes.append(cls)
+
+            if (i + 1) % 100 == 0 or (i + 1) == len(all_masks_for_image):
+                system_logger.info(f"Processed {i + 1} out of {len(all_masks_for_image)} masks")
 
         unique_masks = final_masks
         unique_scores = final_scores
