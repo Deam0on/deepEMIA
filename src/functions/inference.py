@@ -798,14 +798,14 @@ def run_inference(
                         )
                     )
             
-            system_logger.debug(
-                f"Class {target_class}: Found {len(class_masks)} instances"
-            )
+                system_logger.debug(
+                    f"Class {target_class}: Found {len(class_masks)} instances"
+                )
 
-            # Add to combined results
-            all_masks_for_image.extend(class_masks)
-            all_scores_for_image.extend(class_scores)
-            all_classes_for_image.extend(class_classes)
+                # Add to combined results
+                all_masks_for_image.extend(class_masks)
+                all_scores_for_image.extend(class_scores)
+                all_classes_for_image.extend(class_classes)
 
         # Final cross-class deduplication (optional, more lenient)
         final_masks = []
