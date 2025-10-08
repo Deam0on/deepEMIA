@@ -614,14 +614,6 @@ def inference_task():
     )
     dataset_format_value = dataset_format.split()[0]
 
-    # Simplified iteration control
-    print("\nInference Mode:")
-    print("   1 iteration = Single-pass (faster)")
-    print(
-        "   Multiple iterations = Multi-pass with iterative refinement (more accurate)"
-    )
-    max_iters = get_int_input("Number of iterations", default=1, min_val=1, max_val=50)
-
     # Visualization options
     print("\nVisualization Options:")
     visualize = get_yes_no(
@@ -642,8 +634,6 @@ def inference_task():
         str(threshold),
         "--dataset_format",
         dataset_format_value,
-        "--max_iters",
-        str(max_iters),
     ]
 
     if visualize:

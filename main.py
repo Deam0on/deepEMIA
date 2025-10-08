@@ -197,11 +197,11 @@ Evaluation:
   python main.py --task evaluate --dataset_name polyhipes --visualize --rcnn combo
 
 Inference:
-  # Single pass inference (auto-detects available models)
-  python main.py --task inference --dataset_name polyhipes --threshold 0.7 --max_iters 1 --visualize
+  # Run inference with automatic iteration control (configured in config.yaml)
+  python main.py --task inference --dataset_name polyhipes --threshold 0.7 --visualize
   
-  # Multi-pass inference with iterative refinement
-  python main.py --task inference --dataset_name polyhipes --threshold 0.65 --max_iters 10 --visualize --id
+  # Inference with instance IDs displayed
+  python main.py --task inference --dataset_name polyhipes --threshold 0.65 --visualize --id
 
 TASK DESCRIPTIONS:
 
@@ -221,7 +221,7 @@ ADVANCED FEATURES:
 
 • Hyperparameter Optimization: Use --optimize --n-trials N for automated tuning
 • Data Augmentation: Use --augment for enhanced training robustness  
-• Multi-iteration Inference: Use --max_iters N for iterative refinement (N>1)
+• Iteration Control: Automatic via config.yaml iterative_stopping settings
 • Universal Class Processing: Inference always uses class-specific processing with size heuristics
 • Visualization: Use --visualize to save prediction overlays
 • Instance IDs: Use --id to draw instance identifiers on visualizations
@@ -293,12 +293,6 @@ For guided interactive mode: python cli_main.py
         help="Draw instance ID numbers on inference visualization overlays for easier tracking.",
     )
     parser.set_defaults(draw_id=False)
-    parser.add_argument(
-        "--max_iters",
-        type=int,
-        default=1,
-        help="Number of inference iterations. 1 = single-pass (faster), >1 = multi-pass iterative (more accurate). [default: 1]",
-    )
     parser.add_argument(
         "--rcnn",
         type=str,
@@ -443,7 +437,6 @@ For guided interactive mode: python cli_main.py
             threshold=args.threshold,
             draw_id=args.draw_id,
             dataset_format=args.dataset_format,
-            max_iters=args.max_iters,
         )
 
         task_end_time = datetime.now()
@@ -458,9 +451,8 @@ For guided interactive mode: python cli_main.py
             from src.utils.gcs_utils import upload_inference_results
 
             # Determine model info for remote path
-            # Create model info for upload path
-            mode_info = "multi" if args.max_iters > 1 else "single"
-            model_info = f"auto_models_{mode_info}_{args.max_iters}iters"
+            # Model info reflects automatic iteration control
+            model_info = "auto_models_adaptive"
 
             try:
                 upload_time_taken = upload_inference_results(

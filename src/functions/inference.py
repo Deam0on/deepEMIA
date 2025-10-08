@@ -436,18 +436,20 @@ def iou(mask1, mask2):
 
 
 def iterative_combo_predictors(
-    predictors, image, iou_threshold=0.7, min_increase=0.25, max_iters=5
+    predictors, image, iou_threshold=0.7, min_increase=0.25
 ):
     """
-    Run both predictors iteratively with updated stopping conditions.
+    Run both predictors iteratively with automatic stopping conditions from config.yaml.
     """
     all_masks = []
     all_scores = []
     all_sources = []
     prev_count = 0
     no_new_mask_iters = 0
+    iteration = 0
 
-    for iteration in range(max_iters):
+    while True:
+        iteration += 1
         new_masks = []
         new_scores = []
         new_sources = []
@@ -483,7 +485,7 @@ def iterative_combo_predictors(
         new_count = len(unique_masks)
         added = new_count - prev_count
         system_logger.debug(
-            f"Iteration {iteration + 1}: Added {added} new masks (total: {new_count})"
+            f"Iteration {iteration}: Added {added} new masks (total: {new_count})"
         )
 
         # UPDATED EARLY STOPPING CONDITIONS (same as single predictor)
@@ -538,33 +540,28 @@ def run_inference(
     threshold=0.65,
     draw_id=False,
     dataset_format="json",
-    max_iters=1,
 ):
     """
     Runs inference on a dataset and saves the results.
+    
+    Note: Iteration count is now automatic via config.yaml iterative_stopping settings.
     """
     
     # L4 OPTIMIZATION: Comprehensive optimization settings log
     system_logger.info("=" * 80)
-    system_logger.info("🚀 L4 GPU INFERENCE OPTIMIZATIONS ACTIVE 🚀")
+    system_logger.info("L4 GPU INFERENCE OPTIMIZATIONS ACTIVE")
     system_logger.info("=" * 80)
-    system_logger.info(f"🔧 Mixed Precision (AMP): {USE_MIXED_PRECISION} (30-50% speedup expected)")
-    system_logger.info(f"🔧 GPU Optimizations: {GPU_OPTIMIZATIONS} (cudnn.benchmark enabled)")
-    system_logger.info(f"🔧 Parallel Image Loading: {PARALLEL_IMAGE_LOADING} (threads: {MAX_WORKER_THREADS})")
-    system_logger.info(f"🔧 Parallel Mask Processing: {PARALLEL_MASK_PROCESSING}")
-    system_logger.info(f"🔧 Inference Batch Size: {INFERENCE_BATCH_SIZE} images (optimized for 16GB RAM)")
-    system_logger.info(f"🔧 Measurement Batch Size: {MEASUREMENT_BATCH_SIZE} images")
-    system_logger.info(f"🔧 Memory Cleanup: Every {CLEANUP_FREQUENCY} images")
-    system_logger.info(f"🔧 Stream Measurements: {STREAM_MEASUREMENTS} (reduces RAM usage)")
-    system_logger.info("📈 Expected Performance: 2-3x faster inference vs. baseline")
-    system_logger.info("💾 Memory Profile: Optimized for g2-standard-4 (4 vCPUs, 16GB RAM, L4 GPU)")
-    system_logger.info("=" * 80)
-    system_logger.info(f"Mixed Precision: {USE_MIXED_PRECISION}")
-    system_logger.info(f"GPU Optimizations: {GPU_OPTIMIZATIONS}")
-    system_logger.info(f"Parallel Image Loading: {PARALLEL_IMAGE_LOADING}")
+    system_logger.info(f"Mixed Precision (AMP): {USE_MIXED_PRECISION} (30-50% speedup expected)")
+    system_logger.info(f"GPU Optimizations: {GPU_OPTIMIZATIONS} (cudnn.benchmark enabled)")
+    system_logger.info(f"Parallel Image Loading: {PARALLEL_IMAGE_LOADING} (threads: {MAX_WORKER_THREADS})")
     system_logger.info(f"Parallel Mask Processing: {PARALLEL_MASK_PROCESSING}")
-    system_logger.info(f"Inference Batch Size: {INFERENCE_BATCH_SIZE}")
-    system_logger.info(f"Measurement Batch Size: {MEASUREMENT_BATCH_SIZE}")
+    system_logger.info(f"Inference Batch Size: {INFERENCE_BATCH_SIZE} images (optimized for 16GB RAM)")
+    system_logger.info(f"Measurement Batch Size: {MEASUREMENT_BATCH_SIZE} images")
+    system_logger.info(f"Memory Cleanup: Every {CLEANUP_FREQUENCY} images")
+    system_logger.info(f"Stream Measurements: {STREAM_MEASUREMENTS} (reduces RAM usage)")
+    system_logger.info("Expected Performance: 2-3x faster inference vs. baseline")
+    system_logger.info("Memory Profile: Optimized for g2-standard-4 (4 vCPUs, 16GB RAM, L4 GPU)")
+    system_logger.info("=" * 80)
     system_logger.info(f"Memory Cleanup Frequency: {CLEANUP_FREQUENCY}")
     system_logger.info(f"Max Worker Threads: {MAX_WORKER_THREADS}")
     system_logger.info("=====================================")
@@ -647,12 +644,7 @@ def run_inference(
     small_classes = determine_small_classes(class_avg_sizes, threshold_percentile=50)
 
     # Log inference strategy
-    if max_iters == 1:
-        system_logger.info("Using SINGLE-PASS class-specific inference")
-    else:
-        system_logger.info(
-            f"Using MULTI-PASS class-specific inference (max {max_iters} iterations)"
-        )
+    system_logger.info("Using class-specific inference with automatic iteration control (config.yaml)")
 
     # L4 OPTIMIZATION: Use configured batch sizes
     batch_size = min(INFERENCE_BATCH_SIZE, len(images_name))
@@ -771,7 +763,7 @@ def run_inference(
                 
                 
                 # Tile-based inference (for both small AND large particles)
-                system_logger.info(f"Running tile-based inference for class {target_class} (max_iters={max_iters})")
+                system_logger.info(f"Running tile-based inference for class {target_class}")
                 class_masks, class_scores, class_classes = tile_based_inference_pipeline(
                     predictors[0],
                     image,
@@ -1017,7 +1009,7 @@ def run_inference(
                             cv2.RETR_EXTERNAL,
                             cv2.CHAIN_APPROX_SIMPLE,
                         )
-                        cv2.drawContours(vis_img, contours, -1, color, 2)
+                        cv2.drawContours(vis_img, contours, -1, color, 1)
 
                         # Draw instance ID and class at centroid
                         M = cv2.moments(mask.astype(np.uint8))
@@ -1269,7 +1261,7 @@ def run_inference(
 
 
 def iterative_single_predictor_with_classes(
-    predictor, image, iou_threshold=0.7, min_increase=0.25, max_iters=5
+    predictor, image, iou_threshold=0.7, min_increase=0.25
 ):
     """
     Run a single predictor iteratively while preserving class information.
@@ -1285,8 +1277,10 @@ def iterative_single_predictor_with_classes(
     all_classes = []
     prev_count = 0
     no_new_mask_iters = 0
+    iteration = 0
 
-    for iteration in range(max_iters):
+    while True:
+        iteration += 1
         # L4 OPTIMIZATION: Memory cleanup before prediction
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -1350,11 +1344,11 @@ def iterative_single_predictor_with_classes(
                 [f"class {cls}: {count}" for cls, count in sorted(class_counts.items())]
             )
             system_logger.info(
-                f"Iteration {iteration + 1}: Added {added} new masks (total: {new_count}) - New: {class_summary}"
+                f"Iteration {iteration}: Added {added} new masks (total: {new_count}) - New: {class_summary}"
             )
         else:
             system_logger.info(
-                f"Iteration {iteration + 1}: Added {added} new masks (total: {new_count})"
+                f"Iteration {iteration}: Added {added} new masks (total: {new_count})"
             )
 
         # UPDATED EARLY STOPPING CONDITIONS
@@ -1511,11 +1505,11 @@ def log_scale_detection_summary(scale, masks_before, masks_after, original_shape
     - scaled_shape: Scaled image shape
     """
     if masks_before == 0:
-        status = "❌ No detections"
+        status = "No detections"
     elif masks_after < masks_before:
-        status = f"⚠️ {masks_before - masks_after} filtered as duplicates"
+        status = f"{masks_before - masks_after} filtered as duplicates"
     else:
-        status = "✅ All unique"
+        status = "All unique"
     
     system_logger.info(
         f"Scale {scale}x: {original_shape[1]}x{original_shape[0]} → "
@@ -1706,15 +1700,15 @@ def run_multiscale_class_inference(
     image,
     target_class,
     confidence_threshold=0.3,
-    max_iters=5,
     small_classes=set(),
 ):
     """
     Adaptive multi-scale inference with smart scale selection.
     Starts with conservative scales and gets more aggressive based on performance.
+    Iteration control is automatic via config.yaml settings.
     """
     return run_adaptive_multiscale_inference(
-        predictor, image, target_class, confidence_threshold, max_iters, small_classes
+        predictor, image, target_class, confidence_threshold, small_classes
     )
 
 
@@ -1723,7 +1717,6 @@ def run_adaptive_multiscale_inference(
     image,
     target_class,
     confidence_threshold=0.3,
-    max_iters=5,
     small_classes=set(),
 ):
     """
@@ -1734,6 +1727,8 @@ def run_adaptive_multiscale_inference(
     2. If upscaling (1.5x) provides benefit, try more aggressive upscaling: [2.0, 2.5]
     3. If downscaling (0.7x) provides benefit, try more aggressive downscaling: [0.5, 0.6]
     4. Stop when additional scales don't improve results
+    
+    Iteration control is automatic via config.yaml settings.
     """
     all_masks = []
     all_scores = []
@@ -1748,7 +1743,7 @@ def run_adaptive_multiscale_inference(
     for scale in baseline_scales:
         masks, scores, classes = process_single_scale(
             predictor, image, target_class, small_classes, 
-            confidence_threshold, max_iters, scale
+            confidence_threshold, scale
         )
         
         scale_performance[scale] = len(masks)
@@ -1773,7 +1768,7 @@ def run_adaptive_multiscale_inference(
         for scale in aggressive_upscales:
             masks, scores, classes = process_single_scale(
                 predictor, image, target_class, small_classes,
-                confidence_threshold, max_iters, scale
+                confidence_threshold, scale
             )
             
             # Stop if this scale doesn't add meaningful detections
@@ -1794,7 +1789,7 @@ def run_adaptive_multiscale_inference(
         for scale in aggressive_downscales:
             masks, scores, classes = process_single_scale(
                 predictor, image, target_class, small_classes,
-                confidence_threshold, max_iters, scale
+                confidence_threshold, scale
             )
             
             # Stop if this scale doesn't add meaningful detections
@@ -1838,10 +1833,12 @@ def run_adaptive_multiscale_inference(
     return unique_masks, unique_scores, unique_classes
 
 
-def process_single_scale(predictor, image, target_class, small_classes, confidence_threshold, max_iters, scale):
+def process_single_scale(predictor, image, target_class, small_classes, confidence_threshold, scale):
     """
     Process inference at a single scale and return results.
     FIXED: Now uses scale-invariant minimum size thresholds.
+    
+    Iteration control is automatic via config.yaml settings.
     
     Parameters:
     - predictor: Detectron2 predictor
@@ -1892,7 +1889,6 @@ def process_single_scale(predictor, image, target_class, small_classes, confiden
         target_class,
         small_classes,
         confidence_threshold,
-        max_iters,
         min_crys_size=scaled_min_size,  # ← PASS SCALED THRESHOLD
     )
 
@@ -1926,12 +1922,13 @@ def run_iterative_class_inference(
     target_class, 
     small_classes, 
     confidence_threshold=0.3, 
-    max_iters=5,
     min_crys_size=None
 ):
     """
     Run iterative inference for a specific class with universal postprocessing.
     NOW WITH COMPREHENSIVE DIAGNOSTIC LOGGING.
+    
+    Iteration control is automatic via config.yaml iterative_stopping settings.
     """
     all_masks = []
     all_scores = []
@@ -1945,9 +1942,12 @@ def run_iterative_class_inference(
         iou_threshold = 0.5
     else:
         iou_threshold = 0.7
+    
+    iteration = 0
 
-    for iteration in range(max_iters):
-        system_logger.debug(f"  Iteration {iteration + 1}/{max_iters} for class {target_class}")
+    while True:
+        iteration += 1
+        system_logger.debug(f"  Iteration {iteration} for class {target_class}")
 
         # L4 OPTIMIZATION: Use configured mixed precision
         use_mixed_precision = torch.cuda.is_available() and USE_MIXED_PRECISION
@@ -1962,16 +1962,16 @@ def run_iterative_class_inference(
         pred_scores = outputs["instances"].to("cpu")._fields["scores"].numpy()
         pred_classes = outputs["instances"].to("cpu")._fields["pred_classes"].numpy()
 
-        # 🔍 DIAGNOSTIC 1: Log raw detections before ANY filtering
+        # DIAGNOSTIC 1: Log raw detections before ANY filtering
         raw_class_mask = pred_classes == target_class
         raw_class_count = np.sum(raw_class_mask)
-        system_logger.info(f"    🔍 DIAGNOSTIC: RAW detections for class {target_class}: {raw_class_count} masks")
+        system_logger.info(f"    DIAGNOSTIC: RAW detections for class {target_class}: {raw_class_count} masks")
         
         # Log score distribution of raw detections
         if raw_class_count > 0:
             raw_class_scores = pred_scores[raw_class_mask]
             system_logger.info(
-                f"    🔍 DIAGNOSTIC: Score distribution - "
+                f"    DIAGNOSTIC: Score distribution - "
                 f"min: {raw_class_scores.min():.3f}, "
                 f"max: {raw_class_scores.max():.3f}, "
                 f"mean: {raw_class_scores.mean():.3f}, "
@@ -1982,7 +1982,7 @@ def run_iterative_class_inference(
             above_thresh = np.sum(raw_class_scores >= confidence_threshold)
             below_thresh = np.sum(raw_class_scores < confidence_threshold)
             system_logger.info(
-                f"    🔍 DIAGNOSTIC: Confidence filtering - "
+                f"    DIAGNOSTIC: Confidence filtering - "
                 f"above {confidence_threshold}: {above_thresh}, "
                 f"below {confidence_threshold}: {below_thresh} (FILTERED OUT)"
             )
@@ -1999,14 +1999,14 @@ def run_iterative_class_inference(
         filtered_scores = pred_scores[class_mask]
         filtered_classes = pred_classes[class_mask]
 
-        # 🔍 DIAGNOSTIC 2: After confidence filtering
-        system_logger.info(f"    🔍 DIAGNOSTIC: After confidence filter: {len(filtered_masks)} masks")
+        # DIAGNOSTIC 2: After confidence filtering
+        system_logger.info(f"    DIAGNOSTIC: After confidence filter: {len(filtered_masks)} masks")
         
         # Log size distribution of filtered masks BEFORE postprocessing
         if len(filtered_masks) > 0:
             mask_sizes = [np.sum(mask) for mask in filtered_masks]
             system_logger.info(
-                f"    🔍 DIAGNOSTIC: Mask size distribution (BEFORE postprocessing) - "
+                f"    DIAGNOSTIC: Mask size distribution (BEFORE postprocessing) - "
                 f"min: {min(mask_sizes)}px, "
                 f"max: {max(mask_sizes)}px, "
                 f"mean: {np.mean(mask_sizes):.1f}px, "
@@ -2015,18 +2015,18 @@ def run_iterative_class_inference(
 
         # UNIVERSAL postprocessing
         if len(filtered_masks) > 0:
-            # 🔍 DIAGNOSTIC 3: Log threshold being used
+            # DIAGNOSTIC 3: Log threshold being used
             if min_crys_size is None:
                 image_area = image.shape[0] * image.shape[1]
                 calculated_min_size = max(3, int(image_area * 0.000005)) if is_small_class else max(25, int(image_area * 0.0001))
                 system_logger.info(
-                    f"    🔍 DIAGNOSTIC: Size threshold - "
+                    f"    DIAGNOSTIC: Size threshold - "
                     f"calculated min_size={calculated_min_size}px "
                     f"(image_area={image_area}px, is_small={is_small_class})"
                 )
             else:
                 system_logger.info(
-                    f"    🔍 DIAGNOSTIC: Size threshold - "
+                    f"    DIAGNOSTIC: Size threshold - "
                     f"provided min_size={min_crys_size}px"
                 )
             
@@ -2039,10 +2039,10 @@ def run_iterative_class_inference(
                 min_crys_size=min_crys_size
             )
 
-            # 🔍 DIAGNOSTIC 4: After size filtering
+            # DIAGNOSTIC 4: After size filtering
             filtered_by_size = len(filtered_masks) - len(processed_masks)
             system_logger.info(
-                f"    🔍 DIAGNOSTIC: After size filter: {len(processed_masks)} masks "
+                f"    DIAGNOSTIC: After size filter: {len(processed_masks)} masks "
                 f"({filtered_by_size} FILTERED OUT by size)"
             )
             
@@ -2061,13 +2061,13 @@ def run_iterative_class_inference(
                 
                 if removed_sizes:
                     system_logger.info(
-                        f"    🔍 DIAGNOSTIC: Removed mask sizes - "
+                        f"    DIAGNOSTIC: Removed mask sizes - "
                         f"min: {min(removed_sizes)}px, max: {max(removed_sizes)}px, "
                         f"count: {len(removed_sizes)}"
                     )
                 if kept_sizes:
                     system_logger.info(
-                        f"    🔍 DIAGNOSTIC: Kept mask sizes - "
+                        f"    DIAGNOSTIC: Kept mask sizes - "
                         f"min: {min(kept_sizes)}px, max: {max(kept_sizes)}px, "
                         f"count: {len(kept_sizes)}"
                     )
@@ -2095,9 +2095,9 @@ def run_iterative_class_inference(
         added = new_count - prev_count
         duplicates_removed = len(all_masks) - new_count
 
-        # 🔍 DIAGNOSTIC 5: After deduplication
+        # DIAGNOSTIC 5: After deduplication
         system_logger.info(
-            f"    🔍 DIAGNOSTIC: After deduplication - "
+            f"    DIAGNOSTIC: After deduplication - "
             f"unique: {new_count}, duplicates removed: {duplicates_removed}, "
             f"newly added: {added}"
         )
@@ -2134,9 +2134,9 @@ def run_iterative_class_inference(
         all_scores = unique_scores.copy()
         all_classes = unique_classes.copy()
 
-    # 🔍 DIAGNOSTIC 6: Final summary
+    # DIAGNOSTIC 6: Final summary
     system_logger.info(
-        f"  ✅ FINAL: Class {target_class} completed with {len(unique_masks)} masks after {iteration + 1} iterations"
+        f"  FINAL: Class {target_class} completed with {len(unique_masks)} masks after {iteration + 1} iterations"
     )
     
     return unique_masks, unique_scores, unique_classes
@@ -2263,7 +2263,7 @@ def tile_based_inference_pipeline(
         all_masks, all_scores, all_classes, iou_threshold=0.4
     )
     
-    system_logger.info(f"✅ Final: {len(unique_masks)} unique instances after deduplication")
+    system_logger.info(f"Final: {len(unique_masks)} unique instances after deduplication")
     system_logger.info(f"   - From full image: {len(full_image_masks)} instances")
     system_logger.info(f"   - From tiles: {len(all_tile_masks)} instances")
     system_logger.info(f"   - After deduplication: {len(unique_masks)} unique")
@@ -2431,7 +2431,7 @@ def deduplicate_masks_smart(masks, scores, classes, iou_threshold=0.4):
     total_time = time.perf_counter() - start_time
     
     system_logger.info(
-        f"✅ OPTIMIZED deduplication complete in {total_time:.1f}s:"
+        f"OPTIMIZED deduplication complete in {total_time:.1f}s:"
     )
     system_logger.info(
         f"   - Input: {total_masks} masks → Output: {len(unique_masks)} unique ({total_masks - len(unique_masks)} duplicates)"
