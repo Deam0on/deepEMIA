@@ -769,9 +769,10 @@ def run_inference(
                     "iou_threshold", 0.5 if is_small_class else 0.7
                 )
                 
-                # Run inference for this class (iterative or single pass)
-                if max_iters > 1 and is_small_class:
-                    # Tile-based inference for small particles
+                # FIXED: Run tile-based inference for ALL classes when max_iters > 1
+                if max_iters > 1:
+                    # Tile-based inference (for both small AND large particles)
+                    system_logger.info(f"Running tile-based inference for class {target_class} (max_iters={max_iters})")
                     class_masks, class_scores, class_classes = tile_based_inference_pipeline(
                         predictors[0],
                         image,
@@ -783,20 +784,9 @@ def run_inference(
                         upscale_factor=2.0,
                         scale_bar_info={"um_pix": um_pix, "psum": psum}
                     )
-                elif max_iters > 1:
-                    # Iterative for large particles
-                    class_masks, class_scores, class_classes = (
-                        run_iterative_class_inference(
-                            predictors[0],
-                            image,
-                            target_class,
-                            small_classes,
-                            confidence_thresh,
-                            max_iters,
-                        )
-                    )
                 else:
-                    # Single pass for any class
+                    # Single pass for any class (when max_iters == 1)
+                    system_logger.info(f"Running single-pass inference for class {target_class}")
                     class_masks, class_scores, class_classes = (
                         run_class_specific_inference(
                             predictors[0],
@@ -807,93 +797,93 @@ def run_inference(
                             iou_thresh,
                         )
                     )
-                
-                system_logger.debug(
-                    f"Class {target_class}: Found {len(class_masks)} instances"
-                )
-
-                # Add to combined results
-                all_masks_for_image.extend(class_masks)
-                all_scores_for_image.extend(class_scores)
-                all_classes_for_image.extend(class_classes)
-
-            # Final cross-class deduplication (optional, more lenient)
-            final_masks = []
-            final_scores = []
-            final_classes = []
-
-            for i, (mask, score, cls) in enumerate(
-                zip(all_masks_for_image, all_scores_for_image, all_classes_for_image)
-            ):
-                # Only check against same class or very high overlap with different class
-                is_duplicate = False
-                for j, (existing_mask, existing_cls) in enumerate(
-                    zip(final_masks, final_classes)
-                ):
-                    overlap = iou(mask, existing_mask)
-
-                    if cls == existing_cls:
-                        # Same class: normal threshold
-                        threshold_val = 0.7
-                    else:
-                        # Different class: only remove if very high overlap
-                        threshold_val = 0.9
-
-                    if overlap > threshold_val:
-                        # Keep the one with higher confidence
-                        if score > final_scores[j]:
-                            final_masks[j] = mask
-                            final_scores[j] = score
-                            final_classes[j] = cls
-                        is_duplicate = True
-                        break
-
-                if not is_duplicate:
-                    final_masks.append(mask)
-                    final_scores.append(score)
-                    final_classes.append(cls)
-
-            unique_masks = final_masks
-            unique_scores = final_scores
-            unique_classes = final_classes
-            unique_sources = [0] * len(unique_masks)  # All from same source
-
-            # FIXED: Log results with class distribution for ALL classes
-            class_counts = {}
-            for cls in unique_classes:
-                class_counts[cls] = class_counts.get(cls, 0) + 1
-
-            # Log all detected classes
-            class_summary = ", ".join(
-                [f"class {cls}: {count}" for cls, count in sorted(class_counts.items())]
+            
+            system_logger.debug(
+                f"Class {target_class}: Found {len(class_masks)} instances"
             )
-            if class_summary:
-                system_logger.debug(
-                    f"After processing: {len(unique_masks)} unique masks for image {name} ({class_summary})"
-                )
-            else:
-                system_logger.debug(
-                    f"After processing: {len(unique_masks)} unique masks for image {name} (no classes detected)"
-                )
 
-            # Save for later use - now including classes
-            dedup_results[name] = {
-                "masks": unique_masks,
-                "scores": unique_scores,
-                "sources": unique_sources,
-                "classes": unique_classes,
-            }
+            # Add to combined results
+            all_masks_for_image.extend(class_masks)
+            all_scores_for_image.extend(class_scores)
+            all_classes_for_image.extend(class_classes)
 
-            processed_images.add(name)
+        # Final cross-class deduplication (optional, more lenient)
+        final_masks = []
+        final_scores = []
+        final_classes = []
 
-            # Memory optimization: Encode masks immediately and clear image data
-            for i, mask in enumerate(unique_masks):
-                Img_ID.append(name.rsplit(".", 1)[0])
-                EncodedPixels.append(conv(rle_encoding(mask)))
+        for i, (mask, score, cls) in enumerate(
+            zip(all_masks_for_image, all_scores_for_image, all_classes_for_image)
+        ):
+            # Only check against same class or very high overlap with different class
+            is_duplicate = False
+            for j, (existing_mask, existing_cls) in enumerate(
+                zip(final_masks, final_classes)
+            ):
+                overlap = iou(mask, existing_mask)
 
-            # Memory optimization: Clear image and mask data after processing
-            del image, unique_masks, unique_scores, unique_sources, unique_classes
-            gc.collect()
+                if cls == existing_cls:
+                    # Same class: normal threshold
+                    threshold_val = 0.7
+                else:
+                    # Different class: only remove if very high overlap
+                    threshold_val = 0.9
+
+                if overlap > threshold_val:
+                    # Keep the one with higher confidence
+                    if score > final_scores[j]:
+                        final_masks[j] = mask
+                        final_scores[j] = score
+                        final_classes[j] = cls
+                    is_duplicate = True
+                    break
+
+            if not is_duplicate:
+                final_masks.append(mask)
+                final_scores.append(score)
+                final_classes.append(cls)
+
+        unique_masks = final_masks
+        unique_scores = final_scores
+        unique_classes = final_classes
+        unique_sources = [0] * len(unique_masks)  # All from same source
+
+        # FIXED: Log results with class distribution for ALL classes
+        class_counts = {}
+        for cls in unique_classes:
+            class_counts[cls] = class_counts.get(cls, 0) + 1
+
+        # Log all detected classes
+        class_summary = ", ".join(
+            [f"class {cls}: {count}" for cls, count in sorted(class_counts.items())]
+        )
+        if class_summary:
+            system_logger.debug(
+                f"After processing: {len(unique_masks)} unique masks for image {name} ({class_summary})"
+            )
+        else:
+            system_logger.debug(
+                f"After processing: {len(unique_masks)} unique masks for image {name} (no classes detected)"
+            )
+
+        # Save for later use - now including classes
+        dedup_results[name] = {
+            "masks": unique_masks,
+            "scores": unique_scores,
+            "sources": unique_sources,
+            "classes": unique_classes,
+        }
+
+        processed_images.add(name)
+
+        # Memory optimization: Encode masks immediately and clear image data
+        for i, mask in enumerate(unique_masks):
+            Img_ID.append(name.rsplit(".", 1)[0])
+            EncodedPixels.append(conv(rle_encoding(mask)))
+
+        # Memory optimization: Clear image and mask data after processing
+        del image, unique_masks, unique_scores, unique_sources, unique_classes
+        gc.collect()
 
     overall_elapsed = time.perf_counter() - overall_start_time
     average_time = overall_elapsed / total_images if total_images else 0
