@@ -786,43 +786,54 @@ def run_inference(
                 all_classes_for_image.extend(class_classes)
 
         # Final cross-class deduplication (optional, more lenient)
-        final_masks = []
-        final_scores = []
-        final_classes = []
-
-        for i, (mask, score, cls) in enumerate(
-            zip(all_masks_for_image, all_scores_for_image, all_classes_for_image)
-        ):
-            # Only check against same class or very high overlap with different class
-            is_duplicate = False
-            for j, (existing_mask, existing_cls) in enumerate(
-                zip(final_masks, final_classes)
-            ):
-                overlap = iou(mask, existing_mask)
-
-                if cls == existing_cls:
-                    # Same class: normal threshold
-                    threshold_val = 0.7
-                else:
-                    # Different class: only remove if very high overlap
-                    threshold_val = 0.9
-
-                if overlap > threshold_val:
-                    # Keep the one with higher confidence
-                    if score > final_scores[j]:
-                        final_masks[j] = mask
-                        final_scores[j] = score
-                        final_classes[j] = cls
-                    is_duplicate = True
-                    break
-
-            if not is_duplicate:
-                final_masks.append(mask)
-                final_scores.append(score)
-                final_classes.append(cls)
-
-            if (i + 1) % 100 == 0 or (i + 1) == len(all_masks_for_image):
-                system_logger.info(f"Processed {i + 1} out of {len(all_masks_for_image)} masks")
+        system_logger.info("Step 3: Deduplicating across all classes...")
+        
+        # OLD SLOW CODE - REMOVE THIS:
+        # final_masks = []
+        # final_scores = []
+        # final_classes = []
+        # 
+        # for i, (mask, score, cls) in enumerate(
+        #     zip(all_masks_for_image, all_scores_for_image, all_classes_for_image)
+        # ):
+        #     # Only check against same class or very high overlap with different class
+        #     is_duplicate = False
+        #     for j, (existing_mask, existing_cls) in enumerate(
+        #         zip(final_masks, final_classes)
+        #     ):
+        #         overlap = iou(mask, existing_mask)
+        # 
+        #         if cls == existing_cls:
+        #             # Same class: normal threshold
+        #             threshold_val = 0.7
+        #         else:
+        #             # Different class: only remove if very high overlap
+        #             threshold_val = 0.9
+        # 
+        #         if overlap > threshold_val:
+        #             # Keep the one with higher confidence
+        #             if score > final_scores[j]:
+        #                 final_masks[j] = mask
+        #                 final_scores[j] = score
+        #                 final_classes[j] = cls
+        #             is_duplicate = True
+        #             break
+        # 
+        #     if not is_duplicate:
+        #         final_masks.append(mask)
+        #         final_scores.append(score)
+        #         final_classes.append(cls)
+        # 
+        #     if (i + 1) % 100 == 0 or (i + 1) == len(all_masks_for_image):
+        #         system_logger.info(f"Processed {i + 1} out of {len(all_masks_for_image)} masks")
+        
+        # NEW OPTIMIZED CODE - USE THIS INSTEAD:
+        final_masks, final_scores, final_classes = deduplicate_masks_smart(
+            all_masks_for_image, 
+            all_scores_for_image, 
+            all_classes_for_image, 
+            iou_threshold=0.7  # Use 0.7 for cross-class deduplication
+        )
 
         unique_masks = final_masks
         unique_scores = final_scores
@@ -1990,6 +2001,8 @@ def run_iterative_class_inference(
         del outputs
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+       
 
         # Filter for target class and confidence
         class_mask = (pred_classes == target_class) & (
