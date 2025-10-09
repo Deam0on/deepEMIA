@@ -85,6 +85,8 @@ inference_settings:
     overlap_ratio: 0.1  # 10% overlap (reduced from 20% for speed)
     upscale_factor: 2.0  # 2x upscaling for small particles
     edge_filter_enabled: true
+    parallel_tile_processing: true  # NEW: Process 2 tiles in parallel (experimental)
+    parallel_workers: 2  # Number of parallel workers (2-3 recommended for L4)
     
     # Only use tiling for these classes
     classes_using_tiling: [1]  # e.g., "Pore throat" class

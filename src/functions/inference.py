@@ -900,13 +900,17 @@ def run_inference(
                     # Add this logging block to show why masks are filtered
                     if mask_measurements == 0:
                         masks_filtered += 1
-                        system_logger.debug(
-                            f"Mask {instance_id} (class {cls}) filtered out: all {total_contours} contours too small (min_area: {min_area:.1f})"
-                        )
+                        # Only log every 50th filtered mask to reduce noise
+                        if masks_filtered % 50 == 1:
+                            system_logger.debug(
+                                f"Mask {instance_id} (class {cls}) filtered out: all {total_contours} contours too small (min_area: {min_area:.1f}) [showing every 50th]"
+                            )
                     else:
-                        system_logger.debug(
-                            f"Mask {instance_id} (class {cls}): {mask_measurements}/{total_contours} contours kept"
-                        )
+                        # Only log every 100th successful mask to reduce noise
+                        if measurements_written % 100 == 1:
+                            system_logger.debug(
+                                f"Mask {instance_id} (class {cls}): {mask_measurements}/{total_contours} contours kept [showing every 100th]"
+                            )
 
                     # Memory optimization: Clear mask data
                     del binary_mask, single_im_mask, mask_3ch, single_cnts
@@ -1751,6 +1755,98 @@ def run_iterative_class_inference(
     return unique_masks, unique_scores, unique_classes
 
 
+def process_single_tile(
+    predictor,
+    tile_data,
+    target_class,
+    small_classes,
+    confidence_threshold,
+    upscale_factor,
+    tile_size,
+    overlap_ratio,
+    image_shape
+):
+    """
+    Process a single tile for parallel execution.
+    
+    This function is designed to be thread-safe and can be called in parallel.
+    
+    Args:
+        predictor: Detectron2 predictor (should be thread-safe or use locks)
+        tile_data: Tuple of (tile_img, x_offset, y_offset)
+        target_class: Target class ID
+        small_classes: Set of small class IDs
+        confidence_threshold: Confidence threshold
+        upscale_factor: Upscaling factor for tiles
+        tile_size: Base tile size
+        overlap_ratio: Overlap ratio for edge filtering
+        image_shape: Original image shape (h, w)
+    
+    Returns:
+        Tuple of (tile_masks_global, tile_scores, tile_classes, tile_idx, stats)
+    """
+    tile_img, x_offset, y_offset, tile_idx = tile_data
+    h, w = image_shape
+    
+    try:
+        # Upscale tile to make small particles appear larger
+        tile_h, tile_w = tile_img.shape[:2]
+        upscaled_h = int(tile_h * upscale_factor)
+        upscaled_w = int(tile_w * upscale_factor)
+        upscaled_tile = cv2.resize(tile_img, (upscaled_w, upscaled_h), interpolation=cv2.INTER_LINEAR)
+        
+        # Run inference on upscaled tile
+        tile_masks, tile_scores, tile_classes = run_class_specific_inference(
+            predictor, upscaled_tile, target_class, small_classes,
+            confidence_threshold, iou_threshold=0.5
+        )
+        
+        # Map masks back to original image coordinates
+        tile_masks_global = []
+        tile_scores_filtered = []
+        tile_classes_filtered = []
+        edge_filtered_count = 0
+        
+        if tile_masks:
+            for i, (mask, score, cls) in enumerate(zip(tile_masks, tile_scores, tile_classes)):
+                # Downscale mask back to tile size
+                downscaled_mask = cv2.resize(
+                    mask.astype(np.uint8),
+                    (tile_w, tile_h),
+                    interpolation=cv2.INTER_NEAREST
+                ).astype(bool)
+                
+                # Filter edge masks (likely incomplete)
+                if is_edge_mask(downscaled_mask, tile_size, overlap_ratio):
+                    edge_filtered_count += 1
+                    continue
+                
+                # Map to global coordinates
+                global_mask = np.zeros((h, w), dtype=bool)
+                y_end = min(y_offset + tile_h, h)
+                x_end = min(x_offset + tile_w, w)
+                global_mask[y_offset:y_end, x_offset:x_end] = downscaled_mask[:y_end-y_offset, :x_end-x_offset]
+                
+                tile_masks_global.append(global_mask)
+                tile_scores_filtered.append(score)
+                tile_classes_filtered.append(cls)
+        
+        stats = {
+            'tile_idx': tile_idx,
+            'detected': len(tile_masks),
+            'kept': len(tile_masks_global),
+            'edge_filtered': edge_filtered_count
+        }
+        
+        return tile_masks_global, tile_scores_filtered, tile_classes_filtered, stats
+    
+    except Exception as e:
+        system_logger.error(f"Error processing tile {tile_idx}: {e}")
+        import traceback
+        traceback.print_exc()
+        return [], [], [], {'tile_idx': tile_idx, 'error': str(e)}
+
+
 def tile_based_inference_pipeline(
     predictor,
     image,
@@ -1810,83 +1906,116 @@ def tile_based_inference_pipeline(
     
     system_logger.info(f"Generated {len(tiles)} tiles")
     
-    # STEP 3: Process each tile
-    # ============================================================================
-    # PARALLEL TILE PROCESSING (Future Optimization)
-    # ============================================================================
-    # Current: Sequential tile processing (one at a time)
-    # Potential: Process 2-3 tiles in parallel on L4 GPU
-    #
-    # Implementation approach:
-    # 1. Use ThreadPoolExecutor with max_workers=2-3
-    # 2. Each worker processes one tile through upscale->inference->downscale
-    # 3. Collect results and map to global coordinates
-    # 4. Benefits: ~2-3x speedup on tile processing phase
-    #
-    # Challenges:
-    # - Detectron2 predictor thread safety (may need lock or separate predictors)
-    # - GPU memory contention (need to monitor VRAM usage)
-    # - Error handling across threads
-    #
-    # Example pseudocode:
-    #   def process_tile_wrapper(tile_data):
-    #       tile_img, x_offset, y_offset = tile_data
-    #       # ... upscale, inference, downscale, map to global coords
-    #       return global_masks, scores, classes
-    #
-    #   with ThreadPoolExecutor(max_workers=2) as executor:
-    #       results = executor.map(process_tile_wrapper, tiles)
-    #       for tile_masks, tile_scores, tile_classes in results:
-    #           all_tile_masks.extend(tile_masks)
-    #           all_tile_scores.extend(tile_scores)
-    #           all_tile_classes.extend(tile_classes)
-    # ============================================================================
+    # Get parallel processing settings from config
+    tile_settings = config.get("inference_settings", {}).get("tile_settings", {})
+    use_parallel = tile_settings.get("parallel_tile_processing", False)
+    parallel_workers = tile_settings.get("parallel_workers", 2)
     
+    # STEP 3: Process tiles (parallel or sequential)
     all_tile_masks = []
     all_tile_scores = []
     all_tile_classes = []
     
-    for tile_idx, (tile_img, x_offset, y_offset) in enumerate(tiles):
-        system_logger.debug(f"Processing tile {tile_idx + 1}/{len(tiles)} at ({x_offset}, {y_offset})")
+    if use_parallel and len(tiles) > 1:
+        # ============================================================================
+        # PARALLEL TILE PROCESSING
+        # ============================================================================
+        system_logger.info(f"⚡ Using PARALLEL tile processing with {parallel_workers} workers")
         
-        # Upscale tile to make small particles appear larger
-        tile_h, tile_w = tile_img.shape[:2]
-        upscaled_h = int(tile_h * upscale_factor)
-        upscaled_w = int(tile_w * upscale_factor)
-        upscaled_tile = cv2.resize(tile_img, (upscaled_w, upscaled_h), interpolation=cv2.INTER_LINEAR)
+        # Prepare tile data with indices
+        tiles_with_idx = [(tile_img, x_off, y_off, idx) 
+                          for idx, (tile_img, x_off, y_off) in enumerate(tiles)]
         
-        # Run inference on upscaled tile
-        tile_masks, tile_scores, tile_classes = run_class_specific_inference(
-            predictor, upscaled_tile, target_class, small_classes,
-            confidence_threshold, iou_threshold=0.5
-        )
+        # Create a thread lock for predictor access (if needed)
+        import threading
+        predictor_lock = threading.Lock()
         
-        system_logger.debug(f"Tile {tile_idx + 1}: Found {len(tile_masks)} instances")
+        def process_tile_wrapper(tile_data):
+            """Wrapper that adds thread safety via lock"""
+            with predictor_lock:
+                return process_single_tile(
+                    predictor, tile_data, target_class, small_classes,
+                    confidence_threshold, upscale_factor, tile_size, 
+                    overlap_ratio, (h, w)
+                )
         
-        # Map masks back to original image coordinates
-        if tile_masks:
-            for i, (mask, score, cls) in enumerate(zip(tile_masks, tile_scores, tile_classes)):
-                # Downscale mask back to tile size
-                downscaled_mask = cv2.resize(
-                    mask.astype(np.uint8),
-                    (tile_w, tile_h),
-                    interpolation=cv2.INTER_NEAREST
-                ).astype(bool)
-                
-                # Filter edge masks (likely incomplete)
-                if is_edge_mask(downscaled_mask, tile_size, overlap_ratio):
-                    system_logger.debug(f"Tile {tile_idx + 1}: Filtered edge mask {i+1}")
-                    continue
-                
-                # Map to global coordinates
-                global_mask = np.zeros((h, w), dtype=bool)
-                y_end = min(y_offset + tile_h, h)
-                x_end = min(x_offset + tile_w, w)
-                global_mask[y_offset:y_end, x_offset:x_end] = downscaled_mask[:y_end-y_offset, :x_end-x_offset]
-                
-                all_tile_masks.append(global_mask)
-                all_tile_scores.append(score)
-                all_tile_classes.append(cls)
+        # Process tiles in parallel
+        with ThreadPoolExecutor(max_workers=parallel_workers) as executor:
+            results = list(executor.map(process_tile_wrapper, tiles_with_idx))
+        
+        # Aggregate results
+        total_detected = 0
+        total_kept = 0
+        total_edge_filtered = 0
+        
+        for tile_masks, tile_scores, tile_classes, stats in results:
+            all_tile_masks.extend(tile_masks)
+            all_tile_scores.extend(tile_scores)
+            all_tile_classes.extend(tile_classes)
+            
+            if 'error' not in stats:
+                total_detected += stats['detected']
+                total_kept += stats['kept']
+                total_edge_filtered += stats['edge_filtered']
+        
+        system_logger.info(f"Parallel processing complete:")
+        system_logger.info(f"  - Total detected: {total_detected}")
+        system_logger.info(f"  - Edge filtered: {total_edge_filtered}")
+        system_logger.info(f"  - Kept: {total_kept}")
+        
+    else:
+        # ============================================================================
+        # SEQUENTIAL TILE PROCESSING (Original)
+        # ============================================================================
+        if use_parallel:
+            system_logger.info("⚠️ Parallel processing disabled (only 1 tile)")
+        else:
+            system_logger.info("Using SEQUENTIAL tile processing")
+        
+        for tile_idx, (tile_img, x_offset, y_offset) in enumerate(tiles):
+            # Log progress every 5 tiles instead of every tile
+            if tile_idx % 5 == 0 or tile_idx == len(tiles) - 1:
+                system_logger.info(f"Processing tile {tile_idx + 1}/{len(tiles)}")
+            
+            # Upscale tile to make small particles appear larger
+            tile_h, tile_w = tile_img.shape[:2]
+            upscaled_h = int(tile_h * upscale_factor)
+            upscaled_w = int(tile_w * upscale_factor)
+            upscaled_tile = cv2.resize(tile_img, (upscaled_w, upscaled_h), interpolation=cv2.INTER_LINEAR)
+            
+            # Run inference on upscaled tile
+            tile_masks, tile_scores, tile_classes = run_class_specific_inference(
+                predictor, upscaled_tile, target_class, small_classes,
+                confidence_threshold, iou_threshold=0.5
+            )
+            
+            # Only log tiles with detections
+            if len(tile_masks) > 0:
+                system_logger.debug(f"Tile {tile_idx + 1}: Found {len(tile_masks)} instances")
+            
+            # Map masks back to original image coordinates
+            if tile_masks:
+                for i, (mask, score, cls) in enumerate(zip(tile_masks, tile_scores, tile_classes)):
+                    # Downscale mask back to tile size
+                    downscaled_mask = cv2.resize(
+                        mask.astype(np.uint8),
+                        (tile_w, tile_h),
+                        interpolation=cv2.INTER_NEAREST
+                    ).astype(bool)
+                    
+                    # Filter edge masks (likely incomplete)
+                    if is_edge_mask(downscaled_mask, tile_size, overlap_ratio):
+                        continue
+                    
+                    # Map to global coordinates
+                    global_mask = np.zeros((h, w), dtype=bool)
+                    y_end = min(y_offset + tile_h, h)
+                    x_end = min(x_offset + tile_w, w)
+                    global_mask[y_offset:y_end, x_offset:x_end] = downscaled_mask[:y_end-y_offset, :x_end-x_offset]
+                    
+                    all_tile_masks.append(global_mask)
+                    all_tile_scores.append(score)
+                    all_tile_classes.append(cls)
     
     system_logger.info(f"Tiles: Found {len(all_tile_masks)} instances total (before deduplication)")
     
