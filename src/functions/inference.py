@@ -1213,10 +1213,9 @@ def run_ensemble_inference(
     predictors,
     image,
     target_class,
+    small_classes,
     conf_threshold,
     iou_threshold,
-    min_size,
-    ensemble_weights,
 ):
     """
     Run inference using multiple models and ensemble the results.
@@ -1225,18 +1224,17 @@ def run_ensemble_inference(
         predictors: List of Detectron2 predictors
         image: Input image
         target_class: Target class ID
+        small_classes: Set of small class IDs
         conf_threshold: Confidence threshold
         iou_threshold: IoU threshold for deduplication
-        min_size: Minimum mask size
-        ensemble_weights: Dict mapping model names to weights (e.g., {'R50': 0.6, 'R101': 0.4})
     
     Returns:
         Tuple of (masks, scores, classes) after ensemble
     """
     if len(predictors) < 2:
         system_logger.warning("Ensemble requires at least 2 models, falling back to single model")
-        return run_inference_single_iteration(
-            predictors[0], image, target_class, conf_threshold, iou_threshold, min_size
+        return run_class_specific_inference(
+            predictors[0], image, target_class, small_classes, conf_threshold, iou_threshold
         )
     
     system_logger.info(f"Running ensemble inference with {len(predictors)} models for class {target_class}")
@@ -1249,12 +1247,13 @@ def run_ensemble_inference(
         model_name = model_names[idx] if idx < len(model_names) else f'Model{idx}'
         system_logger.debug(f"Running inference with {model_name}...")
         
-        masks, scores, classes = run_inference_single_iteration(
-            predictor, image, target_class, conf_threshold, iou_threshold, min_size
+        # Call the correct function: run_class_specific_inference (single predictor, no ensemble)
+        masks, scores, classes = run_class_specific_inference(
+            predictor, image, target_class, small_classes, conf_threshold, iou_threshold
         )
         
         # Apply ensemble weight to scores
-        weight = ensemble_weights.get(model_name, 1.0 / len(predictors))
+        weight = ENSEMBLE_WEIGHTS.get(model_name, 1.0 / len(predictors))
         weighted_scores = [s * weight for s in scores]
         
         all_model_results.append({
@@ -1993,6 +1992,8 @@ def tile_based_inference_pipeline(
     num_batches = (len(tiles) + tile_batch_size - 1) // tile_batch_size
     
     system_logger.info(f"Processing {len(tiles)} tiles in {num_batches} batches of {tile_batch_size}")
+    
+
     
     for batch_idx in range(0, len(tiles), tile_batch_size):
         batch_end = min(batch_idx + tile_batch_size, len(tiles))
