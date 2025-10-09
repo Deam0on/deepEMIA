@@ -29,13 +29,25 @@ def get_log_dir():
     return base_dir
 
 
+def set_console_log_level(level=logging.INFO):
+    """
+    Set the console log level for the system logger.
+    
+    Args:
+        level: logging level (e.g., logging.DEBUG, logging.INFO, logging.WARNING)
+    """
+    for handler in system_logger.handlers:
+        if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+            handler.setLevel(level)
+
+
 LOG_DIR = get_log_dir()
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 # --- SYSTEM LOGGER ---
 system_log_path = LOG_DIR / f"system_{timestamp}.log"
 system_logger = logging.getLogger("system")
-system_logger.setLevel(logging.DEBUG)
+system_logger.setLevel(logging.DEBUG)  # File always gets DEBUG
 system_handler = logging.FileHandler(system_log_path, encoding="utf-8")
 system_handler.setFormatter(
     logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
@@ -47,4 +59,6 @@ if not getattr(sys, "frozen", False):
     console_handler.setFormatter(
         logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
     )
+    console_handler.setLevel(logging.INFO)  # Console defaults to INFO
     system_logger.addHandler(console_handler)
+

@@ -468,6 +468,7 @@ def run_inference(
 
         for idx_in_batch, (name, image) in enumerate(valid_batch_data):
             global_img_idx = batch_start + idx_in_batch
+            image_start_time = time.perf_counter()  # Track entire image processing time
             system_logger.info(
                 f"Processing image {name} ({global_img_idx + 1} out of {len(images_name)})"
             )
@@ -587,6 +588,10 @@ def run_inference(
             for i, mask in enumerate(unique_masks):
                 Img_ID.append(name.rsplit(".", 1)[0])
                 EncodedPixels.append(conv(rle_encoding(mask)))
+
+            # Log inference time for this image
+            image_inference_time = time.perf_counter() - image_start_time
+            system_logger.info(f"Image {name} inference complete: {image_inference_time:.3f}s, {len(unique_masks)} masks detected")
 
             # Memory optimization: Clear image and mask data after processing
             del image, unique_masks, unique_scores, unique_sources, unique_classes
@@ -914,7 +919,7 @@ def run_inference(
 
                 elapsed = time.perf_counter() - start_time
                 total_time += elapsed
-                system_logger.debug(f"Time taken for image {idx}: {elapsed:.3f} seconds")
+                system_logger.info(f"Image {test_img} measurements complete: {elapsed:.3f}s, {measurements_written} measurements")
 
             # L4 OPTIMIZATION: Stream measurements batch to CSV using config
             if measurements_batch and STREAM_MEASUREMENTS:
@@ -1763,7 +1768,7 @@ def tile_based_inference_pipeline(
     all_tile_classes = []
     
     for tile_idx, (tile_img, x_offset, y_offset) in enumerate(tiles):
-        system_logger.debug(f"Processing tile {tile_idx + 1}/{len(tiles)} at ({x_offset}, {y_offset})")
+        system_logger.info(f"Processing tile {tile_idx + 1}/{len(tiles)} at ({x_offset}, {y_offset})")
         
         # Upscale tile to make small particles appear larger
         tile_h, tile_w = tile_img.shape[:2]

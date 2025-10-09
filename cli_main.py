@@ -625,6 +625,17 @@ def inference_task():
             "Draw instance ID numbers on visualizations?", default=False
         )
 
+    # Logging verbosity
+    print("\nLogging Verbosity:")
+    print("   INFO: Standard output (recommended)")
+    print("   DEBUG: Detailed output for troubleshooting")
+    verbosity = get_user_choice(
+        "Select logging verbosity:",
+        ["INFO (standard)", "DEBUG (detailed)"],
+        default="INFO (standard)",
+    )
+    verbosity_level = verbosity.split()[0].lower()
+
     args = [
         "--task",
         "inference",
@@ -634,6 +645,8 @@ def inference_task():
         str(threshold),
         "--dataset_format",
         dataset_format_value,
+        "--verbosity",
+        verbosity_level,
     ]
 
     if visualize:

@@ -75,6 +75,16 @@ CONFIG_SCHEMA = {
             "best": {"type": dict, "required": False},
         },
     },
+    "l4_performance_optimizations": {
+        "type": dict,
+        "required": False,
+        "description": "L4 GPU performance optimization settings",
+    },
+    "inference_settings": {
+        "type": dict,
+        "required": False,
+        "description": "Inference-specific settings including class-specific and iterative stopping",
+    },
 }
 
 

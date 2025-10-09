@@ -321,8 +321,26 @@ For guided interactive mode: python cli_main.py
         default=10,
         help="Number of Optuna optimization trials to run. More trials = better optimization but longer time. [default: 10]",
     )
+    parser.add_argument(
+        "--verbosity",
+        type=str,
+        default="info",
+        choices=["debug", "info", "warning", "error"],
+        help="Console logging verbosity level. File logs always include DEBUG. [default: info]",
+    )
 
     args = parser.parse_args()
+
+    # Set console logging level based on verbosity argument
+    from src.utils.logger_utils import set_console_log_level
+    import logging
+    verbosity_map = {
+        "debug": logging.DEBUG,
+        "info": logging.INFO,
+        "warning": logging.WARNING,
+        "error": logging.ERROR,
+    }
+    set_console_log_level(verbosity_map.get(args.verbosity.lower(), logging.INFO))
 
     # Validate arguments
     if args.task != "setup" and not args.dataset_name:
