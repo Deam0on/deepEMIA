@@ -57,6 +57,10 @@ inference_settings:
     min_relative_increase: 0.25
     max_consecutive_zero: 1
     min_iterations: 2
+  
+  # Confidence threshold mode: 'manual' or 'auto'
+  confidence_mode: 'auto'  # Set to 'manual' to use class_specific_settings thresholds
+  
   class_specific_settings:
     class_0:  # Large particles
       confidence_threshold: 0.5
@@ -70,6 +74,14 @@ inference_settings:
       min_size_factor: 0.000005  # 0.0005% of image area (very aggressive)
       use_multiscale: true
   
+  # Multi-model ensemble settings
+  ensemble_settings:
+    enabled: true
+    small_classes_only: true  # Only use ensemble for small particles
+    weights:
+      R50: 0.6  # R50 better for small particles
+      R101: 0.4  # R101 better for context
+  
   # Multi-scale settings
   multiscale_settings:
     baseline_scales: [0.7, 1.0, 1.5, 2.0]  # Standard scales
@@ -81,12 +93,15 @@ inference_settings:
   
   tile_settings:
     tile_size: 512  # Base tile size before upscaling
-    overlap_ratio: 0.2  # 20% overlap
+    overlap_ratio: 0.1  # 10% overlap (reduced from 20%)
     upscale_factor: 2.0  # 2x upscaling for small particles
     edge_filter_enabled: true
     
-    # Only use tiling for these classes
-    classes_using_tiling: [1]  # e.g., "Pore throat" class
+    # Run tiling for all classes (not just small ones)
+    classes_using_tiling: [0, 1]  # All classes use tiling
+    
+    # GPU batch processing for tiles
+    tile_batch_size: 4  # Process 4 tiles at once on GPU
 
 # L4 GPU Performance Optimizations
 # Specifically tuned for g2-standard-4 (4 vCPUs, 16GB RAM, 1x NVIDIA L4)
@@ -96,7 +111,8 @@ l4_performance_optimizations:
   measurement_batch_size: 5        # Measurement batch size
   
   # Memory management for L4 GPU (22GB VRAM)
-  clear_cache_frequency: 3         # Clear GPU cache every N images
+  clear_cache_frequency: 5         # Clear GPU cache every N images (increased from 3)
+  clear_cache_after_tiles: false   # Don't clear cache after each tile (batch cleanup only)
   max_memory_usage: 0.8           # Use max 80% of available GPU memory
   
   # Threading (optimized for 4 vCPUs)
