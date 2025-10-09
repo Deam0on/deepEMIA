@@ -320,9 +320,9 @@ def run_inference(
     Note: Iteration count is now automatic via config.yaml iterative_stopping settings.
     """
     
-    # L4 OPTIMIZATION: Log key settings (condensed)
-    system_logger.info("L4 GPU Optimizations: Mixed Precision=%s, Batch Size=%d, Parallel Loading=%s",
-                      USE_MIXED_PRECISION, INFERENCE_BATCH_SIZE, PARALLEL_IMAGE_LOADING)
+    # L4 OPTIMIZATION: Comprehensive optimization settings log
+    system_logger.info("L4 GPU optimizations enabled")
+    system_logger.info(f"Batch sizes: inference={INFERENCE_BATCH_SIZE}, measurement={MEASUREMENT_BATCH_SIZE}, cleanup every {CLEANUP_FREQUENCY} images")
     
     dataset_info = read_dataset_info(CATEGORY_JSON)
     register_datasets(dataset_info, dataset_name, dataset_format=dataset_format)
@@ -497,7 +497,7 @@ def run_inference(
             all_scores_for_image = []
             all_classes_for_image = []
             
-            for target_class in range(num_classes):  # ← NOW DEFINED!
+            for target_class in range(num_classes):
                 is_small_class = target_class in small_classes
                 class_name = metadata.thing_classes[target_class]
                 
@@ -515,11 +515,6 @@ def run_inference(
                     "iou_threshold", 0.5 if is_small_class else 0.7
                 )
                 
-                # Get tile settings from config
-                tile_settings = config.get("inference_settings", {}).get("tile_settings", {})
-                tile_size = tile_settings.get("tile_size", 512)
-                overlap_ratio = tile_settings.get("overlap_ratio", 0.1)  # Default 0.1 (10%)
-                upscale_factor = tile_settings.get("upscale_factor", 2.0)
                 
                 # Tile-based inference (for both small AND large particles)
                 system_logger.info(f"Running tile-based inference for class {target_class}")
@@ -529,9 +524,9 @@ def run_inference(
                     target_class,
                     small_classes,
                     confidence_thresh,
-                    tile_size=tile_size,
-                    overlap_ratio=overlap_ratio,
-                    upscale_factor=upscale_factor,
+                    tile_size=512,
+                    overlap_ratio=0.2,
+                    upscale_factor=2.0,
                     scale_bar_info={"um_pix": um_pix, "psum": psum}
                 )
             
@@ -885,17 +880,13 @@ def run_inference(
                     # Add this logging block to show why masks are filtered
                     if mask_measurements == 0:
                         masks_filtered += 1
-                        # Only log every 50th filtered mask to reduce noise
-                        if masks_filtered % 50 == 1:
-                            system_logger.debug(
-                                f"Mask {instance_id} (class {cls}) filtered out: all {total_contours} contours too small (min_area: {min_area:.1f}) [showing every 50th]"
-                            )
+                        system_logger.debug(
+                            f"Mask {instance_id} (class {cls}) filtered out: all {total_contours} contours too small (min_area: {min_area:.1f})"
+                        )
                     else:
-                        # Only log every 100th successful mask to reduce noise
-                        if measurements_written % 100 == 1:
-                            system_logger.debug(
-                                f"Mask {instance_id} (class {cls}): {mask_measurements}/{total_contours} contours kept [showing every 100th]"
-                            )
+                        system_logger.debug(
+                            f"Mask {instance_id} (class {cls}): {mask_measurements}/{total_contours} contours kept"
+                        )
 
                     # Memory optimization: Clear mask data
                     del binary_mask, single_im_mask, mask_3ch, single_cnts
@@ -946,11 +937,7 @@ def run_inference(
         torch.cuda.empty_cache()
 
     average_time = total_time / num_images if num_images else 0
-    system_logger.info("MEASUREMENTS PHASE COMPLETED")
-    system_logger.info(
-        f"Average measurement time per image: {average_time:.3f} seconds"
-    )
-    system_logger.info(f"Results saved to: {csv_filename}")
+    system_logger.info(f"Measurements complete (avg {average_time:.3f}s/image). Results: {csv_filename}")
 
     # Create a color legend file
     legend_path = os.path.join(output_dir, "class_color_legend.txt")
@@ -963,10 +950,8 @@ def run_inference(
                 color_bgr[2],
                 color_bgr[1],
                 color_bgr[0],
-            )  # Convert BGR to RGB for display
+            )
             f.write(f"Class {i} ({class_name}): RGB{color_rgb}\n")
-
-    system_logger.info(f"Class color legend saved to: {legend_path}")
     
     # ADD THIS CLEANUP CODE AT THE END:
     # Clean up individual mask files after inference completion
@@ -1472,24 +1457,15 @@ def process_single_scale(predictor, image, target_class, small_classes, confiden
     # Scale the threshold proportionally to match the scaled image
     # At 2x scale, area is 4x larger, so threshold should be 4x
     scaled_min_size = int(base_min_size * (scale ** 2))
-    
-    system_logger.debug(
-        f"Scale {scale}x: Original min_size={base_min_size}px → Scaled min_size={scaled_min_size}px "
-        f"(image: {image.shape[1]}x{image.shape[0]} → {scaled_image.shape[1]}x{scaled_image.shape[0]})"
-    )
 
-    # Run iterative inference at this scale with SCALED threshold
+    # Run iterative inference at this scale with scaled threshold
     scale_masks, scale_scores, scale_classes = run_iterative_class_inference(
         predictor,
         scaled_image,
         target_class,
         small_classes,
         confidence_threshold,
-        min_crys_size=scaled_min_size,  # ← PASS SCALED THRESHOLD
-    )
-
-    system_logger.debug(
-        f"Scale {scale}x: Found {len(scale_masks)} masks before rescaling"
+        min_crys_size=scaled_min_size,
     )
 
     # Scale masks back to original size
@@ -1561,19 +1537,27 @@ def run_iterative_class_inference(
         # DIAGNOSTIC 1: Log raw detections before ANY filtering
         raw_class_mask = pred_classes == target_class
         raw_class_count = np.sum(raw_class_mask)
+        system_logger.info(f"    DIAGNOSTIC: RAW detections for class {target_class}: {raw_class_count} masks")
         
-        # Only log detailed diagnostics on first iteration
-        if iteration == 1:
-            system_logger.debug(f"Iter {iteration}: RAW detections={raw_class_count}, confidence_thresh={confidence_threshold}")
+        # Log score distribution of raw detections
+        if raw_class_count > 0:
+            raw_class_scores = pred_scores[raw_class_mask]
+            system_logger.info(
+                f"    DIAGNOSTIC: Score distribution - "
+                f"min: {raw_class_scores.min():.3f}, "
+                f"max: {raw_class_scores.max():.3f}, "
+                f"mean: {raw_class_scores.mean():.3f}, "
+                f"median: {np.median(raw_class_scores):.3f}"
+            )
             
-            # Log score distribution of raw detections
-            if raw_class_count > 0:
-                raw_class_scores = pred_scores[raw_class_mask]
-                above_thresh = np.sum(raw_class_scores >= confidence_threshold)
-                below_thresh = np.sum(raw_class_scores < confidence_threshold)
-                system_logger.debug(
-                    f"Iter {iteration}: Score filtering - keep {above_thresh}, filter {below_thresh}"
-                )
+            # Count how many are above/below threshold
+            above_thresh = np.sum(raw_class_scores >= confidence_threshold)
+            below_thresh = np.sum(raw_class_scores < confidence_threshold)
+            system_logger.info(
+                f"    DIAGNOSTIC: Confidence filtering - "
+                f"above {confidence_threshold}: {above_thresh}, "
+                f"below {confidence_threshold}: {below_thresh} (FILTERED OUT)"
+            )
 
         del outputs
         if torch.cuda.is_available():
@@ -1589,8 +1573,37 @@ def run_iterative_class_inference(
         filtered_scores = pred_scores[class_mask]
         filtered_classes = pred_classes[class_mask]
 
+        # DIAGNOSTIC 2: After confidence filtering
+        system_logger.info(f"    DIAGNOSTIC: After confidence filter: {len(filtered_masks)} masks")
+        
+        # Log size distribution of filtered masks BEFORE postprocessing
+        if len(filtered_masks) > 0:
+            mask_sizes = [np.sum(mask) for mask in filtered_masks]
+            system_logger.info(
+                f"    DIAGNOSTIC: Mask size distribution (BEFORE postprocessing) - "
+                f"min: {min(mask_sizes)}px, "
+                f"max: {max(mask_sizes)}px, "
+                f"mean: {np.mean(mask_sizes):.1f}px, "
+                f"median: {np.median(mask_sizes):.1f}px"
+            )
+
         # UNIVERSAL postprocessing
         if len(filtered_masks) > 0:
+            # DIAGNOSTIC 3: Log threshold being used
+            if min_crys_size is None:
+                image_area = image.shape[0] * image.shape[1]
+                calculated_min_size = max(3, int(image_area * 0.000005)) if is_small_class else max(25, int(image_area * 0.0001))
+                system_logger.info(
+                    f"    DIAGNOSTIC: Size threshold - "
+                    f"calculated min_size={calculated_min_size}px "
+                    f"(image_area={image_area}px, is_small={is_small_class})"
+                )
+            else:
+                system_logger.info(
+                    f"    DIAGNOSTIC: Size threshold - "
+                    f"provided min_size={min_crys_size}px"
+                )
+            
             processed_masks = postprocess_masks_universal(
                 filtered_masks, 
                 filtered_scores, 
@@ -1599,6 +1612,39 @@ def run_iterative_class_inference(
                 is_small_class,
                 min_crys_size=min_crys_size
             )
+
+            # DIAGNOSTIC 4: After size filtering
+            filtered_by_size = len(filtered_masks) - len(processed_masks)
+            system_logger.info(
+                f"    DIAGNOSTIC: After size filter: {len(processed_masks)} masks "
+                f"({filtered_by_size} FILTERED OUT by size)"
+            )
+            
+            # Show which sizes were filtered
+            if filtered_by_size > 0 and len(filtered_masks) > 0:
+                removed_sizes = []
+                kept_sizes = []
+                threshold_used = min_crys_size if min_crys_size is not None else calculated_min_size
+                
+                for mask in filtered_masks:
+                    size = np.sum(mask)
+                    if size >= threshold_used:
+                        kept_sizes.append(size)
+                    else:
+                        removed_sizes.append(size)
+                
+                if removed_sizes:
+                    system_logger.info(
+                        f"    DIAGNOSTIC: Removed mask sizes - "
+                        f"min: {min(removed_sizes)}px, max: {max(removed_sizes)}px, "
+                        f"count: {len(removed_sizes)}"
+                    )
+                if kept_sizes:
+                    system_logger.info(
+                        f"    DIAGNOSTIC: Kept mask sizes - "
+                        f"min: {min(kept_sizes)}px, max: {max(kept_sizes)}px, "
+                        f"count: {len(kept_sizes)}"
+                    )
 
             # Add processed masks from this iteration
             if processed_masks:
@@ -1621,8 +1667,16 @@ def run_iterative_class_inference(
 
         new_count = len(unique_masks)
         added = new_count - prev_count
+        duplicates_removed = len(all_masks) - new_count
 
-        system_logger.debug(f"Iter {iteration}: Added {added} new masks (total: {new_count})")
+        # DIAGNOSTIC 5: After deduplication
+        system_logger.info(
+            f"    DIAGNOSTIC: After deduplication - "
+            f"unique: {new_count}, duplicates removed: {duplicates_removed}, "
+            f"newly added: {added}"
+        )
+
+        system_logger.debug(f"    Added {added} new masks (total: {new_count})")
 
         # EARLY STOPPING CONDITIONS
         if added == 0:
@@ -1632,7 +1686,7 @@ def run_iterative_class_inference(
 
         if no_new_mask_iters >= MAX_CONSECUTIVE_ZERO:
             system_logger.debug(
-                f"Stopping: No new masks for {MAX_CONSECUTIVE_ZERO} consecutive iterations"
+                f"    Stopping: No new masks for {MAX_CONSECUTIVE_ZERO} consecutive iterations"
             )
             break
 
@@ -1640,12 +1694,13 @@ def run_iterative_class_inference(
             required_increase = max(1, int(prev_count * MIN_RELATIVE_INCREASE))
             if added < required_increase:
                 system_logger.debug(
-                    f"Stopping: Added {added} masks < required {required_increase}. Total: {new_count}"
+                    f"    Stopping: Added {added} masks < required {required_increase} "
+                    f"(25% of {prev_count} existing masks). Total masks: {new_count}"
                 )
                 break
         elif new_count < MIN_TOTAL_MASKS:
             system_logger.debug(
-                f"Continuing: {new_count} masks (need {MIN_TOTAL_MASKS} minimum)"
+                f"    Continuing: Only {new_count} masks (need at least {MIN_TOTAL_MASKS} before considering early stop)"
             )
 
         prev_count = new_count
@@ -1653,48 +1708,63 @@ def run_iterative_class_inference(
         all_scores = unique_scores.copy()
         all_classes = unique_classes.copy()
 
-    # Final summary
+    # DIAGNOSTIC 6: Final summary
     system_logger.info(
-        f"Class {target_class}: {len(unique_masks)} masks after {iteration} iterations"
+        f"  FINAL: Class {target_class} completed with {len(unique_masks)} masks after {iteration + 1} iterations"
     )
     
     return unique_masks, unique_scores, unique_classes
 
 
-def process_single_tile(
+def tile_based_inference_pipeline(
     predictor,
-    tile_data,
+    image,
     target_class,
     small_classes,
     confidence_threshold,
-    upscale_factor,
-    tile_size,
-    overlap_ratio,
-    image_shape
+    tile_size=512,
+    overlap_ratio=0.2,
+    upscale_factor=2.0,
+    scale_bar_info=None
 ):
     """
-    Process a single tile for parallel execution.
+    Tile-based inference for detecting particles at multiple scales.
+    NOW RUNS FOR ALL CLASSES (removed small/large class restriction).
     
-    This function is designed to be thread-safe and can be called in parallel.
+    Strategy:
+    1. Run full-image inference (captures larger particles with full context)
+    2. Run tile-based inference (captures smaller particles via upscaling)
+    3. Combine and deduplicate results
     
-    Args:
-        predictor: Detectron2 predictor (should be thread-safe or use locks)
-        tile_data: Tuple of (tile_img, x_offset, y_offset)
-        target_class: Target class ID
-        small_classes: Set of small class IDs
-        confidence_threshold: Confidence threshold
-        upscale_factor: Upscaling factor for tiles
-        tile_size: Base tile size
-        overlap_ratio: Overlap ratio for edge filtering
-        image_shape: Original image shape (h, w)
-    
-    Returns:
-        Tuple of (tile_masks_global, tile_scores, tile_classes, tile_idx, stats)
+    This approach improves detection across all particle sizes by:
+    - Full-image pass: Maintains spatial context for large particles
+    - Tile-based pass: Makes small particles appear larger (more detectable)
     """
-    tile_img, x_offset, y_offset, tile_idx = tile_data
-    h, w = image_shape
     
-    try:
+    system_logger.info(f"Tile-based inference for class {target_class}: tile_size={tile_size}px, overlap={overlap_ratio*100:.0f}%, upscale={upscale_factor}x")
+    
+    h, w = image.shape[:2]
+    is_small_class = target_class in small_classes
+    
+    # Full-image inference
+    full_image_masks, full_image_scores, full_image_classes = run_class_specific_inference(
+        predictor, image, target_class, small_classes, 
+        confidence_threshold, iou_threshold=0.7
+    )
+    
+    system_logger.info(f"Full image: {len(full_image_masks)} instances, generating {tile_size}px tiles with {overlap_ratio*100:.0f}% overlap")
+    
+    # Generate tiles with overlap
+    tiles = generate_tiles_with_overlap(image, tile_size, overlap_ratio)
+    
+    # STEP 3: Process each tile
+    all_tile_masks = []
+    all_tile_scores = []
+    all_tile_classes = []
+    
+    for tile_idx, (tile_img, x_offset, y_offset) in enumerate(tiles):
+        system_logger.debug(f"Processing tile {tile_idx + 1}/{len(tiles)} at ({x_offset}, {y_offset})")
+        
         # Upscale tile to make small particles appear larger
         tile_h, tile_w = tile_img.shape[:2]
         upscaled_h = int(tile_h * upscale_factor)
@@ -1707,12 +1777,9 @@ def process_single_tile(
             confidence_threshold, iou_threshold=0.5
         )
         
-        # Map masks back to original image coordinates
-        tile_masks_global = []
-        tile_scores_filtered = []
-        tile_classes_filtered = []
-        edge_filtered_count = 0
+        system_logger.debug(f"Tile {tile_idx + 1}: Found {len(tile_masks)} instances")
         
+        # Map masks back to original image coordinates
         if tile_masks:
             for i, (mask, score, cls) in enumerate(zip(tile_masks, tile_scores, tile_classes)):
                 # Downscale mask back to tile size
@@ -1724,7 +1791,7 @@ def process_single_tile(
                 
                 # Filter edge masks (likely incomplete)
                 if is_edge_mask(downscaled_mask, tile_size, overlap_ratio):
-                    edge_filtered_count += 1
+                    system_logger.debug(f"Tile {tile_idx + 1}: Filtered edge mask {i+1}")
                     continue
                 
                 # Map to global coordinates
@@ -1733,208 +1800,14 @@ def process_single_tile(
                 x_end = min(x_offset + tile_w, w)
                 global_mask[y_offset:y_end, x_offset:x_end] = downscaled_mask[:y_end-y_offset, :x_end-x_offset]
                 
-                tile_masks_global.append(global_mask)
-                tile_scores_filtered.append(score)
-                tile_classes_filtered.append(cls)
-        
-        stats = {
-            'tile_idx': tile_idx,
-            'detected': len(tile_masks),
-            'kept': len(tile_masks_global),
-            'edge_filtered': edge_filtered_count
-        }
-        
-        return tile_masks_global, tile_scores_filtered, tile_classes_filtered, stats
+                all_tile_masks.append(global_mask)
+                all_tile_scores.append(score)
+                all_tile_classes.append(cls)
     
-    except Exception as e:
-        system_logger.error(f"Error processing tile {tile_idx}: {e}")
-        import traceback
-        traceback.print_exc()
-        return [], [], [], {'tile_idx': tile_idx, 'error': str(e)}
-
-
-def tile_based_inference_pipeline(
-    predictor,
-    image,
-    target_class,
-    small_classes,
-    confidence_threshold,
-    tile_size=512,
-    overlap_ratio=0.1,
-    upscale_factor=2.0,
-    scale_bar_info=None
-):
-    """
-    Tile-based inference for detecting particles at multiple scales.
-    NOW RUNS FOR ALL CLASSES (removed small/large class restriction).
-    
-    Strategy (OPTIMIZED):
-    1. SKIP full-image inference (optional via config) - saves time
-    2. Run tile-based inference (captures particles at all sizes via upscaling)
-    3. Deduplicate results
-    
-    This approach improves performance by:
-    - Skipping redundant full-image pass when tiles cover everything
-    - Tile-based pass: Makes small particles appear larger (more detectable)
-    - Reduced overlap (10% vs 20%) = fewer tiles = faster processing
-    
-    Parallel tile processing:
-    - Can process 2-3 tiles in parallel on L4 GPU
-    - Set PARALLEL_TILE_PROCESSING=True in config to enable
-    """
-    
-    system_logger.info(f"Tile-based inference: tile_size={tile_size}px, overlap={overlap_ratio:.0%}, upscale={upscale_factor}x")
-    
-    h, w = image.shape[:2]
-    is_small_class = target_class in small_classes
-    
-    # Check if we should skip full-image inference (NEW OPTIMIZATION)
-    skip_full_image = config.get("inference_settings", {}).get("skip_full_image_inference", False)
-    
-    if skip_full_image:
-        system_logger.info(f"Skipping full-image inference (config: skip_full_image_inference=true)")
-        full_image_masks = []
-        full_image_scores = []
-        full_image_classes = []
-    else:
-        # STEP 1: Full-image inference (for larger particles and spatial context)
-        system_logger.info("Step 1: Full-image inference...")
-        full_image_masks, full_image_scores, full_image_classes = run_class_specific_inference(
-            predictor, image, target_class, small_classes, 
-            confidence_threshold, iou_threshold=0.7
-        )
-        
-        system_logger.info(f"Full image: Found {len(full_image_masks)} instances")
-    
-    # STEP 2: Generate tiles with overlap (NOW FOR ALL CLASSES)
-    system_logger.info(f"Step 2: Generating tiles ({tile_size}px with {overlap_ratio*100:.0f}% overlap)...")
-    tiles = generate_tiles_with_overlap(image, tile_size, overlap_ratio)
-    
-    system_logger.info(f"Generated {len(tiles)} tiles")
-    
-    # Get parallel processing settings from config
-    tile_settings = config.get("inference_settings", {}).get("tile_settings", {})
-    use_parallel = tile_settings.get("parallel_tile_processing", False)
-    parallel_workers = tile_settings.get("parallel_workers", 2)
-    
-    # STEP 3: Process tiles (parallel or sequential)
-    all_tile_masks = []
-    all_tile_scores = []
-    all_tile_classes = []
-    
-    if use_parallel and len(tiles) > 1:
-        # ============================================================================
-        # PARALLEL TILE PROCESSING
-        # ============================================================================
-        system_logger.info(f"Using PARALLEL tile processing ({parallel_workers} workers)")
-        
-        # Prepare tile data with indices
-        tiles_with_idx = [(tile_img, x_off, y_off, idx) 
-                          for idx, (tile_img, x_off, y_off) in enumerate(tiles)]
-        
-        # Create a thread lock for predictor access (if needed)
-        import threading
-        predictor_lock = threading.Lock()
-        
-        def process_tile_wrapper(tile_data):
-            """Wrapper that adds thread safety via lock"""
-            with predictor_lock:
-                return process_single_tile(
-                    predictor, tile_data, target_class, small_classes,
-                    confidence_threshold, upscale_factor, tile_size, 
-                    overlap_ratio, (h, w)
-                )
-        
-        # Process tiles in parallel
-        with ThreadPoolExecutor(max_workers=parallel_workers) as executor:
-            results = list(executor.map(process_tile_wrapper, tiles_with_idx))
-        
-        # Aggregate results
-        total_detected = 0
-        total_kept = 0
-        total_edge_filtered = 0
-        
-        for tile_masks, tile_scores, tile_classes, stats in results:
-            all_tile_masks.extend(tile_masks)
-            all_tile_scores.extend(tile_scores)
-            all_tile_classes.extend(tile_classes)
-            
-            if 'error' not in stats:
-                total_detected += stats['detected']
-                total_kept += stats['kept']
-                total_edge_filtered += stats['edge_filtered']
-        
-        system_logger.info(f"Parallel processing complete:")
-        system_logger.info(f"  - Total detected: {total_detected}")
-        system_logger.info(f"  - Edge filtered: {total_edge_filtered}")
-        system_logger.info(f"  - Kept: {total_kept}")
-        
-    else:
-        # ============================================================================
-        # SEQUENTIAL TILE PROCESSING (Original)
-        # ============================================================================
-        if use_parallel:
-            system_logger.info("Parallel processing disabled (only 1 tile)")
-        else:
-            system_logger.info("Using SEQUENTIAL tile processing")
-        
-        for tile_idx, (tile_img, x_offset, y_offset) in enumerate(tiles):
-            # Log progress every 5 tiles instead of every tile
-            if tile_idx % 5 == 0 or tile_idx == len(tiles) - 1:
-                system_logger.info(f"Processing tile {tile_idx + 1}/{len(tiles)}")
-            
-            # Upscale tile to make small particles appear larger
-            tile_h, tile_w = tile_img.shape[:2]
-            upscaled_h = int(tile_h * upscale_factor)
-            upscaled_w = int(tile_w * upscale_factor)
-            upscaled_tile = cv2.resize(tile_img, (upscaled_w, upscaled_h), interpolation=cv2.INTER_LINEAR)
-            
-            # Run inference on upscaled tile
-            tile_masks, tile_scores, tile_classes = run_class_specific_inference(
-                predictor, upscaled_tile, target_class, small_classes,
-                confidence_threshold, iou_threshold=0.5
-            )
-            
-            # Only log tiles with detections
-            if len(tile_masks) > 0:
-                system_logger.debug(f"Tile {tile_idx + 1}: Found {len(tile_masks)} instances")
-            
-            # Map masks back to original image coordinates
-            if tile_masks:
-                for i, (mask, score, cls) in enumerate(zip(tile_masks, tile_scores, tile_classes)):
-                    # Downscale mask back to tile size
-                    downscaled_mask = cv2.resize(
-                        mask.astype(np.uint8),
-                        (tile_w, tile_h),
-                        interpolation=cv2.INTER_NEAREST
-                    ).astype(bool)
-                    
-                    # Filter edge masks (likely incomplete)
-                    if is_edge_mask(downscaled_mask, tile_size, overlap_ratio):
-                        continue
-                    
-                    # Map to global coordinates
-                    global_mask = np.zeros((h, w), dtype=bool)
-                    y_end = min(y_offset + tile_h, h)
-                    x_end = min(x_offset + tile_w, w)
-                    global_mask[y_offset:y_end, x_offset:x_end] = downscaled_mask[:y_end-y_offset, :x_end-x_offset]
-                    
-                    all_tile_masks.append(global_mask)
-                    all_tile_scores.append(score)
-                    all_tile_classes.append(cls)
-    
-    system_logger.info(f"Tiles: Found {len(all_tile_masks)} instances total (before deduplication)")
-    
-    # STEP 4: Combine full-image and tile results (if full-image was run)
-    if skip_full_image:
-        all_masks = all_tile_masks
-        all_scores = list(all_tile_scores)
-        all_classes = list(all_tile_classes)
-        system_logger.info(f"Using {len(all_masks)} masks from tiles only (full-image skipped)")
-    else:
-        all_masks = full_image_masks + all_tile_masks
-        all_scores = list(full_image_scores) + list(all_tile_scores)
-        all_classes = list(full_image_classes) + list(all_tile_classes)
+    # Combine full-image and tile results
+    all_masks = full_image_masks + all_tile_masks
+    all_scores = list(full_image_scores) + list(all_tile_scores)
+    all_classes = list(full_image_classes) + list(all_tile_classes)
     
     # Verify lengths match
     if len(all_masks) != len(all_scores) or len(all_masks) != len(all_classes):
@@ -1947,19 +1820,15 @@ def tile_based_inference_pipeline(
         all_classes = all_classes[:min_len]
         system_logger.warning(f"Truncated to {min_len} items to match lengths")
     
-    # STEP 5: Deduplicate across full image + tiles
-    dedup_label = "tiles only" if skip_full_image else "full image + tiles"
-    system_logger.info(f"Step 3: Deduplicating across {dedup_label}...")
+    # Deduplicate across full image + tiles
     unique_masks, unique_scores, unique_classes = deduplicate_masks_smart(
         all_masks, all_scores, all_classes, iou_threshold=0.4
     )
     
-    # Consolidated summary
-    if not skip_full_image:
-        gain = len(unique_masks) - len(full_image_masks)
-        system_logger.info(f"Result: {len(unique_masks)} unique (full-img: {len(full_image_masks)}, tiles: {len(all_tile_masks)}, gain: +{gain})")
-    else:
-        system_logger.info(f"Result: {len(unique_masks)} unique from {len(all_tile_masks)} tile detections")
+    system_logger.info(
+        f"Deduplication complete: {len(full_image_masks)} full-image + {len(all_tile_masks)} tile instances "
+        f"= {len(unique_masks)} unique (net gain: +{len(unique_masks) - len(full_image_masks)})"
+    )
     
     return unique_masks, unique_scores, unique_classes
 
@@ -2123,8 +1992,8 @@ def deduplicate_masks_smart(masks, scores, classes, iou_threshold=0.4):
     total_time = time.perf_counter() - start_time
     
     system_logger.info(
-        f"Deduplication: {total_masks} masks → {len(unique_masks)} unique in {total_time:.1f}s "
-        f"(skipped {skipped_by_bbox:,} IoU checks via bbox filter, {skipped_by_bbox / max(1, checked_pairs):.1f}x speedup)"
+        f"Deduplication: {total_masks} masks to {len(unique_masks)} unique in {total_time:.1f}s "
+        f"({checked_pairs:,} IoU checks, skipped {skipped_by_bbox:,} by bbox filter)"
     )
     
     return unique_masks, unique_scores, unique_classes

@@ -197,60 +197,28 @@ def train_with_backbone(
         f"Training completed successfully for {backbone_name} on dataset '{dataset_name}'"
     )
 
-    system_logger.info(f"Starting evaluation on test set...")
+    system_logger.info("Evaluating on test set...")
     evaluator = COCOEvaluator(f"{dataset_name}_test", output_dir=dataset_output_dir)
     results = DefaultTrainer.test(cfg, trainer.model, evaluators=[evaluator])
-    system_logger.info(f"Evaluation completed successfully")
 
-    # Log detailed AP results
-    system_logger.info(f"EVALUATION RESULTS for {backbone_name} on '{dataset_name}':")
-    system_logger.info("=" * 60)
+    # Log evaluation results
+    system_logger.info(f"Evaluation complete for {backbone_name} on '{dataset_name}'")
 
     if "bbox" in results:
         bbox_results = results["bbox"]
-        system_logger.info("BOUNDING BOX RESULTS:")
         system_logger.info(
-            f"  AP (Average Precision): {bbox_results.get('AP', 'N/A'):.4f}"
-        )
-        system_logger.info(
-            f"  AP50 (AP @ IoU=0.50): {bbox_results.get('AP50', 'N/A'):.4f}"
-        )
-        system_logger.info(
-            f"  AP75 (AP @ IoU=0.75): {bbox_results.get('AP75', 'N/A'):.4f}"
-        )
-        system_logger.info(
-            f"  APs (AP for small objects): {bbox_results.get('APs', 'N/A'):.4f}"
-        )
-        system_logger.info(
-            f"  APm (AP for medium objects): {bbox_results.get('APm', 'N/A'):.4f}"
-        )
-        system_logger.info(
-            f"  APl (AP for large objects): {bbox_results.get('APl', 'N/A'):.4f}"
+            f"BBox - AP: {bbox_results.get('AP', 'N/A'):.4f}, "
+            f"AP50: {bbox_results.get('AP50', 'N/A'):.4f}, "
+            f"AP75: {bbox_results.get('AP75', 'N/A'):.4f}"
         )
 
     if "segm" in results:
         segm_results = results["segm"]
-        system_logger.info("SEGMENTATION RESULTS:")
         system_logger.info(
-            f"  AP (Average Precision): {segm_results.get('AP', 'N/A'):.4f}"
+            f"Segm - AP: {segm_results.get('AP', 'N/A'):.4f}, "
+            f"AP50: {segm_results.get('AP50', 'N/A'):.4f}, "
+            f"AP75: {segm_results.get('AP75', 'N/A'):.4f}"
         )
-        system_logger.info(
-            f"  AP50 (AP @ IoU=0.50): {segm_results.get('AP50', 'N/A'):.4f}"
-        )
-        system_logger.info(
-            f"  AP75 (AP @ IoU=0.75): {segm_results.get('AP75', 'N/A'):.4f}"
-        )
-        system_logger.info(
-            f"  APs (AP for small objects): {segm_results.get('APs', 'N/A'):.4f}"
-        )
-        system_logger.info(
-            f"  APm (AP for medium objects): {segm_results.get('APm', 'N/A'):.4f}"
-        )
-        system_logger.info(
-            f"  APl (AP for large objects): {segm_results.get('APl', 'N/A'):.4f}"
-        )
-
-    system_logger.info("=" * 60)
 
     # Primary metric for summary
     primary_ap = (
@@ -258,23 +226,18 @@ def train_with_backbone(
         if "bbox" in results
         else results["segm"]["AP"] if "segm" in results else "N/A"
     )
-    system_logger.info(f"PRIMARY METRIC (AP): {primary_ap:.4f}")
 
     # Use Detectron2's checkpoint
     src_ckpt = os.path.join(dataset_output_dir, "model_final.pth")
     dst_ckpt = os.path.join(dataset_output_dir, f"model_final_{model_suffix}.pth")
     if os.path.exists(src_ckpt):
         shutil.copy(src_ckpt, dst_ckpt)
-        system_logger.info(f"Model checkpoint saved: {dst_ckpt}")
     else:
         system_logger.warning(
             f"Detectron2 checkpoint {src_ckpt} not found after training."
         )
 
-    system_logger.info(
-        f"Training and evaluation pipeline completed successfully for {backbone_name}"
-    )
-    system_logger.info(f"Output directory: {dataset_output_dir}")
+    system_logger.info(f"Training complete: {backbone_name}, AP={primary_ap:.4f}, output: {dataset_output_dir}")
 
     # Return metric for Optuna
     if return_metric:
@@ -329,7 +292,6 @@ def optuna_objective(trial, dataset_name, output_dir, backbone="R50", augment=Fa
     )
     return ap
 
-
 def optimize_hyperparameters(
     dataset_name,
     output_dir,
@@ -337,11 +299,7 @@ def optimize_hyperparameters(
     backbone="R50",
     augment=False,
 ):
-    system_logger.info(
-        f"Starting hyperparameter optimization for {backbone} on dataset '{dataset_name}'"
-    )
-    system_logger.info(f"Number of trials: {n_trials}")
-    system_logger.info(f"Augmentation: {'ENABLED' if augment else 'DISABLED'}")
+    system_logger.info(f"Optimizing hyperparameters: {backbone} on {dataset_name}, {n_trials} trials")
 
     study = optuna.create_study(direction="maximize")
     study.optimize(
@@ -351,28 +309,11 @@ def optimize_hyperparameters(
         n_trials=n_trials,
     )
 
-    system_logger.info("=" * 60)
-    system_logger.info("HYPERPARAMETER OPTIMIZATION COMPLETED")
-    system_logger.info(f"Best AP Score: {study.best_trial.value:.4f}")
-    system_logger.info(f"Best Parameters:")
-    for param, value in study.best_trial.params.items():
-        system_logger.info(f"    {param}: {value}")
-
-    # Log all trial results
-    system_logger.info("\nAll Trial Results:")
-    for t in study.trials:
-        status = "BEST" if t.value == study.best_trial.value else "    "
-        system_logger.info(
-            f"{status} Trial {t.number}: AP={t.value:.4f}, params={t.params}"
-        )
+    system_logger.info(f"Optimization complete: best AP={study.best_trial.value:.4f}, params={study.best_trial.params}")
 
     save_best_rcnn_hyperparameters(
         backbone, study.best_trial.params, dataset_name=dataset_name
     )
-    system_logger.info(
-        f"Best hyperparameters for {backbone} on dataset '{dataset_name}' saved to config/config.yaml"
-    )
-    system_logger.info("=" * 60)
 
     return study.best_trial
 
@@ -400,22 +341,14 @@ def train_on_dataset(
 
     # Path for the split file
     split_file = os.path.join(SPLIT_DIR, f"{dataset_name}_split.json")
-    system_logger.info(f"Split file for {dataset_name}: {split_file}")
 
     train_data = DatasetCatalog.get(f"{dataset_name}_train")
     test_data = DatasetCatalog.get(f"{dataset_name}_test")
-    system_logger.info(f"Training images: {len(train_data)}")
-    system_logger.info(f"Test images: {len(test_data)}")
     categories = MetadataCatalog.get(f"{dataset_name}_train").thing_classes
-    system_logger.info(f"Categories: {categories}")
-
-    # Log augmentation status
-    if augment:
-        system_logger.info(
-            "Data augmentation is ENABLED for training (using custom_mapper with flips, rotation, brightness)."
-        )
-    else:
-        system_logger.info("Data augmentation is DISABLED for training.")
+    system_logger.info(
+        f"Dataset: {dataset_name}, train: {len(train_data)}, test: {len(test_data)}, "
+        f"categories: {len(categories)}, augment: {augment}"
+    )
 
     if optimize:
         backbone = "R50" if rcnn == "50" else "R101"
@@ -426,13 +359,7 @@ def train_on_dataset(
             backbone=backbone,
             augment=augment,
         )
-        system_logger.info("=" * 80)
-        system_logger.info(f"HYPERPARAMETER OPTIMIZATION COMPLETED SUCCESSFULLY")
-        system_logger.info(f"Dataset: {dataset_name}")
-        system_logger.info(f"Architecture: {backbone}")
-        system_logger.info(f"Augmentation: {'ENABLED' if augment else 'DISABLED'}")
-        system_logger.info(f"Trials: {n_trials}")
-        system_logger.info("=" * 80)
+        system_logger.info(f"Hyperparameter optimization complete: {dataset_name}, {backbone}, {n_trials} trials")
         return
 
     def _train(backbone_name, config_file, model_suffix):
@@ -455,33 +382,19 @@ def train_on_dataset(
 
     if rcnn == "50":
         _train("R50", "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml", "r50")
-        system_logger.info(
-            f"ALL TRAINING COMPLETED for dataset '{dataset_name}' with R50 backbone"
-        )
     elif rcnn == "101":
         _train("R101", "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml", "r101")
-        system_logger.info(
-            f"ALL TRAINING COMPLETED for dataset '{dataset_name}' with R101 backbone"
-        )
     elif rcnn == "combo":
-        system_logger.info("Starting combo training (R50 + R101)...")
         _train("R50", "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml", "r50")
         _train("R101", "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml", "r101")
-        system_logger.info(
-            f"ALL COMBO TRAINING COMPLETED for dataset '{dataset_name}' (R50 + R101 backbones)"
-        )
     else:
         raise ValueError("Invalid value for rcnn. Choose from '50', '101', or 'combo'.")
 
-    system_logger.info("=" * 80)
-    system_logger.info(f"TRAINING PIPELINE COMPLETED SUCCESSFULLY")
-    system_logger.info(f"Dataset: {dataset_name}")
     system_logger.info(
-        f"Architecture: {'R50' if rcnn == '50' else 'R101' if rcnn == '101' else 'R50 + R101'}"
+        f"Training complete: {dataset_name}, "
+        f"{'R50' if rcnn == '50' else 'R101' if rcnn == '101' else 'R50+R101'}, "
+        f"output: {output_dir}/{dataset_name}/"
     )
-    system_logger.info(f"Augmentation: {'ENABLED' if augment else 'DISABLED'}")
-    system_logger.info(f"Models saved in: {output_dir}/{dataset_name}/")
-    system_logger.info("=" * 80)
 
 
 def load_rcnn_hyperparameters(

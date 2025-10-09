@@ -78,15 +78,12 @@ inference_settings:
 
   # Tile-based inference settings
   use_tile_based_inference: true  # Enable for small particles
-  skip_full_image_inference: true  # Skip full-image pass, use tiles only (faster)
   
   tile_settings:
     tile_size: 512  # Base tile size before upscaling
-    overlap_ratio: 0.1  # 10% overlap (reduced from 20% for speed)
+    overlap_ratio: 0.2  # 20% overlap
     upscale_factor: 2.0  # 2x upscaling for small particles
     edge_filter_enabled: true
-    parallel_tile_processing: true  # NEW: Process 2 tiles in parallel (experimental)
-    parallel_workers: 2  # Number of parallel workers (2-3 recommended for L4)
     
     # Only use tiling for these classes
     classes_using_tiling: [1]  # e.g., "Pore throat" class
