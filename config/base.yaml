@@ -1,0 +1,15 @@
+# =============================================================================
+# BASE CONFIGURATION
+# =============================================================================
+# Core settings: bucket, paths, and basic project configuration
+
+bucket: nn-uct
+
+paths:
+  main_script: "~/deepEMIA/main.py"
+  split_dir: "~/split_dir"
+  category_json: "~/deepEMIA/dataset_info.json"
+  eta_file: "~/deepEMIA/config/eta_data.json"
+  logs_dir: "~/logs"
+  output_dir: "~/deepEMIA/output"
+  local_dataset_root: "~"
