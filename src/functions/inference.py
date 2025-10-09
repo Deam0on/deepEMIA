@@ -539,58 +539,58 @@ def run_inference(
                 all_scores_for_image.extend(class_scores)
                 all_classes_for_image.extend(class_classes)
 
-        # Final cross-class deduplication (optional, more lenient)
-        system_logger.info("Step 3: Deduplicating across all classes...")
-        
-        # Use optimized deduplication with bounding box pre-filtering
-        final_masks, final_scores, final_classes = deduplicate_masks_smart(
-            all_masks_for_image, 
-            all_scores_for_image, 
-            all_classes_for_image, 
-            iou_threshold=0.7  # Use 0.7 for cross-class deduplication
-        )
-
-        unique_masks = final_masks
-        unique_scores = final_scores
-        unique_classes = final_classes
-        unique_sources = [0] * len(unique_masks)  # All from same source
-
-        # FIXED: Log results with class distribution for ALL classes
-        class_counts = {}
-        for cls in unique_classes:
-            class_counts[cls] = class_counts.get(cls, 0) + 1
-
-        # Log all detected classes
-        class_summary = ", ".join(
-            [f"class {cls}: {count}" for cls, count in sorted(class_counts.items())]
-        )
-        if class_summary:
-            system_logger.debug(
-                f"After processing: {len(unique_masks)} unique masks for image {name} ({class_summary})"
-            )
-        else:
-            system_logger.debug(
-                f"After processing: {len(unique_masks)} unique masks for image {name} (no classes detected)"
+            # Final cross-class deduplication (optional, more lenient)
+            system_logger.info("Step 3: Deduplicating across all classes...")
+            
+            # Use optimized deduplication with bounding box pre-filtering
+            final_masks, final_scores, final_classes = deduplicate_masks_smart(
+                all_masks_for_image, 
+                all_scores_for_image, 
+                all_classes_for_image, 
+                iou_threshold=0.7  # Use 0.7 for cross-class deduplication
             )
 
-        # Save for later use - now including classes
-        dedup_results[name] = {
-            "masks": unique_masks,
-            "scores": unique_scores,
-            "sources": unique_sources,
-            "classes": unique_classes,
-        }
+            unique_masks = final_masks
+            unique_scores = final_scores
+            unique_classes = final_classes
+            unique_sources = [0] * len(unique_masks)  # All from same source
 
-        processed_images.add(name)
+            # FIXED: Log results with class distribution for ALL classes
+            class_counts = {}
+            for cls in unique_classes:
+                class_counts[cls] = class_counts.get(cls, 0) + 1
 
-        # Memory optimization: Encode masks immediately and clear image data
-        for i, mask in enumerate(unique_masks):
-            Img_ID.append(name.rsplit(".", 1)[0])
-            EncodedPixels.append(conv(rle_encoding(mask)))
+            # Log all detected classes
+            class_summary = ", ".join(
+                [f"class {cls}: {count}" for cls, count in sorted(class_counts.items())]
+            )
+            if class_summary:
+                system_logger.debug(
+                    f"After processing: {len(unique_masks)} unique masks for image {name} ({class_summary})"
+                )
+            else:
+                system_logger.debug(
+                    f"After processing: {len(unique_masks)} unique masks for image {name} (no classes detected)"
+                )
 
-        # Memory optimization: Clear image and mask data after processing
-        del image, unique_masks, unique_scores, unique_sources, unique_classes
-        gc.collect()
+            # Save for later use - now including classes
+            dedup_results[name] = {
+                "masks": unique_masks,
+                "scores": unique_scores,
+                "sources": unique_sources,
+                "classes": unique_classes,
+            }
+
+            processed_images.add(name)
+
+            # Memory optimization: Encode masks immediately and clear image data
+            for i, mask in enumerate(unique_masks):
+                Img_ID.append(name.rsplit(".", 1)[0])
+                EncodedPixels.append(conv(rle_encoding(mask)))
+
+            # Memory optimization: Clear image and mask data after processing
+            del image, unique_masks, unique_scores, unique_sources, unique_classes
+            gc.collect()
 
     overall_elapsed = time.perf_counter() - overall_start_time
     average_time = overall_elapsed / total_images if total_images else 0
