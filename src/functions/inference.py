@@ -1210,74 +1210,93 @@ def run_class_specific_inference(
 
 
 def run_ensemble_inference(
-    predictors, image, target_class, small_classes, confidence_threshold=0.3, iou_threshold=0.7
+    predictors,
+    image,
+    target_class,
+    conf_threshold,
+    iou_threshold,
+    min_size,
+    ensemble_weights,
 ):
     """
-    Run ensemble inference using multiple models with weighted voting.
+    Run inference using multiple models and ensemble the results.
     
-    Parameters:
-    - predictors: List of model predictors
-    - image: Input image
-    - target_class: Class to focus on
-    - small_classes: Set of classes considered "small"
-    - confidence_threshold: Confidence threshold for this class
-    - iou_threshold: IoU threshold for deduplication
+    Args:
+        predictors: List of Detectron2 predictors
+        image: Input image
+        target_class: Target class ID
+        conf_threshold: Confidence threshold
+        iou_threshold: IoU threshold for deduplication
+        min_size: Minimum mask size
+        ensemble_weights: Dict mapping model names to weights (e.g., {'R50': 0.6, 'R101': 0.4})
     
     Returns:
-    - tuple: (masks, scores, classes) combined from all models
+        Tuple of (masks, scores, classes) after ensemble
     """
-    is_small = target_class in small_classes
-    
-    # Check if ensemble is enabled and appropriate for this class
-    if not ENSEMBLE_ENABLED or (ENSEMBLE_SMALL_CLASSES_ONLY and not is_small):
-        # Fall back to first predictor only
-        return run_class_specific_inference(
-            predictors[0], image, target_class, small_classes,
-            confidence_threshold, iou_threshold
+    if len(predictors) < 2:
+        system_logger.warning("Ensemble requires at least 2 models, falling back to single model")
+        return run_inference_single_iteration(
+            predictors[0], image, target_class, conf_threshold, iou_threshold, min_size
         )
     
-    system_logger.debug(f"Running ensemble inference with {len(predictors)} models for class {target_class}")
+    system_logger.info(f"Running ensemble inference with {len(predictors)} models for class {target_class}")
     
-    all_masks = []
-    all_scores = []
-    all_classes = []
+    # Run inference with each model
+    all_model_results = []
+    model_names = ['R50', 'R101']  # Assuming first is R50, second is R101
     
-    # Get predictions from each model
-    for i, predictor in enumerate(predictors):
-        # Run inference with single predictor
-        masks, scores, classes = run_class_specific_inference(
-            predictor, image, target_class, small_classes,
-            confidence_threshold, iou_threshold
+    for idx, predictor in enumerate(predictors):
+        model_name = model_names[idx] if idx < len(model_names) else f'Model{idx}'
+        system_logger.debug(f"Running inference with {model_name}...")
+        
+        masks, scores, classes = run_inference_single_iteration(
+            predictor, image, target_class, conf_threshold, iou_threshold, min_size
         )
         
-        # Apply model-specific weight
-        model_name = f"R{[50, 101][i]}" if i < 2 else f"model_{i}"
-        weight = ENSEMBLE_WEIGHTS.get(model_name, 1.0 / len(predictors))
-        
-        # Adjust scores by weight
+        # Apply ensemble weight to scores
+        weight = ensemble_weights.get(model_name, 1.0 / len(predictors))
         weighted_scores = [s * weight for s in scores]
         
-        all_masks.extend(masks)
-        all_scores.extend(weighted_scores)
-        all_classes.extend(classes)
+        all_model_results.append({
+            'model': model_name,
+            'masks': masks,
+            'scores': weighted_scores,
+            'classes': classes,
+            'weight': weight
+        })
         
-        system_logger.debug(f"Model {i+1}/{len(predictors)}: {len(masks)} masks (weight={weight:.2f})")
+        system_logger.info(f"  {model_name}: {len(masks)} instances (weight: {weight:.2f})")
     
-    if not all_masks:
+    # Combine results from all models
+    combined_masks = []
+    combined_scores = []
+    combined_classes = []
+    
+    for result in all_model_results:
+        combined_masks.extend(result['masks'])
+        combined_scores.extend(result['scores'])
+        combined_classes.extend(result['classes'])
+    
+    system_logger.info(f"Combined {len(combined_masks)} masks from {len(predictors)} models")
+    
+    # Deduplicate combined results
+    if len(combined_masks) > 0:
+        unique_masks, unique_scores, unique_classes = deduplicate_masks_smart(
+            combined_masks, combined_scores, combined_classes, iou_threshold=iou_threshold
+        )
+        
+        # Store first model's mask count for comparison
+        first_model_count = len(all_model_results[0]['masks'])
+        
+        system_logger.info(
+            f"Ensemble result: {len(unique_masks)} unique masks "
+            f"(gain: +{len(unique_masks) - first_model_count} from first model)"
+        )
+        
+        return unique_masks, unique_scores, unique_classes
+    else:
+        system_logger.warning("No masks detected by any model in ensemble")
         return [], [], []
-    
-    # Deduplicate across models (use lower IoU threshold for ensemble)
-    ensemble_iou = iou_threshold * 0.8  # More aggressive deduplication across models
-    unique_masks, unique_scores, unique_classes = deduplicate_masks_smart(
-        all_masks, all_scores, all_classes, iou_threshold=ensemble_iou
-    )
-    
-    system_logger.debug(
-        f"Ensemble: {len(all_masks)} total -> {len(unique_masks)} unique "
-        f"(gain: +{len(unique_masks) - len(predictors[0])} from first model)"
-    )
-    
-    return unique_masks, unique_scores, unique_classes
 
 
 def log_scale_detection_summary(scale, masks_before, masks_after, original_shape, scaled_shape):
@@ -1632,7 +1651,7 @@ def process_single_scale(predictor, image, target_class, small_classes, confiden
     - image: Original (unscaled) image
     - target_class: Target class ID
     - small_classes: Set of small class IDs
-    - confidence_threshold: Confidence threshold for detections
+    - confidence_threshold: Confidence threshold for this class
     - max_iters: Maximum iterations
     - scale: Scale factor (e.g., 1.0, 1.5, 2.0)
     
