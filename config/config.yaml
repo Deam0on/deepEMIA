@@ -78,10 +78,11 @@ inference_settings:
 
   # Tile-based inference settings
   use_tile_based_inference: true  # Enable for small particles
+  skip_full_image_inference: true  # Skip full-image pass, use tiles only (faster)
   
   tile_settings:
     tile_size: 512  # Base tile size before upscaling
-    overlap_ratio: 0.2  # 20% overlap
+    overlap_ratio: 0.1  # 10% overlap (reduced from 20% for speed)
     upscale_factor: 2.0  # 2x upscaling for small particles
     edge_filter_enabled: true
     
