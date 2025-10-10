@@ -592,6 +592,7 @@ def inference_task():
     print(
         "\nNOTE: System now auto-detects available models and always uses class-specific inference"
     )
+    print("      Dataset-specific settings (scale bar ROI, spatial constraints) are applied automatically")
 
     dataset_name = get_dataset_selection_with_retry("Select dataset for inference")
 

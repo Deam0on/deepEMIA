@@ -129,7 +129,8 @@ def detect_scale_bar(
     system_logger.info(
         f"ROI for scale bar OCR: x={x_start}:{x_end}, y={y_start}:{y_end}"
     )
-    cv2.rectangle(image, (x_start, y_start), (x_end, y_end), (0, 0, 255), 2)
+    # Temporarily disabled: Red rectangle showing OCR ROI
+    # cv2.rectangle(image, (x_start, y_start), (x_end, y_end), (0, 0, 255), 2)
 
     roi = image[y_start:y_end, x_start:x_end].copy()
     gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
