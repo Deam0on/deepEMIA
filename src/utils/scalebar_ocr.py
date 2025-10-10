@@ -26,21 +26,77 @@ class ScaleBarDetectionError(Exception):
     pass
 
 
+def get_scalebar_roi_for_dataset(dataset_name=None):
+    """
+    Get scale bar ROI configuration for a specific dataset.
+    Falls back to default if dataset-specific config not found.
+    
+    Parameters:
+    - dataset_name (str, optional): Name of the dataset
+    
+    Returns:
+    - dict: ROI configuration with x_start_factor, y_start_factor, width_factor, height_factor
+    """
+    config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
+    
+    default_roi = {
+        'x_start_factor': 0.7,
+        'y_start_factor': 0.05,
+        'width_factor': 1,
+        'height_factor': 0.05
+    }
+    
+    if not config_path.exists():
+        system_logger.warning(f"Config file not found: {config_path}, using default ROI")
+        return default_roi
+    
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        scale_bar_rois = config.get('scale_bar_rois', {})
+        
+        # Try to get dataset-specific ROI first
+        if dataset_name and dataset_name in scale_bar_rois:
+            roi_config = scale_bar_rois[dataset_name]
+            system_logger.info(f"Using dataset-specific scale bar ROI for '{dataset_name}'")
+            return roi_config
+        
+        # Fall back to default
+        default_from_config = scale_bar_rois.get('default', default_roi)
+        
+        if dataset_name:
+            system_logger.info(f"No dataset-specific ROI for '{dataset_name}', using default")
+        
+        return default_from_config
+        
+    except Exception as e:
+        system_logger.error(f"Error loading scale bar ROI config: {e}")
+        return default_roi
+
+
 def detect_scale_bar(
-    image, roi_config, intensity_threshold=200, proximity_threshold=50
+    image, roi_config=None, intensity_threshold=200, proximity_threshold=50, dataset_name=None
 ):
     """
     Detects scale bars in SEM images using OCR and Hough line detection.
 
     Parameters:
     - image (numpy.ndarray): Input image
-    - roi_config (dict): ROI configuration with keys x_start_factor, y_start_factor, width_factor, height_factor
+    - roi_config (dict, optional): ROI configuration. If None, will load from config based on dataset_name
+    - intensity_threshold (int): Minimum intensity for scale bar line detection
+    - proximity_threshold (int): Maximum distance between text and line
+    - dataset_name (str, optional): Dataset name for loading dataset-specific ROI
 
     Returns:
     - tuple: (scale_bar_length_str, microns_per_pixel)
         - scale_bar_length_str (str): The detected scale bar length as a string (e.g., "500")
         - microns_per_pixel (float): The conversion factor from pixels to microns
     """
+    # Load ROI config if not provided
+    if roi_config is None:
+        roi_config = get_scalebar_roi_for_dataset(dataset_name)
+    
     # --- Load thresholds from config if available ---
     config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
     if config_path.exists():
@@ -54,7 +110,7 @@ def detect_scale_bar(
             if "proximity" in scalebar_thresholds and proximity_threshold == 50:
                 proximity_threshold = scalebar_thresholds["proximity"]
         except Exception as e:
-            system_logger.warning(f"Could not load thresholds from config.yaml: {e}")
+            system_logger.warning(f"Could not load thresholds from config: {e}")
 
     if not isinstance(image, np.ndarray):
         system_logger.error("Input image is not a numpy array.")
