@@ -21,7 +21,7 @@ scale_bar_rois:
     x_start_factor: 0.5
     y_start_factor: 0.005
     width_factor: 1
-    height_factor: 0.05
+    height_factor: 0.1
   
   # Add more dataset-specific ROIs as needed
   # example_dataset:
@@ -108,6 +108,47 @@ inference_settings:
     
     # GPU batch processing for tiles
     tile_batch_size: 2               # Reduce from 4 to 2
+
+  # Spatial constraints - Dataset-specific configurations
+  # Controls class containment and overlap rules
+  spatial_constraints:
+    default:
+      enabled: false  # Disabled by default for unknown datasets
+      
+    # Configuration for polyhipes_tommy dataset
+    polyhipes_tommy:
+      enabled: true
+      
+      # Containment rules: {child_class: parent_class}
+      # Class 1 particles must be contained within Class 0 particles
+      containment_rules:
+        1: 0  # Class 1 must be inside Class 0
+      
+      # Minimum containment ratio required (0.0 to 1.0)
+      # 0.95 means 95% of child must be inside parent
+      containment_threshold: 0.95
+      
+      # Overlap rules per class
+      overlap_rules:
+        0:  # Class 0 (large particles) rules
+          allow_overlap: false  # Class 0 cannot overlap with other Class 0 instances
+          allow_touch: true     # But they can touch (share boundaries)
+          max_iou_threshold: 0.1  # Maximum allowed IoU (10% tolerance for touching)
+        1:  # Class 1 (small particles) rules
+          allow_overlap: true   # Class 1 can overlap with other Class 1 instances
+          allow_touch: true
+          max_iou_threshold: 0.9  # Allow up to 90% overlap
+    
+    # Add more dataset-specific spatial constraints as needed
+    # example_dataset:
+    #   enabled: true
+    #   containment_rules:
+    #     2: 0  # Class 2 must be inside Class 0
+    #   containment_threshold: 0.90
+    #   overlap_rules:
+    #     0:
+    #       allow_overlap: false
+    #       max_iou_threshold: 0.15
 
 # L4 GPU Performance Optimizations
 # Specifically tuned for g2-standard-4 (4 vCPUs, 16GB RAM, 1x NVIDIA L4)

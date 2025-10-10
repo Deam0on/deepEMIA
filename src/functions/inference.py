@@ -49,6 +49,7 @@ from src.utils.logger_utils import system_logger
 from src.utils.mask_utils import postprocess_masks, rle_encoding
 from src.utils.measurements import calculate_measurements
 from src.utils.scalebar_ocr import detect_scale_bar
+from src.utils.spatial_constraints import apply_spatial_constraints
 
 # Load config once at the start of your program
 with open(Path.home() / "deepEMIA" / "config" / "config.yaml", "r") as f:
@@ -598,9 +599,9 @@ def run_inference(
             um_pix = 1.0
             psum = "0"
             
-            # Attempt scale bar detection
+            # Attempt scale bar detection with dataset-specific ROI
             try:
-                psum, um_pix = detect_scale_bar(image.copy(), roi_config)
+                psum, um_pix = detect_scale_bar(image.copy(), roi_config=None, dataset_name=dataset_name)
                 system_logger.info(
                     f"Scale bar detected: {psum} units = {um_pix:.4f} units/pixel"
                 )
@@ -671,6 +672,15 @@ def run_inference(
                 all_scores_for_image, 
                 all_classes_for_image, 
                 iou_threshold=0.7  # Use 0.7 for cross-class deduplication
+            )
+
+            # Apply spatial constraints (containment and overlap rules)
+            system_logger.info("Step 4: Applying spatial constraints...")
+            final_masks, final_scores, final_classes = apply_spatial_constraints(
+                final_masks,
+                final_scores,
+                final_classes,
+                dataset_name=dataset_name
             )
 
             unique_masks = final_masks
@@ -821,7 +831,7 @@ def run_inference(
                     )
                     continue
 
-                psum, um_pix = detect_scale_bar(im, roi_config)
+                psum, um_pix = detect_scale_bar(im, roi_config=None, dataset_name=dataset_name)
 
                 # Use deduplicated masks and classes for this image
                 image_data = dedup_results.get(test_img, {})
