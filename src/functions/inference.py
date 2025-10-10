@@ -427,6 +427,58 @@ def iou(mask1, mask2):
     return intersection / union if union > 0 else 0
 
 
+def cleanup_old_predictions(split_dir, output_dir=None):
+    """
+    Remove old prediction visualization files (*_predictions.png) from directories.
+    
+    This ensures that leftover predictions from previous runs don't cause confusion.
+    
+    Parameters:
+    - split_dir (Path or str): Path to the split directory containing old predictions
+    - output_dir (Path or str, optional): Path to output directory to also clean
+    
+    Returns:
+    - int: Number of files removed
+    """
+    removed_count = 0
+    
+    # Clean split_dir
+    split_path = Path(split_dir)
+    if split_path.exists():
+        prediction_files = list(split_path.glob("*_predictions.png"))
+        for pred_file in prediction_files:
+            try:
+                pred_file.unlink()
+                removed_count += 1
+                system_logger.debug(f"Removed old prediction file: {pred_file.name}")
+            except Exception as e:
+                system_logger.warning(f"Failed to remove {pred_file.name}: {e}")
+    else:
+        system_logger.debug(f"Split directory does not exist: {split_path}")
+    
+    # Clean output_dir if provided
+    if output_dir:
+        output_path = Path(output_dir)
+        if output_path.exists():
+            prediction_files = list(output_path.glob("*_predictions.png"))
+            for pred_file in prediction_files:
+                try:
+                    pred_file.unlink()
+                    removed_count += 1
+                    system_logger.debug(f"Removed old prediction file: {pred_file.name}")
+                except Exception as e:
+                    system_logger.warning(f"Failed to remove {pred_file.name}: {e}")
+        else:
+            system_logger.debug(f"Output directory does not exist: {output_path}")
+    
+    if removed_count > 0:
+        system_logger.info(f"Cleaned up {removed_count} old prediction visualization(s)")
+    else:
+        system_logger.debug("No old prediction files found to clean up")
+    
+    return removed_count
+
+
 def run_inference(
     dataset_name,
     output_dir,
@@ -440,6 +492,9 @@ def run_inference(
     
     Note: Iteration count is now automatic via config.yaml iterative_stopping settings.
     """
+    
+    # Clean up old prediction files from previous runs
+    cleanup_old_predictions(SPLIT_DIR, output_dir)
     
     # L4 OPTIMIZATION: Comprehensive optimization settings log
     system_logger.info("L4 GPU optimizations enabled")
