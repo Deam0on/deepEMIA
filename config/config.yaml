@@ -153,25 +153,34 @@ inference_settings:
 # L4 GPU Performance Optimizations
 # Specifically tuned for g2-standard-4 (4 vCPUs, 16GB RAM, 1x NVIDIA L4)
 l4_performance_optimizations:
-  # Batch processing (ultra-conservative for large datasets >15 images)
+  # Batch processing (ultra-conservative for high-density datasets)
   inference_batch_size: 1          # Process 1 image at a time to prevent OOM
-  measurement_batch_size: 2        # Reduce measurement batch size
+  measurement_batch_size: 1        # Process 1 image at a time for measurements
   
-  # Memory management for L4 GPU (22GB VRAM) - AGGRESSIVE for large datasets
-  clear_cache_frequency: 1         # Clean after EVERY image (critical for >15 images)
+  # Memory management for L4 GPU (22GB VRAM) - AGGRESSIVE for high-density images
+  clear_cache_frequency: 1         # Clean after EVERY image (critical for 1000+ instances/image)
   clear_cache_after_tiles: true    # Enable per-batch cleanup
-  max_memory_usage: 0.7           # Use max 70% of available GPU memory (more headroom)
+  max_memory_usage: 0.6            # Use max 60% of available GPU memory (maximum headroom)
   
   # Threading (optimized for 4 vCPUs)
-  max_worker_threads: 2           # Reduce to 2 threads for lower memory footprint
+  max_worker_threads: 1            # Single-threaded to minimize memory footprint
   enable_parallel_image_loading: true
-  enable_parallel_mask_processing: false  # Disable for lower memory usage
+  enable_parallel_mask_processing: false  # Disabled for lower memory usage
   
   # Model optimizations for L4
   use_mixed_precision: true       # Use AMP for 30-50% speedup on L4
   enable_gpu_optimizations: true  # Enable cudnn.benchmark, etc.
   optimize_for_inference: true    # Disable gradients, set eval mode
   
-  # I/O optimizations  
-  stream_measurements_to_csv: true  # Stream instead of buffering all
-  cleanup_individual_masks: true   # Remove individual mask files after completion
+  # I/O optimizations - STREAMING mode for high-density images
+  stream_measurements_to_csv: true     # Stream instead of buffering all
+  cleanup_individual_masks: true       # Remove individual mask files after completion
+  incremental_mask_saving: true        # Save masks in small batches (50 at a time)
+  incremental_visualization: true      # GC every 200 instances during visualization
+  csv_flush_frequency: 100             # Flush CSV every 100 measurements
+  
+  # High-density image settings
+  high_density_threshold: 1000         # Images with >1000 instances are "high-density"
+  encode_batch_size: 200               # Encode masks in batches of 200
+  mask_save_batch_size: 50             # Save individual masks in batches of 50
+  instance_gc_frequency: 100           # Run GC every 100 instances during processing

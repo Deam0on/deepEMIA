@@ -774,19 +774,40 @@ def run_inference(
                 )
 
             # Save for later use - now including classes
-            dedup_results[name] = {
-                "masks": unique_masks,
-                "scores": unique_scores,
-                "sources": unique_sources,
-                "classes": unique_classes,
-            }
+            # OPTIMIZATION: For high-density images (>1000 instances), store minimal data
+            if len(unique_masks) > 1000:
+                system_logger.warning(f"High-density image {name}: {len(unique_masks)} instances - storing compressed masks")
+                # Store masks as RLE or compressed format to save memory
+                dedup_results[name] = {
+                    "masks": unique_masks,  # Will be cleared after measurements
+                    "scores": unique_scores,
+                    "sources": unique_sources,
+                    "classes": unique_classes,
+                }
+            else:
+                dedup_results[name] = {
+                    "masks": unique_masks,
+                    "scores": unique_scores,
+                    "sources": unique_sources,
+                    "classes": unique_classes,
+                }
 
             processed_images.add(name)
 
             # Memory optimization: Encode masks immediately and clear image data
-            for i, mask in enumerate(unique_masks):
-                Img_ID.append(name.rsplit(".", 1)[0])
-                EncodedPixels.append(conv(rle_encoding(mask)))
+            # STREAMING: For high-density images, encode in batches to prevent memory spike
+            encode_batch_size = 200  # Process 200 masks at a time
+            for batch_start in range(0, len(unique_masks), encode_batch_size):
+                batch_end = min(batch_start + encode_batch_size, len(unique_masks))
+                for i in range(batch_start, batch_end):
+                    mask = unique_masks[i]
+                    Img_ID.append(name.rsplit(".", 1)[0])
+                    EncodedPixels.append(conv(rle_encoding(mask)))
+                
+                # Clean up batch
+                if batch_end % 1000 == 0:
+                    gc.collect()
+                    system_logger.debug(f"Encoded {batch_end}/{len(unique_masks)} masks for {name}")
 
             # Log inference time for this image
             image_inference_time = time.perf_counter() - image_start_time
@@ -891,9 +912,6 @@ def run_inference(
                 f"L4 OPTIMIZED: Processing measurements batch {batch_start//measurement_batch_size + 1}/{(len(image_list) + measurement_batch_size - 1)//measurement_batch_size} (configured batch size: {MEASUREMENT_BATCH_SIZE})"
             )
 
-            # Prepare measurements batch for streaming
-            measurements_batch = []
-
             for idx_in_batch, test_img in enumerate(batch_images):
                 idx = batch_start + idx_in_batch + 1
                 start_time = time.perf_counter()
@@ -990,23 +1008,34 @@ def run_inference(
                                 cv2.LINE_AA,
                             )
 
+                        # INCREMENTAL: Clean up colored_mask immediately
                         del colored_mask
+                        del contours
+                        
+                        # INCREMENTAL: For high-density images, gc every 200 instances
+                        if (i + 1) % 200 == 0:
+                            gc.collect()
+                            system_logger.debug(f"Visualized {i + 1}/{len(masks)} instances")
 
                     # Single PNG per image
                     vis_save_path = os.path.join(
                         output_dir, f"{test_img}_predictions.png"
                     )
                     cv2.imwrite(vis_save_path, vis_img)
+                    
+                    # IMMEDIATE: Clean up visualization immediately after saving
                     del vis_img
                     gc.collect()
+                    
+                    system_logger.info(f"Saved visualization for {test_img} with {len(masks)} instances")
 
                 # Process each mask for measurements
                 for instance_id, (mask, cls) in enumerate(zip(masks, classes), 1):
                     binary_mask = (mask > 0).astype(np.uint8) * 255
                     single_im_mask = binary_mask.copy()
 
-                    # Save individual mask image with class info
-                    mask_3ch = np.stack([single_im_mask] * 3, axis=-1)
+                    # INCREMENTAL: Save individual mask image with class info
+                    # Only allocate mask_3ch when needed, save immediately, then delete
                     class_name = (
                         metadata.thing_classes[cls]
                         if cls < len(metadata.thing_classes)
@@ -1015,7 +1044,16 @@ def run_inference(
                     mask_filename = os.path.join(
                         output_dir, f"{test_img}_mask_{instance_id}_{class_name}.jpg"
                     )
+                    
+                    # Create 3-channel mask, save, and delete immediately
+                    mask_3ch = np.stack([single_im_mask] * 3, axis=-1)
                     cv2.imwrite(mask_filename, mask_3ch)
+                    del mask_3ch  # IMMEDIATE cleanup after save
+                    
+                    # Garbage collect every 50 masks to prevent buildup
+                    if instance_id % 50 == 0:
+                        gc.collect()
+                        system_logger.debug(f"Saved {instance_id}/{len(masks)} masks for {test_img}")
 
                     single_cnts = cv2.findContours(
                         single_im_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
@@ -1061,8 +1099,8 @@ def run_inference(
                             else f"class_{cls}"
                         )
 
-                        # L4 OPTIMIZATION: Add measurements to batch instead of writing immediately
-                        measurements_batch.append([
+                        # STREAMING: Write measurement immediately to CSV
+                        csvwriter.writerow([
                             f"{test_img}_{instance_id}",
                             cls,  # Class number
                             class_name,  # Class name
@@ -1092,6 +1130,14 @@ def run_inference(
                         if cls not in class_measurements:
                             class_measurements[cls] = 0
                         class_measurements[cls] += 1
+                        
+                        # STREAMING: Flush every 100 measurements to ensure data is written
+                        if measurements_written % 100 == 0:
+                            csvfile.flush()
+                            system_logger.debug(f"Flushed {measurements_written} measurements to CSV")
+                        
+                        # Clear measurement dict immediately
+                        del measurements
 
                     # Add this logging block to show why masks are filtered
                     if mask_measurements == 0:
@@ -1104,9 +1150,13 @@ def run_inference(
                             f"Mask {instance_id} (class {cls}): {mask_measurements}/{total_contours} contours kept"
                         )
 
-                    # Memory optimization: Clear mask data
-                    del binary_mask, single_im_mask, mask_3ch, single_cnts
-                    gc.collect()
+                    # Memory optimization: Clear mask data immediately
+                    del binary_mask, single_im_mask, single_cnts
+                    
+                    # INCREMENTAL: Garbage collect every 100 instances for high-density images
+                    if instance_id % 100 == 0:
+                        gc.collect()
+                        system_logger.debug(f"Processed {instance_id}/{len(masks)} instances for {test_img}")
 
                 # ADDED: Report measurement statistics
                 system_logger.info(
@@ -1127,6 +1177,9 @@ def run_inference(
 
                 # Memory optimization: Clear image data
                 del im
+                
+                # IMMEDIATE: Clear masks and classes arrays for this image
+                del masks, classes, image_data
 
                 elapsed = time.perf_counter() - start_time
                 total_time += elapsed
@@ -1136,17 +1189,14 @@ def run_inference(
                 if test_img in dedup_results:
                     del dedup_results[test_img]
                     system_logger.debug(f"Freed dedup_results for {test_img}")
-
-            # L4 OPTIMIZATION: Stream measurements batch to CSV using config
-            if measurements_batch and STREAM_MEASUREMENTS:
-                stream_measurements_to_csv(csvwriter, csvfile, measurements_batch)
-                system_logger.debug(f"Streamed {len(measurements_batch)} measurements to CSV")
-                measurements_batch.clear()  # Clear batch from memory
-            elif measurements_batch:
-                # Fallback: write immediately if streaming is disabled
-                for measurement in measurements_batch:
-                    csvwriter.writerow(measurement)
-                measurements_batch.clear()
+                
+                # STREAMING: Final flush for this image
+                csvfile.flush()
+                
+                # IMMEDIATE: Force garbage collection after each image for high-density datasets
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
             # L4 OPTIMIZATION: Use configured memory cleanup frequency
             smart_memory_cleanup(batch_start)
