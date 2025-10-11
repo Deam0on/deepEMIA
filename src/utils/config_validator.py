@@ -41,6 +41,7 @@ CONFIG_SCHEMA = {
     "scale_bar_rois": {
         "type": dict,
         "required": True,
+        "allow_additional_fields": True,  # Allow dataset-specific ROI overrides
         "fields": {
             "default": {
                 "type": dict,
@@ -85,6 +86,18 @@ CONFIG_SCHEMA = {
         "required": False,
         "description": "Inference-specific settings including class-specific and iterative stopping",
     },
+    "inference_memory_management": {
+        "type": dict,
+        "required": False,
+        "description": "Memory monitoring failsafe to prevent OOM crashes",
+        "fields": {
+            "enabled": {"type": bool, "required": False, "default": True},
+            "ram_threshold_gb": {"type": (int, float), "required": False, "default": 3.0},
+            "vram_threshold_gb": {"type": (int, float), "required": False, "default": 2.0},
+            "safety_factor": {"type": (int, float), "required": False, "default": 1.5},
+            "cold_start_images": {"type": int, "required": False, "default": 3},
+        },
+    },
 }
 
 
@@ -108,7 +121,8 @@ def validate_field(value: Any, field_schema: Dict[str, Any], field_name: str) ->
 
     # Nested object validation
     if field_type == dict and "fields" in field_schema:
-        return validate_config_dict(value, field_schema["fields"], field_name)
+        allow_additional = field_schema.get("allow_additional_fields", False)
+        return validate_config_dict(value, field_schema["fields"], field_name, allow_additional)
 
     # Path validation for path fields
     if (
@@ -128,7 +142,7 @@ def validate_field(value: Any, field_schema: Dict[str, Any], field_name: str) ->
 
 
 def validate_config_dict(
-    config_dict: Dict[str, Any], schema: Dict[str, Any], prefix: str = ""
+    config_dict: Dict[str, Any], schema: Dict[str, Any], prefix: str = "", allow_additional: bool = False
 ) -> Dict[str, Any]:
     """Validate a configuration dictionary against a schema."""
     validated_config = {}
@@ -144,9 +158,10 @@ def validate_config_dict(
     # Check for unexpected fields
     unexpected_fields = set(config_dict.keys()) - set(schema.keys())
     if unexpected_fields:
-        system_logger.warning(
-            f"Unexpected configuration fields found: {unexpected_fields}"
-        )
+        if not allow_additional:
+            system_logger.warning(
+                f"Unexpected configuration fields found: {unexpected_fields}"
+            )
         # Include unexpected fields in validated config
         for field in unexpected_fields:
             validated_config[field] = config_dict[field]
