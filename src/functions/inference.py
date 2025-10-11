@@ -48,12 +48,6 @@ from src.data.models import choose_and_use_model, get_trained_model_paths
 from src.utils.logger_utils import system_logger
 from src.utils.mask_utils import postprocess_masks, rle_encoding
 from src.utils.measurements import calculate_measurements
-from src.utils.memory_monitor import (
-    MemoryMonitor,
-    save_checkpoint,
-    print_early_stop_message,
-    cleanup_resources,
-)
 from src.utils.scalebar_ocr import detect_scale_bar
 from src.utils.spatial_constraints import apply_spatial_constraints
 
@@ -79,14 +73,6 @@ STREAM_MEASUREMENTS = l4_config.get("stream_measurements_to_csv", True)
 # Load tile settings
 tile_settings = config.get("inference_settings", {}).get("tile_settings", {})
 TILE_BATCH_SIZE = tile_settings.get("tile_batch_size", 4)
-
-# Load memory management settings
-memory_mgmt_config = config.get("inference_memory_management", {})
-MEMORY_MONITOR_ENABLED = memory_mgmt_config.get("enabled", True)
-RAM_THRESHOLD_GB = memory_mgmt_config.get("ram_threshold_gb", 3.0)
-VRAM_THRESHOLD_GB = memory_mgmt_config.get("vram_threshold_gb", 2.0)
-MEMORY_SAFETY_FACTOR = memory_mgmt_config.get("safety_factor", 1.5)
-MEMORY_COLD_START_IMAGES = memory_mgmt_config.get("cold_start_images", 3)
 
 # Load ensemble settings
 ensemble_settings = config.get("inference_settings", {}).get("ensemble_settings", {})
@@ -608,15 +594,6 @@ def run_inference(
     total_images = len(images_name)
     overall_start_time = time.perf_counter()
 
-    # Initialize memory monitor
-    memory_monitor = MemoryMonitor(
-        ram_threshold_gb=RAM_THRESHOLD_GB,
-        vram_threshold_gb=VRAM_THRESHOLD_GB,
-        safety_factor=MEMORY_SAFETY_FACTOR,
-        cold_start_images=MEMORY_COLD_START_IMAGES,
-        enabled=MEMORY_MONITOR_ENABLED
-    )
-
     # Get the scale bar ROI profiles from already-loaded config
     scale_bar_rois = config.get("scale_bar_rois", {})
     
@@ -802,51 +779,6 @@ def run_inference(
             # Log inference time for this image
             image_inference_time = time.perf_counter() - image_start_time
             system_logger.info(f"Image {name} inference complete: {image_inference_time:.3f}s, {len(unique_masks)} masks detected")
-
-            # Record memory usage after this image
-            memory_monitor.record_image_memory()
-
-            # Check if we have enough memory for the next image
-            can_continue, reason = memory_monitor.check_memory_available()
-            if not can_continue:
-                # Low memory detected - save progress and exit gracefully
-                system_logger.warning(f"Low memory detected: {reason}")
-                
-                # Get list of remaining images
-                remaining_images = images_name[global_img_idx + 1:]
-                completed_images = list(processed_images)
-                
-                # Save checkpoint
-                memory_stats = memory_monitor.get_memory_stats()
-                checkpoint_path = save_checkpoint(
-                    completed_images=completed_images,
-                    remaining_images=remaining_images,
-                    output_dir=path,
-                    memory_stats=memory_stats,
-                    reason=reason
-                )
-                
-                # Print user-friendly message
-                print_early_stop_message(
-                    completed_images=completed_images,
-                    remaining_images=remaining_images,
-                    memory_stats=memory_stats,
-                    reason=reason,
-                    checkpoint_path=checkpoint_path,
-                    output_dir=path
-                )
-                
-                # Clean up resources
-                cleanup_resources()
-                
-                # Save RLE results for completed images before exiting
-                system_logger.info("Saving partial results before exit...")
-                df = pd.DataFrame({"ImageId": Img_ID, "EncodedPixels": EncodedPixels})
-                df.to_csv(os.path.join(path, "R50_flip_results.csv"), index=False, sep=",")
-                
-                # Exit gracefully (not a crash)
-                system_logger.info("Inference stopped gracefully due to memory constraints")
-                return  # Exit the function early
 
             # Memory optimization: Clear image and mask data after processing
             del image, unique_masks, unique_scores, unique_sources, unique_classes
@@ -1237,21 +1169,7 @@ def run_inference(
     except Exception as e:
         system_logger.warning(f"Error during mask file cleanup: {e}")
     
-    system_logger.info("✓ Inference completed successfully - all images processed")
-    system_logger.info(f"Total images processed: {total_images}")
-    
-    # Log final memory statistics
-    if MEMORY_MONITOR_ENABLED:
-        final_stats = memory_monitor.get_memory_stats()
-        system_logger.info(
-            f"Final memory usage - RAM: {final_stats.get('ram_used_gb', 0):.2f}GB, "
-            f"VRAM: {final_stats.get('vram_used_gb', 0):.2f}GB"
-        )
-        if final_stats.get('max_ram_per_image_gb'):
-            system_logger.info(
-                f"Peak memory per image - RAM: {final_stats['max_ram_per_image_gb']:.2f}GB, "
-                f"VRAM: {final_stats.get('max_vram_per_image_gb', 0):.2f}GB"
-            )
+    system_logger.info("Inference completed successfully")
 
 
 def run_class_specific_inference(
