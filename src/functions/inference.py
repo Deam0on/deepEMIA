@@ -717,14 +717,6 @@ def run_inference(
                 all_masks_for_image.extend(class_masks)
                 all_scores_for_image.extend(class_scores)
                 all_classes_for_image.extend(class_classes)
-                
-                # CRITICAL: Clear class-specific results immediately
-                del class_masks, class_scores, class_classes
-            
-            # CRITICAL: Memory cleanup after processing all classes for this image
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
 
             # Final cross-class deduplication (optional, more lenient)
             system_logger.info("Step 3: Deduplicating across all classes...")
@@ -745,10 +737,6 @@ def run_inference(
                 final_classes,
                 dataset_name=dataset_name
             )
-            
-            # CRITICAL: Clear intermediate results after spatial constraints
-            del all_masks_for_image, all_scores_for_image, all_classes_for_image
-            gc.collect()
 
             unique_masks = final_masks
             unique_scores = final_scores
@@ -795,18 +783,6 @@ def run_inference(
             # Memory optimization: Clear image and mask data after processing
             del image, unique_masks, unique_scores, unique_sources, unique_classes
             gc.collect()
-            
-            # CRITICAL: Clear GPU cache after each image to prevent OOM
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        
-        # CRITICAL: Cleanup after processing entire batch
-        del batch_images, valid_batch_data, batch_names, batch_image_paths
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        
-        system_logger.debug(f"Batch {batch_start//batch_size + 1} complete, memory cleaned")
 
     overall_elapsed = time.perf_counter() - overall_start_time
     average_time = overall_elapsed / total_images if total_images else 0
@@ -1131,11 +1107,6 @@ def run_inference(
                 elapsed = time.perf_counter() - start_time
                 total_time += elapsed
                 system_logger.info(f"Image {test_img} measurements complete: {elapsed:.3f}s, {measurements_written} measurements")
-                
-                # CRITICAL: Clear processed image from dedup_results to free memory
-                if test_img in dedup_results:
-                    del dedup_results[test_img]
-                    system_logger.debug(f"Freed dedup_results for {test_img}")
 
             # L4 OPTIMIZATION: Stream measurements batch to CSV using config
             if measurements_batch and STREAM_MEASUREMENTS:
@@ -1150,12 +1121,6 @@ def run_inference(
 
             # L4 OPTIMIZATION: Use configured memory cleanup frequency
             smart_memory_cleanup(batch_start)
-            
-            # CRITICAL: Additional cleanup between batches for large datasets
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                system_logger.debug(f"Batch {batch_start//measurement_batch_size + 1}: GPU cache cleared")
 
     # Final memory cleanup
     del dedup_results
@@ -2144,25 +2109,13 @@ def tile_based_inference_pipeline(
                     all_tile_masks.append(global_mask)
                     all_tile_scores.append(score)
                     all_tile_classes.append(cls)
-                    
-                    # Clear intermediate masks
-                    del downscaled_mask, global_mask
-            
-            # Clear tile data immediately after processing
-            del upscaled_tile, tile_masks, tile_scores, tile_classes
         
         batch_time = time.perf_counter() - batch_start_time
         system_logger.debug(f"Batch {batch_idx//tile_batch_size + 1} processed in {batch_time:.2f}s")
         
-        # CRITICAL: More aggressive cleanup between tile batches
-        del tile_batch
-        gc.collect()
-        
-        # Batch-level GPU cache cleanup
-        if torch.cuda.is_available():
-            if (batch_idx // tile_batch_size) % 2 == 0:  # Every 2 batches instead of 3
-                torch.cuda.empty_cache()
-                system_logger.debug(f"GPU cache cleared after tile batch {batch_idx//tile_batch_size + 1}")
+        # Batch-level GPU cache cleanup instead of per-tile
+        if torch.cuda.is_available() and (batch_idx // tile_batch_size) % 3 == 0:
+            torch.cuda.empty_cache()
     
     # Combine full-image and tile results
     all_masks = full_image_masks + all_tile_masks
@@ -2189,13 +2142,6 @@ def tile_based_inference_pipeline(
         f"Deduplication complete: {len(full_image_masks)} full-image + {len(all_tile_masks)} tile instances "
         f"= {len(unique_masks)} unique (net gain: +{len(unique_masks) - len(full_image_masks)})"
     )
-    
-    # CRITICAL: Clean up intermediate results before returning
-    del all_masks, all_scores, all_classes
-    del all_tile_masks, all_tile_scores, all_tile_classes
-    del full_image_masks, full_image_scores, full_image_classes
-    del tiles
-    gc.collect()
     
     return unique_masks, unique_scores, unique_classes
 
