@@ -175,3 +175,12 @@ l4_performance_optimizations:
   # I/O optimizations  
   stream_measurements_to_csv: true  # Stream instead of buffering all
   cleanup_individual_masks: true   # Remove individual mask files after completion
+
+# Memory Management - Failsafe to prevent OOM crashes
+# Monitors RAM and VRAM during inference and stops gracefully if memory is low
+inference_memory_management:
+  enabled: true                    # Enable memory monitoring failsafe
+  ram_threshold_gb: 3.0            # Stop if less than this much RAM available
+  vram_threshold_gb: 2.0           # Stop if less than this much VRAM available
+  safety_factor: 1.5               # Require 1.5x max observed memory per image
+  cold_start_images: 3             # Use fixed thresholds for first N images
