@@ -153,19 +153,19 @@ inference_settings:
 # L4 GPU Performance Optimizations
 # Specifically tuned for g2-standard-4 (4 vCPUs, 16GB RAM, 1x NVIDIA L4)
 l4_performance_optimizations:
-  # Batch processing (conservative for 16GB RAM)
-  inference_batch_size: 1          # Reduce from 3
-  measurement_batch_size: 3        # Reduce from 5
+  # Batch processing (ultra-conservative for large datasets >15 images)
+  inference_batch_size: 1          # Process 1 image at a time to prevent OOM
+  measurement_batch_size: 2        # Reduce measurement batch size
   
-  # Memory management for L4 GPU (22GB VRAM)
-  clear_cache_frequency: 3         # More frequent cleanup (from 5)
+  # Memory management for L4 GPU (22GB VRAM) - AGGRESSIVE for large datasets
+  clear_cache_frequency: 1         # Clean after EVERY image (critical for >15 images)
   clear_cache_after_tiles: true    # Enable per-batch cleanup
-  max_memory_usage: 0.8           # Use max 80% of available GPU memory
+  max_memory_usage: 0.7           # Use max 70% of available GPU memory (more headroom)
   
   # Threading (optimized for 4 vCPUs)
-  max_worker_threads: 3           # Use 3 threads, leave 1 for main process
+  max_worker_threads: 2           # Reduce to 2 threads for lower memory footprint
   enable_parallel_image_loading: true
-  enable_parallel_mask_processing: true
+  enable_parallel_mask_processing: false  # Disable for lower memory usage
   
   # Model optimizations for L4
   use_mixed_precision: true       # Use AMP for 30-50% speedup on L4
