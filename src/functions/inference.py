@@ -586,8 +586,36 @@ def run_inference(
         f"L4 OPTIMIZED: Processing {len(images_name)} images in batches of {batch_size} (configured for 16GB RAM)"
     )
 
-    Img_ID = []
-    EncodedPixels = []
+    # Initialize RLE CSV file for incremental saving (OOM protection)
+    rle_csv_path = os.path.join(path, "R50_flip_results.csv")
+    rle_csv_exists = os.path.exists(rle_csv_path)
+    
+    # Track already processed images to support resume after OOM crash
+    already_processed_images = set()
+    if rle_csv_exists:
+        try:
+            with open(rle_csv_path, "r") as rle_file:
+                rle_reader = csv.DictReader(rle_file)
+                for row in rle_reader:
+                    # Extract base image name from ImageId (remove instance suffix if present)
+                    image_id = row.get("ImageId", "")
+                    if image_id:
+                        already_processed_images.add(image_id.split("_")[0] if "_" in image_id else image_id)
+            
+            if already_processed_images:
+                system_logger.info(f"Found existing RLE results with {len(already_processed_images)} processed images. Will append new results.")
+        except Exception as e:
+            system_logger.warning(f"Could not read existing RLE file: {e}. Starting fresh.")
+            already_processed_images = set()
+    
+    # Create header if file doesn't exist
+    if not rle_csv_exists:
+        with open(rle_csv_path, "w", newline="") as rle_file:
+            rle_writer = csv.writer(rle_file)
+            rle_writer.writerow(["ImageId", "EncodedPixels"])
+        system_logger.info(f"Created RLE results file: {rle_csv_path}")
+    else:
+        system_logger.info(f"Appending to existing RLE results file: {rle_csv_path}")
 
     # Track processed images and timing
     processed_images = set()
@@ -644,6 +672,14 @@ def run_inference(
 
         for idx_in_batch, (name, image) in enumerate(valid_batch_data):
             global_img_idx = batch_start + idx_in_batch
+            
+            # OOM PROTECTION: Skip images that were already processed in a previous run
+            image_id_base = name.rsplit(".", 1)[0]
+            if image_id_base in already_processed_images:
+                system_logger.info(f"Skipping already processed image: {name} ({global_img_idx + 1}/{len(images_name)})")
+                processed_images.add(name)
+                continue
+            
             image_start_time = time.perf_counter()  # Track entire image processing time
             system_logger.info(
                 f"Processing image {name} ({global_img_idx + 1} out of {len(images_name)})"
@@ -771,10 +807,15 @@ def run_inference(
 
             processed_images.add(name)
 
-            # Memory optimization: Encode masks immediately and clear image data
-            for i, mask in enumerate(unique_masks):
-                Img_ID.append(name.rsplit(".", 1)[0])
-                EncodedPixels.append(conv(rle_encoding(mask)))
+            # Memory optimization: Encode masks immediately and write to CSV (OOM protection)
+            with open(rle_csv_path, "a", newline="") as rle_file:
+                rle_writer = csv.writer(rle_file)
+                for i, mask in enumerate(unique_masks):
+                    image_id = name.rsplit(".", 1)[0]
+                    encoded_pixels = " ".join(map(str, rle_encoding(mask)))
+                    rle_writer.writerow([image_id, encoded_pixels])
+            
+            system_logger.debug(f"Saved {len(unique_masks)} RLE masks for {name} to CSV")
 
             # Log inference time for this image
             image_inference_time = time.perf_counter() - image_start_time
@@ -797,19 +838,32 @@ def run_inference(
     else:
         system_logger.info("All images in the INFERENCE folder were processed.")
 
-    # Save RLE results
-    df = pd.DataFrame({"ImageId": Img_ID, "EncodedPixels": EncodedPixels})
-    df.to_csv(os.path.join(path, "R50_flip_results.csv"), index=False, sep=",")
-
-    # Memory optimization: Clear large dataframes
-    del df, Img_ID, EncodedPixels
-    gc.collect()
+    system_logger.info(f"RLE results saved incrementally to: {rle_csv_path}")
 
     # MODIFIED: Single measurements file with class information
     system_logger.info("Starting measurements phase...")
 
     csv_filename = os.path.join(output_dir, "measurements_results.csv")
     test_img_path = image_folder_path
+
+    # OOM PROTECTION: Track already processed measurements to support resume
+    measurements_processed_images = set()
+    measurements_csv_exists = os.path.exists(csv_filename)
+    
+    if measurements_csv_exists:
+        try:
+            with open(csv_filename, "r") as existing_csv:
+                csv_reader = csv.DictReader(existing_csv)
+                for row in csv_reader:
+                    file_name = row.get("File name", "")
+                    if file_name:
+                        measurements_processed_images.add(file_name)
+            
+            if measurements_processed_images:
+                system_logger.info(f"Found existing measurements for {len(measurements_processed_images)} images. Will append new results.")
+        except Exception as e:
+            system_logger.warning(f"Could not read existing measurements file: {e}. Starting fresh.")
+            measurements_processed_images = set()
 
     # Define colors for different classes (BGR format for OpenCV)
     class_colors = [
@@ -823,26 +877,29 @@ def run_inference(
         (255, 165, 0),  # Orange for class 7
     ]
 
-    with open(csv_filename, "w", newline="") as csvfile:
+    # Open CSV in append mode if it exists, otherwise create new
+    csv_mode = "a" if measurements_csv_exists else "w"
+    with open(csv_filename, csv_mode, newline="") as csvfile:
         csvwriter = csv.writer(csvfile)
 
-        # ADDED: Class column to CSV header
-        csvwriter.writerow(
-            [
-                "Instance_ID",
-                "Class",
-                "Class_Name",
-                "Major axis length",
-                "Minor axis length",
-                "Eccentricity",
-                "C. Length",
-                "C. Width",
-                "Circular eq. diameter",
-                "Aspect ratio",
-                "Circularity",
-                "Chord length",
-                "Ferret diameter",
-                "Roundness",
+        # ADDED: Class column to CSV header (only if new file)
+        if not measurements_csv_exists:
+            csvwriter.writerow(
+                [
+                    "Instance_ID",
+                    "Class",
+                    "Class_Name",
+                    "Major axis length",
+                    "Minor axis length",
+                    "Eccentricity",
+                    "C. Length",
+                    "C. Width",
+                    "Circular eq. diameter",
+                    "Aspect ratio",
+                    "Circularity",
+                    "Chord length",
+                    "Ferret diameter",
+                    "Roundness",
                 "Sphericity",
                 "Contrast d10",
                 "Contrast d50",
@@ -871,6 +928,11 @@ def run_inference(
             measurements_batch = []
 
             for idx_in_batch, test_img in enumerate(batch_images):
+                # OOM PROTECTION: Skip images that already have measurements
+                if test_img in measurements_processed_images:
+                    system_logger.info(f"Skipping measurements for already processed image: {test_img}")
+                    continue
+                
                 idx = batch_start + idx_in_batch + 1
                 start_time = time.perf_counter()
                 system_logger.debug(
@@ -1108,18 +1170,15 @@ def run_inference(
                 total_time += elapsed
                 system_logger.info(f"Image {test_img} measurements complete: {elapsed:.3f}s, {measurements_written} measurements")
 
-            # L4 OPTIMIZATION: Stream measurements batch to CSV using config
-            if measurements_batch and STREAM_MEASUREMENTS:
-                stream_measurements_to_csv(csvwriter, csvfile, measurements_batch)
-                system_logger.debug(f"Streamed {len(measurements_batch)} measurements to CSV")
-                measurements_batch.clear()  # Clear batch from memory
-            elif measurements_batch:
-                # Fallback: write immediately if streaming is disabled
-                for measurement in measurements_batch:
-                    csvwriter.writerow(measurement)
-                measurements_batch.clear()
+                # OOM PROTECTION: Write measurements immediately after each image
+                if measurements_batch:
+                    for measurement in measurements_batch:
+                        csvwriter.writerow(measurement)
+                    csvfile.flush()  # Ensure data is written to disk
+                    system_logger.debug(f"Saved {len(measurements_batch)} measurements for {test_img} to CSV")
+                    measurements_batch.clear()
 
-            # L4 OPTIMIZATION: Use configured memory cleanup frequency
+            # L4 OPTIMIZATION: Clear memory after batch
             smart_memory_cleanup(batch_start)
 
     # Final memory cleanup
