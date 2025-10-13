@@ -223,4 +223,19 @@ def detect_scale_bar(
         psum = "0"
         system_logger.warning("No scale bar line detected near OCR text.")
 
+    # After line detection, add:
+    if len(lines) > 0:
+        system_logger.debug(f"Total lines detected: {len(lines)}")
+        system_logger.debug(f"Horizontal lines found: {len(horizontal_lines)}")
+        
+        # Log all horizontal lines
+        for i, (x1, y1, x2, y2, length) in enumerate(horizontal_lines[:5]):
+            system_logger.debug(f"Line {i}: length={length:.1f}px, "
+                              f"position=({x1},{y1})-({x2},{y2})")
+        
+        # Check for segmentation
+        if len(horizontal_lines) > 1:
+            total_length = sum(line[4] for line in horizontal_lines)
+            system_logger.debug(f"Total length if combined: {total_length:.1f}px")
+
     return psum, um_pix
