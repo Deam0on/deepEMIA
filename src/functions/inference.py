@@ -749,11 +749,19 @@ def run_inference(
                     final_classes,
                     dataset_name=dataset_name
                 )
+                
+                # MEMORY OPTIMIZATION: Delete intermediate data immediately after spatial constraints
+                del all_masks_for_image, all_scores_for_image, all_classes_for_image
+                gc.collect()
 
                 unique_masks = final_masks
                 unique_scores = final_scores
                 unique_classes = final_classes
                 unique_sources = [0] * len(unique_masks)  # All from same source
+                
+                # Clean up final_* variables to avoid duplication
+                del final_masks, final_scores, final_classes
+                gc.collect()
 
                 # FIXED: Log results with class distribution for ALL classes
                 class_counts = {}
@@ -2167,7 +2175,6 @@ def tile_based_inference_pipeline(
     system_logger.info(f"Processing {len(tiles)} tiles in {num_batches} batches of {tile_batch_size}")
     
 
-    
     for batch_idx in range(0, len(tiles), tile_batch_size):
         batch_end = min(batch_idx + tile_batch_size, len(tiles))
         tile_batch = tiles[batch_idx:batch_end]
@@ -2179,12 +2186,16 @@ def tile_based_inference_pipeline(
         for tile_idx_in_batch, (tile_img, x_offset, y_offset) in enumerate(tile_batch):
             global_tile_idx = batch_idx + tile_idx_in_batch
             
+            upscaled_tile = None  # Initialize for cleanup
             try:
                 # Upscale tile to make small particles appear larger
                 tile_h, tile_w = tile_img.shape[:2]
                 upscaled_h = int(tile_h * upscale_factor)
                 upscaled_w = int(tile_w * upscale_factor)
                 upscaled_tile = cv2.resize(tile_img, (upscaled_w, upscaled_h), interpolation=cv2.INTER_LINEAR)
+                
+                # MEMORY OPTIMIZATION: Don't keep reference to original tile_img
+                del tile_img
                 
                 # Run inference on upscaled tile
                 tile_masks, tile_scores, tile_classes = run_class_specific_inference(
@@ -2220,8 +2231,8 @@ def tile_based_inference_pipeline(
                         all_tile_classes.append(cls)
                 
             finally:
-                # CRITICAL: Clean up after each tile
-                if 'upscaled_tile' in locals():
+                # CRITICAL: Clean up after each tile - AGGRESSIVE MEMORY MANAGEMENT
+                if upscaled_tile is not None:
                     del upscaled_tile
                 if 'tile_masks' in locals():
                     del tile_masks
@@ -2231,6 +2242,9 @@ def tile_based_inference_pipeline(
                     del tile_classes
                 if 'downscaled_mask' in locals():
                     del downscaled_mask
+                    
+                # MEMORY: Clear any intermediate numpy arrays
+                gc.collect()
         
         batch_time = time.perf_counter() - batch_start_time
         system_logger.debug(f"Batch {batch_idx//tile_batch_size + 1} processed in {batch_time:.2f}s")
@@ -2238,18 +2252,20 @@ def tile_based_inference_pipeline(
         # Clean up tile batch data
         del tile_batch
         
-        # Batch-level GPU cache cleanup every 2 batches for better performance
-        if torch.cuda.is_available() and (batch_idx // tile_batch_size) % 2 == 0:
+        # MEMORY OPTIMIZATION: Aggressive cleanup after each batch
+        # Batch-level GPU cache cleanup every batch (not every 2 batches)
+        if torch.cuda.is_available():
             torch.cuda.empty_cache()
-            gc.collect()
+            torch.cuda.synchronize()
+        gc.collect()
     
     # Combine full-image and tile results
     all_masks = full_image_masks + all_tile_masks
     all_scores = list(full_image_scores) + list(all_tile_scores)
     all_classes = list(full_image_classes) + list(all_tile_classes)
     
-    # Clean up tile data immediately
-    del all_tile_masks, all_tile_scores, all_tile_classes, tiles
+    # MEMORY OPTIMIZATION: Clean up tile data immediately before deduplication
+    del all_tile_masks, all_tile_scores, all_tile_classes, tiles, full_image_masks, full_image_scores, full_image_classes
     gc.collect()
     
     # Verify lengths match
@@ -2268,13 +2284,13 @@ def tile_based_inference_pipeline(
         all_masks, all_scores, all_classes, iou_threshold=0.4
     )
     
-    # Clean up combined results
+    # MEMORY OPTIMIZATION: Clean up combined results immediately
     del all_masks, all_scores, all_classes
     gc.collect()
     
+    num_unique = len(unique_masks)
     system_logger.info(
-        f"Deduplication complete: {len(full_image_masks)} full-image + {len(unique_masks) - len(full_image_masks)} tile instances "
-        f"= {len(unique_masks)} unique"
+        f"Deduplication complete: {num_unique} unique instances"
     )
     
     return unique_masks, unique_scores, unique_classes
