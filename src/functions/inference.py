@@ -1321,15 +1321,16 @@ def run_ensemble_inference(
     all_classes = []
     
     model_names = ["R50", "R101"][:len(predictors)]
+    weights = list(ENSEMBLE_WEIGHTS.values())[:len(predictors)]
     
-    for model_name, predictor, weight in zip(model_names, predictors, ENSEMBLE_WEIGHTS.values()):
+    for model_name, predictor, weight in zip(model_names, predictors, weights):
         try:
             # Run inference for this model
             with torch.cuda.amp.autocast(enabled=USE_MIXED_PRECISION):
                 outputs = predictor(image)
             
             if len(outputs["instances"]) == 0:
-                system_logger.info(f"  {model_name}: 0 instances (weight: {weight:.2f})")
+                system_logger.debug(f"  {model_name}: 0 instances (weight: {weight:.2f})")
                 continue
             
             # Extract predictions
@@ -1344,25 +1345,41 @@ def run_ensemble_inference(
             scores = pred_scores[class_mask]
             classes = pred_classes[class_mask]
             
-            # Log before postprocessing
+            # Log AFTER filtering
             system_logger.info(f"  {model_name}: {len(masks)} instances (weight: {weight:.2f})")
             
+            if len(masks) == 0:
+                system_logger.debug(f"  {model_name}: No instances passed confidence filter")
+                continue
+            
             # Postprocess each mask
+            is_small_class = target_class in small_classes
             processed_masks = []
             processed_scores = []
+            
             for mask, score in zip(masks, scores):
                 try:
-                    cleaned_mask = postprocess_masks_universal(
-                        mask, score, image, target_class, 
-                        is_small_class=(target_class in small_classes)
+                    # Apply universal postprocessing
+                    cleaned_masks = postprocess_masks_universal(
+                        np.array([mask]),  # Pass as list with one mask
+                        np.array([score]), 
+                        image, 
+                        target_class, 
+                        is_small_class
                     )
-                    if cleaned_mask is not None:
-                        processed_masks.append(cleaned_mask)
+                    
+                    if cleaned_masks:  # Check if any masks survived postprocessing
+                        processed_masks.append(cleaned_masks[0])
                         # Apply model weight to score
                         processed_scores.append(score * weight)
+                        
                 except Exception as e:
                     system_logger.debug(f"Failed to postprocess mask: {e}")
                     continue
+            
+            system_logger.debug(
+                f"  {model_name}: {len(processed_masks)}/{len(masks)} masks survived postprocessing"
+            )
             
             # Add to combined results
             all_masks.extend(processed_masks)
@@ -1370,7 +1387,7 @@ def run_ensemble_inference(
             all_classes.extend([target_class] * len(processed_masks))
             
         except Exception as e:
-            system_logger.error(f"Error in ensemble inference for {model_name}: {e}")
+            system_logger.error(f"Error in ensemble inference for {model_name}: {e}", exc_info=True)
             continue
         
         finally:
@@ -1385,21 +1402,20 @@ def run_ensemble_inference(
                 del processed_masks
             
             torch.cuda.empty_cache()
-            import gc
             gc.collect()
     
     if len(all_masks) == 0:
-        system_logger.warning(f"No instances found for class {target_class} after ensemble")
+        system_logger.warning(f"No instances found for class {target_class} after ensemble (all filtered during postprocessing)")
         return np.array([]), np.array([]), np.array([])
     
     # Deduplicate across models
-    system_logger.info(f"Deduplicating {len(all_masks)} ensemble predictions...")
+    system_logger.info(f"Deduplicating {len(all_masks)} ensemble predictions for class {target_class}...")
     unique_masks, unique_scores, unique_classes = deduplicate_masks_smart(
         all_masks, all_scores, all_classes, iou_threshold=iou_threshold
     )
     
     system_logger.info(
-        f"Ensemble complete: {len(all_masks)} total -> {len(unique_masks)} unique instances"
+        f"Ensemble complete for class {target_class}: {len(all_masks)} total -> {len(unique_masks)} unique instances"
     )
     
     return unique_masks, unique_scores, unique_classes
