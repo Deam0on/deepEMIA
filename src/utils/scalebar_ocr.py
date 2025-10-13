@@ -129,8 +129,6 @@ def detect_scale_bar(
     system_logger.info(
         f"ROI for scale bar OCR: x={x_start}:{x_end}, y={y_start}:{y_end}"
     )
-    # Temporarily disabled: Red rectangle showing OCR ROI
-    # cv2.rectangle(image, (x_start, y_start), (x_end, y_end), (0, 0, 255), 2)
 
     roi = image[y_start:y_end, x_start:x_end].copy()
     gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
@@ -171,12 +169,10 @@ def detect_scale_bar(
         system_logger.warning("No text detected by OCR in scale bar ROI.")
 
     edges = cv2.Canny(gray_roi, 50, 150, apertureSize=3)
-    lines_list = []
-    scale_len = 0
-    um_pix = 1
-
+    
     longest_line = None
     max_length = 0
+    horizontal_lines = []  # Track horizontal lines for debugging
 
     if text_box_center:
         lines = cv2.HoughLinesP(
@@ -187,24 +183,60 @@ def detect_scale_bar(
             minLineLength=20,
             maxLineGap=10,
         )
+        
         if lines is not None:
+            system_logger.debug(f"Total lines detected by Hough transform: {len(lines)}")
+            
             for points in lines:
                 x1, y1, x2, y2 = points[0]
+                
+                # Check if line is approximately horizontal (within 10 degrees)
+                angle = abs(np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi)
+                if angle > 10 and angle < 170:
+                    continue  # Skip non-horizontal lines
+                
+                length = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
                 line_center = ((x1 + x2) // 2, (y1 + y2) // 2)
                 dist_to_text = sqrt(
                     (line_center[0] - text_box_center[0]) ** 2
                     + (line_center[1] - text_box_center[1]) ** 2
                 )
-                if dist_to_text < proximity_threshold:
-                    length = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-                    # Intensity check: mean intensity along the line should be high (white bar)
-                    line_mask = np.zeros_like(gray_roi, dtype=np.uint8)
-                    cv2.line(line_mask, (x1, y1), (x2, y2), 255, 2)
-                    mean_intensity = cv2.mean(gray_roi, mask=line_mask)[0]
-                    if mean_intensity > intensity_threshold:
-                        if length > max_length:
-                            max_length = length
-                            longest_line = (x1, y1, x2, y2)
+                
+                # Intensity check: mean intensity along the line should be high (white bar)
+                line_mask = np.zeros_like(gray_roi, dtype=np.uint8)
+                cv2.line(line_mask, (x1, y1), (x2, y2), 255, 2)
+                mean_intensity = cv2.mean(gray_roi, mask=line_mask)[0]
+                
+                # Store info about this horizontal line
+                horizontal_lines.append((x1, y1, x2, y2, length, mean_intensity, dist_to_text))
+                
+                # Check if this line meets all criteria
+                if dist_to_text < proximity_threshold and mean_intensity > intensity_threshold:
+                    if length > max_length:
+                        max_length = length
+                        longest_line = (x1, y1, x2, y2)
+            
+            # Log horizontal lines found
+            system_logger.debug(f"Horizontal lines found: {len(horizontal_lines)}")
+            
+            # Log top 5 candidates
+            if horizontal_lines:
+                sorted_lines = sorted(horizontal_lines, key=lambda x: x[4], reverse=True)
+                for i, (x1, y1, x2, y2, length, intensity, dist) in enumerate(sorted_lines[:5]):
+                    status = "✓" if (x1, y1, x2, y2) == longest_line else "✗"
+                    system_logger.debug(
+                        f"  {status} Line {i+1}: length={length:.1f}px, "
+                        f"intensity={intensity:.1f}, dist_to_text={dist:.1f}px, "
+                        f"position=({x1},{y1})-({x2},{y2})"
+                    )
+                
+                # Check for segmentation
+                if len(horizontal_lines) > 1:
+                    total_length = sum(line[4] for line in horizontal_lines)
+                    system_logger.debug(f"Total length if combined: {total_length:.1f}px")
+
+    scale_len = 0
+    um_pix = 1
 
     if longest_line:
         x1, y1, x2, y2 = longest_line
@@ -222,20 +254,5 @@ def detect_scale_bar(
         um_pix = 1
         psum = "0"
         system_logger.warning("No scale bar line detected near OCR text.")
-
-    # After line detection, add:
-    if len(lines) > 0:
-        system_logger.debug(f"Total lines detected: {len(lines)}")
-        system_logger.debug(f"Horizontal lines found: {len(horizontal_lines)}")
-        
-        # Log all horizontal lines
-        for i, (x1, y1, x2, y2, length) in enumerate(horizontal_lines[:5]):
-            system_logger.debug(f"Line {i}: length={length:.1f}px, "
-                              f"position=({x1},{y1})-({x2},{y2})")
-        
-        # Check for segmentation
-        if len(horizontal_lines) > 1:
-            total_length = sum(line[4] for line in horizontal_lines)
-            system_logger.debug(f"Total length if combined: {total_length:.1f}px")
 
     return psum, um_pix
