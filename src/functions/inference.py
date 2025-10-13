@@ -240,6 +240,14 @@ def smart_memory_cleanup(iteration, cleanup_frequency=None):
 
 
 def stream_measurements_to_csv(csv_writer, csvfile, measurements_batch):
+    """
+    Write a batch of measurements to CSV file and flush immediately.
+    
+    Parameters:
+    - csv_writer: CSV writer object
+    - csvfile: Open CSV file handle
+    - measurements_batch: List of measurement dictionaries to write
+    """
     for measurement in measurements_batch:
         csv_writer.writerow(measurement)
     csvfile.flush()
