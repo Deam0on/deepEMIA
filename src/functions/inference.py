@@ -45,7 +45,7 @@ from scipy.ndimage import binary_fill_holes
 
 from src.data.datasets import read_dataset_info, register_datasets
 from src.data.models import choose_and_use_model, get_trained_model_paths
-from src.utils.logger_utils import system_logger
+from src.utils.logger_utils import system_logger, log_memory_usage
 from src.utils.mask_utils import postprocess_masks, rle_encoding
 from src.utils.measurements import calculate_measurements
 from src.utils.scalebar_ocr import detect_scale_bar
@@ -645,144 +645,163 @@ def run_inference(
         for idx_in_batch, (name, image) in enumerate(valid_batch_data):
             global_img_idx = batch_start + idx_in_batch
             image_start_time = time.perf_counter()  # Track entire image processing time
-            system_logger.info(
-                f"Processing image {name} ({global_img_idx + 1} out of {len(images_name)})"
-            )
-
-            # === SCALE BAR DETECTION (MUST COME FIRST) ===
-            # Initialize default values
-            um_pix = 1.0
-            psum = "0"
             
-            # Attempt scale bar detection with dataset-specific ROI
+            log_memory_usage(f"Before image {global_img_idx + 1}/{len(images_name)}: {name}")
+            
             try:
-                psum, um_pix = detect_scale_bar(image.copy(), roi_config=None, dataset_name=dataset_name)
                 system_logger.info(
-                    f"Scale bar detected: {psum} units = {um_pix:.4f} units/pixel"
+                    f"Processing image {name} ({global_img_idx + 1} out of {len(images_name)})"
                 )
-            except Exception as e:
-                system_logger.warning(
-                    f"Scale bar detection failed for {name}: {e}. Using defaults (um_pix=1.0)"
-                )
+
+                # === SCALE BAR DETECTION (MUST COME FIRST) ===
+                # Initialize default values
                 um_pix = 1.0
                 psum = "0"
-
-            # === NOW RUN CLASS-SPECIFIC INFERENCE ===
-            system_logger.info(f"Running class-specific inference for image {name}")
-            
-            all_masks_for_image = []
-            all_scores_for_image = []
-            all_classes_for_image = []
-            
-            for target_class in range(num_classes):
-                is_small_class = target_class in small_classes
-                class_name = metadata.thing_classes[target_class]
                 
-                system_logger.debug(f"Processing class {target_class} ({class_name})...")
+                # Attempt scale bar detection with dataset-specific ROI
+                try:
+                    psum, um_pix = detect_scale_bar(image.copy(), roi_config=None, dataset_name=dataset_name)
+                    system_logger.info(
+                        f"Scale bar detected: {psum} units = {um_pix:.4f} units/pixel"
+                    )
+                except Exception as e:
+                    system_logger.warning(
+                        f"Scale bar detection failed for {name}: {e}. Using defaults (um_pix=1.0)"
+                    )
+                    um_pix = 1.0
+                    psum = "0"
+
+                # === NOW RUN CLASS-SPECIFIC INFERENCE ===
+                system_logger.info(f"Running class-specific inference for image {name}")
                 
-                # Get adaptive confidence threshold based on image quality
-                confidence_thresh = get_confidence_threshold(image, target_class, small_classes)
+                all_masks_for_image = []
+                all_scores_for_image = []
+                all_classes_for_image = []
                 
-                # Get class-specific IOU threshold
-                class_config = config.get("inference_settings", {}).get(
-                    "class_specific_settings", {}
-                ).get(f"class_{target_class}", {})
+                for target_class in range(num_classes):
+                    is_small_class = target_class in small_classes
+                    class_name = metadata.thing_classes[target_class]
+                    
+                    system_logger.debug(f"Processing class {target_class} ({class_name})...")
+                    
+                    # Get adaptive confidence threshold based on image quality
+                    confidence_thresh = get_confidence_threshold(image, target_class, small_classes)
+                    
+                    # Get class-specific IOU threshold
+                    class_config = config.get("inference_settings", {}).get(
+                        "class_specific_settings", {}
+                    ).get(f"class_{target_class}", {})
+                    
+                    iou_thresh = class_config.get(
+                        "iou_threshold", 0.5 if is_small_class else 0.7
+                    )
+                    
+                    # Use ensemble for small classes if multiple predictors available
+                    active_predictors = predictors if (is_small_class and len(predictors) > 1) else [predictors[0]]
+                    
+                    # Tile-based inference (for all classes)
+                    system_logger.info(f"Running tile-based inference for class {target_class}")
+                    class_masks, class_scores, class_classes = tile_based_inference_pipeline(
+                        active_predictors[0] if len(active_predictors) == 1 else active_predictors,
+                        image,
+                        target_class,
+                        small_classes,
+                        confidence_thresh,
+                        tile_size=tile_settings.get("tile_size", 512),
+                        overlap_ratio=tile_settings.get("overlap_ratio", 0.1),
+                        upscale_factor=tile_settings.get("upscale_factor", 2.0),
+                        scale_bar_info={"um_pix": um_pix, "psum": psum}
+                    )
                 
-                iou_thresh = class_config.get(
-                    "iou_threshold", 0.5 if is_small_class else 0.7
-                )
+                    system_logger.debug(
+                        f"Class {target_class}: Found {len(class_masks)} instances"
+                    )
+
+                    # Add to combined results
+                    all_masks_for_image.extend(class_masks)
+                    all_scores_for_image.extend(class_scores)
+                    all_classes_for_image.extend(class_classes)
+
+                # Final cross-class deduplication (optional, more lenient)
+                system_logger.info("Step 3: Deduplicating across all classes...")
                 
-                # Use ensemble for small classes if multiple predictors available
-                active_predictors = predictors if (is_small_class and len(predictors) > 1) else [predictors[0]]
-                
-                # Tile-based inference (for all classes)
-                system_logger.info(f"Running tile-based inference for class {target_class}")
-                class_masks, class_scores, class_classes = tile_based_inference_pipeline(
-                    active_predictors[0] if len(active_predictors) == 1 else active_predictors,
-                    image,
-                    target_class,
-                    small_classes,
-                    confidence_thresh,
-                    tile_size=tile_settings.get("tile_size", 512),
-                    overlap_ratio=tile_settings.get("overlap_ratio", 0.1),
-                    upscale_factor=tile_settings.get("upscale_factor", 2.0),
-                    scale_bar_info={"um_pix": um_pix, "psum": psum}
-                )
-            
-                system_logger.debug(
-                    f"Class {target_class}: Found {len(class_masks)} instances"
-                )
-
-                # Add to combined results
-                all_masks_for_image.extend(class_masks)
-                all_scores_for_image.extend(class_scores)
-                all_classes_for_image.extend(class_classes)
-
-            # Final cross-class deduplication (optional, more lenient)
-            system_logger.info("Step 3: Deduplicating across all classes...")
-            
-            # Use optimized deduplication with bounding box pre-filtering
-            final_masks, final_scores, final_classes = deduplicate_masks_smart(
-                all_masks_for_image, 
-                all_scores_for_image, 
-                all_classes_for_image, 
-                iou_threshold=0.7  # Use 0.7 for cross-class deduplication
-            )
-
-            # Apply spatial constraints (containment and overlap rules)
-            system_logger.info("Step 4: Applying spatial constraints...")
-            final_masks, final_scores, final_classes = apply_spatial_constraints(
-                final_masks,
-                final_scores,
-                final_classes,
-                dataset_name=dataset_name
-            )
-
-            unique_masks = final_masks
-            unique_scores = final_scores
-            unique_classes = final_classes
-            unique_sources = [0] * len(unique_masks)  # All from same source
-
-            # FIXED: Log results with class distribution for ALL classes
-            class_counts = {}
-            for cls in unique_classes:
-                class_counts[cls] = class_counts.get(cls, 0) + 1
-
-            # Log all detected classes
-            class_summary = ", ".join(
-                [f"class {cls}: {count}" for cls, count in sorted(class_counts.items())]
-            )
-            if class_summary:
-                system_logger.debug(
-                    f"After processing: {len(unique_masks)} unique masks for image {name} ({class_summary})"
-                )
-            else:
-                system_logger.debug(
-                    f"After processing: {len(unique_masks)} unique masks for image {name} (no classes detected)"
+                # Use optimized deduplication with bounding box pre-filtering
+                final_masks, final_scores, final_classes = deduplicate_masks_smart(
+                    all_masks_for_image, 
+                    all_scores_for_image, 
+                    all_classes_for_image, 
+                    iou_threshold=0.7  # Use 0.7 for cross-class deduplication
                 )
 
-            # Save for later use - now including classes
-            dedup_results[name] = {
-                "masks": unique_masks,
-                "scores": unique_scores,
-                "sources": unique_sources,
-                "classes": unique_classes,
-            }
+                # Apply spatial constraints (containment and overlap rules)
+                system_logger.info("Step 4: Applying spatial constraints...")
+                final_masks, final_scores, final_classes = apply_spatial_constraints(
+                    final_masks,
+                    final_scores,
+                    final_classes,
+                    dataset_name=dataset_name
+                )
 
-            processed_images.add(name)
+                unique_masks = final_masks
+                unique_scores = final_scores
+                unique_classes = final_classes
+                unique_sources = [0] * len(unique_masks)  # All from same source
 
-            # Memory optimization: Encode masks immediately and clear image data
-            for i, mask in enumerate(unique_masks):
-                Img_ID.append(name.rsplit(".", 1)[0])
-                EncodedPixels.append(conv(rle_encoding(mask)))
+                # FIXED: Log results with class distribution for ALL classes
+                class_counts = {}
+                for cls in unique_classes:
+                    class_counts[cls] = class_counts.get(cls, 0) + 1
 
-            # Log inference time for this image
-            image_inference_time = time.perf_counter() - image_start_time
-            system_logger.info(f"Image {name} inference complete: {image_inference_time:.3f}s, {len(unique_masks)} masks detected")
+                # Log all detected classes
+                class_summary = ", ".join(
+                    [f"class {cls}: {count}" for cls, count in sorted(class_counts.items())]
+                )
+                if class_summary:
+                    system_logger.debug(
+                        f"After processing: {len(unique_masks)} unique masks for image {name} ({class_summary})"
+                    )
+                else:
+                    system_logger.debug(
+                        f"After processing: {len(unique_masks)} unique masks for image {name} (no classes detected)"
+                    )
 
-            # Memory optimization: Clear image and mask data after processing
-            del image, unique_masks, unique_scores, unique_sources, unique_classes
-            gc.collect()
+                # Save for later use - now including classes
+                dedup_results[name] = {
+                    "masks": unique_masks,
+                    "scores": unique_scores,
+                    "sources": unique_sources,
+                    "classes": unique_classes,
+                }
+
+                processed_images.add(name)
+
+                # Memory optimization: Encode masks immediately and clear image data
+                for i, mask in enumerate(unique_masks):
+                    Img_ID.append(name.rsplit(".", 1)[0])
+                    EncodedPixels.append(conv(rle_encoding(mask)))
+
+                # Log inference time for this image
+                image_inference_time = time.perf_counter() - image_start_time
+                system_logger.info(f"Image {name} inference complete: {image_inference_time:.3f}s, {len(unique_masks)} masks detected")
+
+                # Memory optimization: Clear image and mask data after processing
+                del image, unique_masks, unique_scores, unique_sources, unique_classes
+                
+            except Exception as e:
+                system_logger.error(f"Error processing image {name}: {e}", exc_info=True)
+                if 'image' in locals():
+                    del image
+                    
+            finally:
+                # CRITICAL: Force cleanup after EVERY image
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+                
+                # Force Python garbage collection
+                gc.collect()
+                
+                log_memory_usage(f"After image {global_img_idx + 1}/{len(images_name)}: {name}")
 
     overall_elapsed = time.perf_counter() - overall_start_time
     average_time = overall_elapsed / total_images if total_images else 0
@@ -1312,22 +1331,33 @@ def run_ensemble_inference(
         model_name = model_names[idx] if idx < len(model_names) else f'Model{idx}'
         system_logger.debug(f"Running inference with {model_name}...")
         
-        # Call the correct function: run_class_specific_inference (single predictor, no ensemble)
-        masks, scores, classes = run_class_specific_inference(
-            predictor, image, target_class, small_classes, conf_threshold, iou_threshold
-        )
-        
-        # Apply ensemble weight to scores
-        weight = ENSEMBLE_WEIGHTS.get(model_name, 1.0 / len(predictors))
-        weighted_scores = [s * weight for s in scores]
-        
-        all_model_results.append({
-            'model': model_name,
-            'masks': masks,
-            'scores': weighted_scores,
-            'classes': classes,
-            'weight': weight
-        })
+        try:
+            # Call the correct function: run_class_specific_inference (single predictor, no ensemble)
+            masks, scores, classes = run_class_specific_inference(
+                predictor, image, target_class, small_classes, conf_threshold, iou_threshold
+            )
+            
+            # Apply ensemble weight to scores
+            weight = ENSEMBLE_WEIGHTS.get(model_name, 1.0 / len(predictors))
+            weighted_scores = [s * weight for s in scores]
+            
+            all_model_results.append({
+                'model': model_name,
+                'masks': masks,
+                'scores': weighted_scores,
+                'classes': classes,
+                'weight': weight
+            })
+            
+        finally:
+            # Clean up after each model
+            if 'masks' in locals():
+                del masks
+            if 'scores' in locals():
+                del scores
+            if 'classes' in locals():
+                del classes
+            gc.collect()
         
         system_logger.info(f"  {model_name}: {len(masks)} instances (weight: {weight:.2f})")
     
@@ -1611,17 +1641,28 @@ def run_adaptive_multiscale_inference(
     system_logger.info(f"Adaptive multiscale inference - Phase 1: Baseline scales {baseline_scales}")
     
     for scale in baseline_scales:
-        masks, scores, classes = process_single_scale(
-            predictor, image, target_class, small_classes, 
-            confidence_threshold, scale
-        )
-        
-        scale_performance[scale] = len(masks)
-        all_masks.extend(masks)
-        all_scores.extend(scores)
-        all_classes.extend(classes)
-        
-        system_logger.info(f"Scale {scale}: Found {len(masks)} instances")
+        try:
+            masks, scores, classes = process_single_scale(
+                predictor, image, target_class, small_classes, 
+                confidence_threshold, scale
+            )
+            
+            scale_performance[scale] = len(masks)
+            all_masks.extend(masks)
+            all_scores.extend(scores)
+            all_classes.extend(classes)
+            
+            system_logger.info(f"Scale {scale}: Found {len(masks)} instances")
+            
+        finally:
+            # Clean up after each scale
+            if 'masks' in locals():
+                del masks
+            if 'scores' in locals():
+                del scores
+            if 'classes' in locals():
+                del classes
+            gc.collect()
     
     # Analyze baseline performance to decide on aggressive scaling
     baseline_1x = scale_performance.get(1.0, 0)
@@ -1636,20 +1677,31 @@ def run_adaptive_multiscale_inference(
         system_logger.info(f"Phase 2a: Trying aggressive upscaling {aggressive_upscales}")
         
         for scale in aggressive_upscales:
-            masks, scores, classes = process_single_scale(
-                predictor, image, target_class, small_classes,
-                confidence_threshold, scale
-            )
-            
-            # Stop if this scale doesn't add meaningful detections
-            if len(masks) < baseline_1x * 0.05:  # Less than 5% of baseline
-                system_logger.info(f"Scale {scale}: Low yield ({len(masks)} masks), stopping upscaling")
-                break
+            try:
+                masks, scores, classes = process_single_scale(
+                    predictor, image, target_class, small_classes,
+                    confidence_threshold, scale
+                )
                 
-            all_masks.extend(masks)
-            all_scores.extend(scores)
-            all_classes.extend(classes)
-            system_logger.info(f"Scale {scale}: Found {len(masks)} instances")
+                # Stop if this scale doesn't add meaningful detections
+                if len(masks) < baseline_1x * 0.05:  # Less than 5% of baseline
+                    system_logger.info(f"Scale {scale}: Low yield ({len(masks)} masks), stopping upscaling")
+                    break
+                    
+                all_masks.extend(masks)
+                all_scores.extend(scores)
+                all_classes.extend(classes)
+                system_logger.info(f"Scale {scale}: Found {len(masks)} instances")
+                
+            finally:
+                # Clean up after each scale
+                if 'masks' in locals():
+                    del masks
+                if 'scores' in locals():
+                    del scores
+                if 'classes' in locals():
+                    del classes
+                gc.collect()
     
     # Phase 3: Aggressive downscaling if beneficial  
     if downscale_benefit:
@@ -1657,20 +1709,31 @@ def run_adaptive_multiscale_inference(
         system_logger.info(f"Phase 2b: Trying aggressive downscaling {aggressive_downscales}")
         
         for scale in aggressive_downscales:
-            masks, scores, classes = process_single_scale(
-                predictor, image, target_class, small_classes,
-                confidence_threshold, scale
-            )
-            
-            # Stop if this scale doesn't add meaningful detections
-            if len(masks) < baseline_1x * 0.05:  # Less than 5% of baseline
-                system_logger.info(f"Scale {scale}: Low yield ({len(masks)} masks), stopping downscaling")
-                break
+            try:
+                masks, scores, classes = process_single_scale(
+                    predictor, image, target_class, small_classes,
+                    confidence_threshold, scale
+                )
                 
-            all_masks.extend(masks)
-            all_scores.extend(scores)
-            all_classes.extend(classes)
-            system_logger.info(f"Scale {scale}: Found {len(masks)} instances")
+                # Stop if this scale doesn't add meaningful detections
+                if len(masks) < baseline_1x * 0.05:  # Less than 5% of baseline
+                    system_logger.info(f"Scale {scale}: Low yield ({len(masks)} masks), stopping downscaling")
+                    break
+                    
+                all_masks.extend(masks)
+                all_scores.extend(scores)
+                all_classes.extend(classes)
+                system_logger.info(f"Scale {scale}: Found {len(masks)} instances")
+                
+            finally:
+                # Clean up after each scale
+                if 'masks' in locals():
+                    del masks
+                if 'scores' in locals():
+                    del scores
+                if 'classes' in locals():
+                    del classes
+                gc.collect()
     
     # Deduplicate across all scales
 
@@ -1724,57 +1787,64 @@ def process_single_scale(predictor, image, target_class, small_classes, confiden
     """
     system_logger.debug(f"Processing scale {scale} for class {target_class}")
     
-    # Resize image
-    if scale != 1.0:
-        h, w = image.shape[:2]
-        new_h, new_w = int(h * scale), int(w * scale)
-        scaled_image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-    else:
-        scaled_image = image
+    try:
+        # Resize image
+        if scale != 1.0:
+            h, w = image.shape[:2]
+            new_h, new_w = int(h * scale), int(w * scale)
+            scaled_image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        else:
+            scaled_image = image
 
-    # CRITICAL FIX: Calculate minimum size threshold based on ORIGINAL image, then scale it
-    original_image_area = image.shape[0] * image.shape[1]
-    is_small_class = target_class in small_classes
-    
-    if is_small_class:
-        # For small particles: 0.001% of ORIGINAL image (more aggressive)
-        base_min_size = max(3, int(original_image_area * 0.000005))  # Even lower threshold
-    else:
-        # For large particles: 0.01% of ORIGINAL image
-        base_min_size = max(25, int(original_image_area * 0.0001))
-    
-    # Scale the threshold proportionally to match the scaled image
-    # At 2x scale, area is 4x larger, so threshold should be 4x
-    scaled_min_size = int(base_min_size * (scale ** 2))
-
-    # Run iterative inference at this scale with scaled threshold
-    scale_masks, scale_scores, scale_classes = run_iterative_class_inference(
-        predictor,
-        scaled_image,
-        target_class,
-        small_classes,
-        confidence_threshold,
-        min_crys_size=scaled_min_size,
-    )
-
-    # Scale masks back to original size
-    if scale != 1.0 and scale_masks:
-        original_size_masks = []
-        for mask in scale_masks:
-            # Use INTER_NEAREST for binary masks to preserve edges
-            resized_mask = cv2.resize(
-                mask.astype(np.uint8),
-                (image.shape[1], image.shape[0]),
-                interpolation=cv2.INTER_NEAREST,
-            )
-            original_size_masks.append(resized_mask.astype(bool))
-        scale_masks = original_size_masks
+        # CRITICAL FIX: Calculate minimum size threshold based on ORIGINAL image, then scale it
+        original_image_area = image.shape[0] * image.shape[1]
+        is_small_class = target_class in small_classes
         
-        system_logger.debug(
-            f"Scale {scale}x: Rescaled {len(scale_masks)} masks to original size"
+        if is_small_class:
+            # For small particles: 0.001% of ORIGINAL image (more aggressive)
+            base_min_size = max(3, int(original_image_area * 0.000005))  # Even lower threshold
+        else:
+            # For large particles: 0.01% of ORIGINAL image
+            base_min_size = max(25, int(original_image_area * 0.0001))
+        
+        # Scale the threshold proportionally to match the scaled image
+        # At 2x scale, area is 4x larger, so threshold should be 4x
+        scaled_min_size = int(base_min_size * (scale ** 2))
+
+        # Run iterative inference at this scale with scaled threshold
+        scale_masks, scale_scores, scale_classes = run_iterative_class_inference(
+            predictor,
+            scaled_image,
+            target_class,
+            small_classes,
+            confidence_threshold,
+            min_crys_size=scaled_min_size,
         )
 
-    return scale_masks, scale_scores, scale_classes
+        # Scale masks back to original size
+        if scale != 1.0 and scale_masks:
+            original_size_masks = []
+            for mask in scale_masks:
+                # Use INTER_NEAREST for binary masks to preserve edges
+                resized_mask = cv2.resize(
+                    mask.astype(np.uint8),
+                    (image.shape[1], image.shape[0]),
+                    interpolation=cv2.INTER_NEAREST,
+                )
+                original_size_masks.append(resized_mask.astype(bool))
+            scale_masks = original_size_masks
+            
+            system_logger.debug(
+                f"Scale {scale}x: Rescaled {len(scale_masks)} masks to original size"
+            )
+
+        return scale_masks, scale_scores, scale_classes
+    
+    finally:
+        # Clean up scaled image
+        if scale != 1.0 and 'scaled_image' in locals():
+            del scaled_image
+        gc.collect()
 
 
 def run_iterative_class_inference(
@@ -1848,11 +1918,10 @@ def run_iterative_class_inference(
                 f"below {confidence_threshold}: {below_thresh} (FILTERED OUT)"
             )
 
+        # Clean up outputs immediately to free GPU memory
         del outputs
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-
-       
 
         # Filter for target class and confidence
         class_mask = (pred_classes == target_class) & (
@@ -1861,6 +1930,9 @@ def run_iterative_class_inference(
         filtered_masks = pred_masks[class_mask]
         filtered_scores = pred_scores[class_mask]
         filtered_classes = pred_classes[class_mask]
+        
+        # Clean up intermediate arrays
+        del pred_masks, pred_scores, pred_classes, class_mask
 
         # DIAGNOSTIC 2: After confidence filtering
         system_logger.info(f"    DIAGNOSTIC: After confidence filter: {len(filtered_masks)} masks")
@@ -2071,56 +2143,78 @@ def tile_based_inference_pipeline(
         for tile_idx_in_batch, (tile_img, x_offset, y_offset) in enumerate(tile_batch):
             global_tile_idx = batch_idx + tile_idx_in_batch
             
-            # Upscale tile to make small particles appear larger
-            tile_h, tile_w = tile_img.shape[:2]
-            upscaled_h = int(tile_h * upscale_factor)
-            upscaled_w = int(tile_w * upscale_factor)
-            upscaled_tile = cv2.resize(tile_img, (upscaled_w, upscaled_h), interpolation=cv2.INTER_LINEAR)
-            
-            # Run inference on upscaled tile
-            tile_masks, tile_scores, tile_classes = run_class_specific_inference(
-                predictor, upscaled_tile, target_class, small_classes,
-                confidence_threshold, iou_threshold=0.5
-            )
-            
-            system_logger.debug(f"Tile {global_tile_idx + 1}: Found {len(tile_masks)} instances")
-            
-            # Map masks back to original image coordinates
-            if tile_masks:
-                for i, (mask, score, cls) in enumerate(zip(tile_masks, tile_scores, tile_classes)):
-                    # Downscale mask back to tile size
-                    downscaled_mask = cv2.resize(
-                        mask.astype(np.uint8),
-                        (tile_w, tile_h),
-                        interpolation=cv2.INTER_NEAREST
-                    ).astype(bool)
-                    
-                    # Filter edge masks (likely incomplete)
-                    if is_edge_mask(downscaled_mask, tile_size, overlap_ratio):
-                        system_logger.debug(f"Tile {global_tile_idx + 1}: Filtered edge mask {i+1}")
-                        continue
-                    
-                    # Map to global coordinates
-                    global_mask = np.zeros((h, w), dtype=bool)
-                    y_end = min(y_offset + tile_h, h)
-                    x_end = min(x_offset + tile_w, w)
-                    global_mask[y_offset:y_end, x_offset:x_end] = downscaled_mask[:y_end-y_offset, :x_end-x_offset]
-                    
-                    all_tile_masks.append(global_mask)
-                    all_tile_scores.append(score)
-                    all_tile_classes.append(cls)
+            try:
+                # Upscale tile to make small particles appear larger
+                tile_h, tile_w = tile_img.shape[:2]
+                upscaled_h = int(tile_h * upscale_factor)
+                upscaled_w = int(tile_w * upscale_factor)
+                upscaled_tile = cv2.resize(tile_img, (upscaled_w, upscaled_h), interpolation=cv2.INTER_LINEAR)
+                
+                # Run inference on upscaled tile
+                tile_masks, tile_scores, tile_classes = run_class_specific_inference(
+                    predictor, upscaled_tile, target_class, small_classes,
+                    confidence_threshold, iou_threshold=0.5
+                )
+                
+                system_logger.debug(f"Tile {global_tile_idx + 1}: Found {len(tile_masks)} instances")
+                
+                # Map masks back to original image coordinates
+                if tile_masks:
+                    for i, (mask, score, cls) in enumerate(zip(tile_masks, tile_scores, tile_classes)):
+                        # Downscale mask back to tile size
+                        downscaled_mask = cv2.resize(
+                            mask.astype(np.uint8),
+                            (tile_w, tile_h),
+                            interpolation=cv2.INTER_NEAREST
+                        ).astype(bool)
+                        
+                        # Filter edge masks (likely incomplete)
+                        if is_edge_mask(downscaled_mask, tile_size, overlap_ratio):
+                            system_logger.debug(f"Tile {global_tile_idx + 1}: Filtered edge mask {i+1}")
+                            continue
+                        
+                        # Map to global coordinates
+                        global_mask = np.zeros((h, w), dtype=bool)
+                        y_end = min(y_offset + tile_h, h)
+                        x_end = min(x_offset + tile_w, w)
+                        global_mask[y_offset:y_end, x_offset:x_end] = downscaled_mask[:y_end-y_offset, :x_end-x_offset]
+                        
+                        all_tile_masks.append(global_mask)
+                        all_tile_scores.append(score)
+                        all_tile_classes.append(cls)
+                
+            finally:
+                # CRITICAL: Clean up after each tile
+                if 'upscaled_tile' in locals():
+                    del upscaled_tile
+                if 'tile_masks' in locals():
+                    del tile_masks
+                if 'tile_scores' in locals():
+                    del tile_scores
+                if 'tile_classes' in locals():
+                    del tile_classes
+                if 'downscaled_mask' in locals():
+                    del downscaled_mask
         
         batch_time = time.perf_counter() - batch_start_time
         system_logger.debug(f"Batch {batch_idx//tile_batch_size + 1} processed in {batch_time:.2f}s")
         
-        # Batch-level GPU cache cleanup instead of per-tile
-        if torch.cuda.is_available() and (batch_idx // tile_batch_size) % 3 == 0:
+        # Clean up tile batch data
+        del tile_batch
+        
+        # Batch-level GPU cache cleanup every 2 batches for better performance
+        if torch.cuda.is_available() and (batch_idx // tile_batch_size) % 2 == 0:
             torch.cuda.empty_cache()
+            gc.collect()
     
     # Combine full-image and tile results
     all_masks = full_image_masks + all_tile_masks
     all_scores = list(full_image_scores) + list(all_tile_scores)
     all_classes = list(full_image_classes) + list(all_tile_classes)
+    
+    # Clean up tile data immediately
+    del all_tile_masks, all_tile_scores, all_tile_classes, tiles
+    gc.collect()
     
     # Verify lengths match
     if len(all_masks) != len(all_scores) or len(all_masks) != len(all_classes):
@@ -2138,9 +2232,13 @@ def tile_based_inference_pipeline(
         all_masks, all_scores, all_classes, iou_threshold=0.4
     )
     
+    # Clean up combined results
+    del all_masks, all_scores, all_classes
+    gc.collect()
+    
     system_logger.info(
-        f"Deduplication complete: {len(full_image_masks)} full-image + {len(all_tile_masks)} tile instances "
-        f"= {len(unique_masks)} unique (net gain: +{len(unique_masks) - len(full_image_masks)})"
+        f"Deduplication complete: {len(full_image_masks)} full-image + {len(unique_masks) - len(full_image_masks)} tile instances "
+        f"= {len(unique_masks)} unique"
     )
     
     return unique_masks, unique_scores, unique_classes
