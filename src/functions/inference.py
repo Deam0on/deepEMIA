@@ -1302,95 +1302,107 @@ def run_ensemble_inference(
     iou_threshold,
 ):
     """
-    Run inference using multiple models and ensemble the results.
+    Run ensemble inference using multiple models (e.g., R50 + R101).
+    Combines predictions from multiple models with weighted scores.
     
-    Args:
-        predictors: List of Detectron2 predictors
-        image: Input image
-        target_class: Target class ID
-        small_classes: Set of small class IDs
-        conf_threshold: Confidence threshold
-        iou_threshold: IoU threshold for deduplication
+    Parameters:
+    - predictors: List of Detectron2 predictors
+    - image: Input image
+    - target_class: Target class ID
+    - small_classes: Set of small class IDs
+    - conf_threshold: Confidence threshold
+    - iou_threshold: IoU threshold for deduplication
     
     Returns:
-        Tuple of (masks, scores, classes) after ensemble
+    - tuple: (combined_masks, combined_scores, combined_classes)
     """
-    if len(predictors) < 2:
-        system_logger.warning("Ensemble requires at least 2 models, falling back to single model")
-        return run_class_specific_inference(
-            predictors[0], image, target_class, small_classes, conf_threshold, iou_threshold
-        )
+    all_masks = []
+    all_scores = []
+    all_classes = []
     
-    system_logger.info(f"Running ensemble inference with {len(predictors)} models for class {target_class}")
+    model_names = ["R50", "R101"][:len(predictors)]
     
-    # Run inference with each model
-    all_model_results = []
-    model_names = ['R50', 'R101']  # Assuming first is R50, second is R101
-    
-    for idx, predictor in enumerate(predictors):
-        model_name = model_names[idx] if idx < len(model_names) else f'Model{idx}'
-        system_logger.debug(f"Running inference with {model_name}...")
-        
+    for model_name, predictor, weight in zip(model_names, predictors, ENSEMBLE_WEIGHTS.values()):
         try:
-            # Call the correct function: run_class_specific_inference (single predictor, no ensemble)
-            masks, scores, classes = run_class_specific_inference(
-                predictor, image, target_class, small_classes, conf_threshold, iou_threshold
-            )
+            # Run inference for this model
+            with torch.cuda.amp.autocast(enabled=USE_MIXED_PRECISION):
+                outputs = predictor(image)
             
-            # Apply ensemble weight to scores
-            weight = ENSEMBLE_WEIGHTS.get(model_name, 1.0 / len(predictors))
-            weighted_scores = [s * weight for s in scores]
+            if len(outputs["instances"]) == 0:
+                system_logger.info(f"  {model_name}: 0 instances (weight: {weight:.2f})")
+                continue
             
-            all_model_results.append({
-                'model': model_name,
-                'masks': masks,
-                'scores': weighted_scores,
-                'classes': classes,
-                'weight': weight
-            })
+            # Extract predictions
+            pred_classes = outputs["instances"].pred_classes.cpu().numpy()
+            pred_scores = outputs["instances"].scores.cpu().numpy()
+            pred_masks = outputs["instances"].pred_masks.cpu().numpy()
             
+            # Filter by target class and confidence
+            class_mask = (pred_classes == target_class) & (pred_scores >= conf_threshold)
+            
+            masks = pred_masks[class_mask]
+            scores = pred_scores[class_mask]
+            classes = pred_classes[class_mask]
+            
+            # Log before postprocessing
+            system_logger.info(f"  {model_name}: {len(masks)} instances (weight: {weight:.2f})")
+            
+            # Postprocess each mask
+            processed_masks = []
+            processed_scores = []
+            for mask, score in zip(masks, scores):
+                try:
+                    cleaned_mask = postprocess_masks_universal(
+                        mask, score, image, target_class, 
+                        is_small_class=(target_class in small_classes)
+                    )
+                    if cleaned_mask is not None:
+                        processed_masks.append(cleaned_mask)
+                        # Apply model weight to score
+                        processed_scores.append(score * weight)
+                except Exception as e:
+                    system_logger.debug(f"Failed to postprocess mask: {e}")
+                    continue
+            
+            # Add to combined results
+            all_masks.extend(processed_masks)
+            all_scores.extend(processed_scores)
+            all_classes.extend([target_class] * len(processed_masks))
+            
+        except Exception as e:
+            system_logger.error(f"Error in ensemble inference for {model_name}: {e}")
+            continue
+        
         finally:
-            # Clean up after each model
+            # Clean up this model's outputs
+            if 'outputs' in locals():
+                del outputs
+            if 'pred_masks' in locals():
+                del pred_masks
             if 'masks' in locals():
                 del masks
-            if 'scores' in locals():
-                del scores
-            if 'classes' in locals():
-                del classes
+            if 'processed_masks' in locals():
+                del processed_masks
+            
+            torch.cuda.empty_cache()
+            import gc
             gc.collect()
-        
-        system_logger.info(f"  {model_name}: {len(masks)} instances (weight: {weight:.2f})")
     
-    # Combine results from all models
-    combined_masks = []
-    combined_scores = []
-    combined_classes = []
+    if len(all_masks) == 0:
+        system_logger.warning(f"No instances found for class {target_class} after ensemble")
+        return np.array([]), np.array([]), np.array([])
     
-    for result in all_model_results:
-        combined_masks.extend(result['masks'])
-        combined_scores.extend(result['scores'])
-        combined_classes.extend(result['classes'])
+    # Deduplicate across models
+    system_logger.info(f"Deduplicating {len(all_masks)} ensemble predictions...")
+    unique_masks, unique_scores, unique_classes = deduplicate_masks_smart(
+        all_masks, all_scores, all_classes, iou_threshold=iou_threshold
+    )
     
-    system_logger.info(f"Combined {len(combined_masks)} masks from {len(predictors)} models")
+    system_logger.info(
+        f"Ensemble complete: {len(all_masks)} total -> {len(unique_masks)} unique instances"
+    )
     
-    # Deduplicate combined results
-    if len(combined_masks) > 0:
-        unique_masks, unique_scores, unique_classes = deduplicate_masks_smart(
-            combined_masks, combined_scores, combined_classes, iou_threshold=iou_threshold
-        )
-        
-        # Store first model's mask count for comparison
-        first_model_count = len(all_model_results[0]['masks'])
-        
-        system_logger.info(
-            f"Ensemble result: {len(unique_masks)} unique masks "
-            f"(gain: +{len(unique_masks) - first_model_count} from first model)"
-        )
-        
-        return unique_masks, unique_scores, unique_classes
-    else:
-        system_logger.warning("No masks detected by any model in ensemble")
-        return [], [], []
+    return unique_masks, unique_scores, unique_classes
 
 
 def log_scale_detection_summary(scale, masks_before, masks_after, original_shape, scaled_shape):
