@@ -107,7 +107,7 @@ def get_optimal_device(prefer_gpu: bool = True) -> torch.device:
         return torch.device("cpu")
 
 
-def log_device_info():
+def log_device_info() -> None:
     """
     Log comprehensive device information.
     Useful for debugging and performance optimization.
