@@ -19,7 +19,7 @@ from functools import lru_cache
 from src.utils.logger_utils import system_logger
 
 
-def load_spatial_constraints(dataset_name=None):
+def load_spatial_constraints(dataset_name=None) -> dict:
     """
     Load spatial constraint configuration for a dataset.
     
