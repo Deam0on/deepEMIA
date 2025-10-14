@@ -63,7 +63,7 @@ if not getattr(sys, "frozen", False):
     system_logger.addHandler(console_handler)
 
 
-def log_memory_usage(stage=""):
+def log_memory_usage(stage: str = "") -> None:
     """
     Log current memory usage for debugging OOM issues.
     
