@@ -10,14 +10,13 @@ This module provides functions for:
 The module integrates EasyOCR for text recognition and OpenCV for image processing.
 """
 
-import re
-from math import sqrt
-from pathlib import Path
-
 import cv2
 import easyocr
 import numpy as np
+import re
 import yaml
+from math import sqrt
+from pathlib import Path
 
 from src.utils.logger_utils import system_logger
 
@@ -76,7 +75,8 @@ def get_scalebar_roi_for_dataset(dataset_name=None):
 
 
 def detect_scale_bar(
-    image, roi_config=None, intensity_threshold=200, proximity_threshold=50, dataset_name=None
+    image, roi_config=None, intensity_threshold=200, proximity_threshold=50, 
+    dataset_name=None, debug_output_path=None
 ):
     """
     Detects scale bars in SEM images using OCR and Hough line detection.
@@ -87,6 +87,7 @@ def detect_scale_bar(
     - intensity_threshold (int): Minimum intensity for scale bar line detection
     - proximity_threshold (int): Maximum distance between text and line
     - dataset_name (str, optional): Dataset name for loading dataset-specific ROI
+    - debug_output_path (str, optional): Path to save debug visualization image
 
     Returns:
     - tuple: (scale_bar_length_str, microns_per_pixel)
@@ -130,6 +131,15 @@ def detect_scale_bar(
         f"ROI for scale bar OCR: x={x_start}:{x_end}, y={y_start}:{y_end}"
     )
 
+    # Create debug image if path provided
+    debug_image = None
+    if debug_output_path is not None:
+        debug_image = image.copy()
+        # Draw ROI rectangle on full image (in green)
+        cv2.rectangle(debug_image, (x_start, y_start), (x_end, y_end), (0, 255, 0), 2)
+        cv2.putText(debug_image, "ROI", (x_start, y_start - 10), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
     roi = image[y_start:y_end, x_start:x_end].copy()
     gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
 
@@ -159,6 +169,19 @@ def detect_scale_bar(
                     (x_min + x_max) // 2,
                     (y_min + y_max) // 2,
                 )
+                
+                # Draw text bounding box on debug image (in blue)
+                if debug_image is not None:
+                    text_x_min = x_start + x_min
+                    text_y_min = y_start + y_min
+                    text_x_max = x_start + x_max
+                    text_y_max = y_start + y_max
+                    cv2.rectangle(debug_image, (text_x_min, text_y_min), 
+                                (text_x_max, text_y_max), (255, 0, 0), 2)
+                    cv2.putText(debug_image, f"Text: {text}", 
+                              (text_x_min, text_y_min - 5), 
+                              cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)
+                
                 break
         else:
             psum = "0"
@@ -187,13 +210,13 @@ def detect_scale_bar(
         if lines is not None:
             system_logger.debug(f"Total lines detected by Hough transform: {len(lines)}")
             
-            for points in lines:
+            for line_idx, points in enumerate(lines):
                 x1, y1, x2, y2 = points[0]
                 
                 # Check if line is approximately horizontal (within 10 degrees)
                 angle = abs(np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi)
                 if angle > 10 and angle < 170:
-                    continue  # Skip non-horizontal lines
+                    continue
                 
                 length = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
                 line_center = ((x1 + x2) // 2, (y1 + y2) // 2)
@@ -210,6 +233,20 @@ def detect_scale_bar(
                 # Store info about this horizontal line
                 horizontal_lines.append((x1, y1, x2, y2, length, mean_intensity, dist_to_text))
                 
+                # Draw all horizontal lines on debug image (in cyan)
+                if debug_image is not None:
+                    line_x1 = x_start + x1
+                    line_y1 = y_start + y1
+                    line_x2 = x_start + x2
+                    line_y2 = y_start + y2
+                    cv2.line(debug_image, (line_x1, line_y1), (line_x2, line_y2), 
+                           (255, 255, 0), 1)  # Cyan for all lines
+                    # Add line info text
+                    cv2.putText(debug_image, 
+                              f"L{line_idx}: {length:.0f}px, I:{mean_intensity:.0f}, D:{dist_to_text:.0f}", 
+                              (line_x1, line_y1 - 5), 
+                              cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 0), 1)
+                
                 # Check if this line meets all criteria
                 if dist_to_text < proximity_threshold and mean_intensity > intensity_threshold:
                     if length > max_length:
@@ -222,18 +259,24 @@ def detect_scale_bar(
             # Log top 5 candidates
             if horizontal_lines:
                 sorted_lines = sorted(horizontal_lines, key=lambda x: x[4], reverse=True)
+                system_logger.debug("Top 5 line candidates:")
                 for i, (x1, y1, x2, y2, length, intensity, dist) in enumerate(sorted_lines[:5]):
-                    status = "✓" if (x1, y1, x2, y2) == longest_line else "✗"
+                    passes_intensity = intensity > intensity_threshold
+                    passes_proximity = dist < proximity_threshold
                     system_logger.debug(
-                        f"  {status} Line {i+1}: length={length:.1f}px, "
-                        f"intensity={intensity:.1f}, dist_to_text={dist:.1f}px, "
-                        f"position=({x1},{y1})-({x2},{y2})"
+                        f"  {i+1}. Length: {length:.1f}px, Intensity: {intensity:.1f} "
+                        f"{'✓' if passes_intensity else '✗'}, Distance: {dist:.1f}px "
+                        f"{'✓' if passes_proximity else '✗'}, Position: ({x1},{y1})-({x2},{y2})"
                     )
                 
-                # Check for segmentation
-                if len(horizontal_lines) > 1:
-                    total_length = sum(line[4] for line in horizontal_lines)
-                    system_logger.debug(f"Total length if combined: {total_length:.1f}px")
+                # Check for potential segmentation issues
+                if len(sorted_lines) > 1:
+                    top_two_lengths = [sorted_lines[0][4], sorted_lines[1][4]]
+                    if abs(top_two_lengths[0] - top_two_lengths[1]) < 20:
+                        system_logger.warning(
+                            f"Possible scale bar segmentation: Two similar lines detected "
+                            f"({top_two_lengths[0]:.1f}px and {top_two_lengths[1]:.1f}px)"
+                        )
 
     scale_len = 0
     um_pix = 1
@@ -244,7 +287,14 @@ def detect_scale_bar(
         x2_full = x2 + x_start
         y1_full = y1 + y_start
         y2_full = y2 + y_start
-        cv2.line(image, (x1_full, y1_full), (x2_full, y2_full), (0, 255, 0), 2)
+        
+        # Draw selected scale bar line on debug image (in red, thicker)
+        if debug_image is not None:
+            cv2.line(debug_image, (x1_full, y1_full), (x2_full, y2_full), (0, 0, 255), 3)
+            cv2.putText(debug_image, f"SELECTED: {max_length:.0f}px", 
+                       (x1_full, y1_full - 10), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+        
         scale_len = max_length
         um_pix = float(psum) / scale_len if scale_len > 0 else 1.0
         system_logger.info(
@@ -254,5 +304,19 @@ def detect_scale_bar(
         um_pix = 1
         psum = "0"
         system_logger.warning("No scale bar line detected near OCR text.")
+        
+        # Add failure message to debug image
+        if debug_image is not None:
+            cv2.putText(debug_image, "SCALE BAR DETECTION FAILED", 
+                       (x_start, y_start + 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+    # Save debug image if path provided
+    if debug_image is not None and debug_output_path is not None:
+        try:
+            cv2.imwrite(str(debug_output_path), debug_image)
+            system_logger.info(f"Debug image saved to: {debug_output_path}")
+        except Exception as e:
+            system_logger.error(f"Failed to save debug image: {e}")
 
     return psum, um_pix
