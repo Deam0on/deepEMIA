@@ -1,6 +1,6 @@
 # deepEMIA
 
-DeepEMIA is a comprehensive deep learning toolkit for electron microscopy and scientific image analysis. It offers a robust pipeline for dataset preparation, model training, hyperparameter optimization, evaluation, scalable inference, and automated measurement extraction, with both CLI and web interfaces.
+Deep(learning) E(lectron) MI(croscopy) A(nalysis) is a comprehensive deep learning toolkit for electron microscopy and scientific image analysis. It offers a robust pipeline for dataset preparation, model training, hyperparameter optimization, evaluation, scalable inference, and automated measurement extraction, with both CLI and web interfaces.
 
 ---
 
