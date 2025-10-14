@@ -21,7 +21,7 @@ scale_bar_rois:
     x_start_factor: 0.5
     y_start_factor: 0.005
     width_factor: 0.8
-    height_factor: 0.06
+    height_factor: 0.065
   
   # Add more dataset-specific ROIs as needed
   # example_dataset:
@@ -33,6 +33,8 @@ scale_bar_rois:
 scalebar_thresholds:
   intensity: 100
   proximity: 50
+  merge_gap: 15
+  min_line_length: 30
 
 measure_contrast_distribution: false
 

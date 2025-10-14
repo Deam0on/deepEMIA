@@ -100,6 +100,9 @@ def detect_scale_bar(
     
     # --- Load thresholds from config if available ---
     config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
+    merge_gap = 15  # Default
+    min_line_length = 30  # Default
+    
     if config_path.exists():
         try:
             with open(config_path, "r") as f:
@@ -110,6 +113,8 @@ def detect_scale_bar(
                 intensity_threshold = scalebar_thresholds["intensity"]
             if "proximity" in scalebar_thresholds and proximity_threshold == 50:
                 proximity_threshold = scalebar_thresholds["proximity"]
+            merge_gap = scalebar_thresholds.get("merge_gap", 15)
+            min_line_length = scalebar_thresholds.get("min_line_length", 30)
         except Exception as e:
             system_logger.warning(f"Could not load thresholds from config: {e}")
 
@@ -207,6 +212,8 @@ def detect_scale_bar(
         if lines is not None:
             system_logger.debug(f"Total lines detected by Hough transform: {len(lines)}")
             
+            # Collect all horizontal line segments
+            raw_segments = []
             for line_idx, points in enumerate(lines):
                 x1, y1, x2, y2 = points[0]
                 
@@ -227,6 +234,27 @@ def detect_scale_bar(
                 cv2.line(line_mask, (x1, y1), (x2, y2), 255, 2)
                 mean_intensity = cv2.mean(gray_roi, mask=line_mask)[0]
                 
+                raw_segments.append({
+                    'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2,
+                    'length': length,
+                    'intensity': mean_intensity,
+                    'dist_to_text': dist_to_text,
+                    'line_idx': line_idx
+                })
+            
+            # Merge collinear line segments that are close together
+            merged_segments = merge_collinear_segments(raw_segments, merge_gap)
+            
+            system_logger.debug(f"After merging: {len(merged_segments)} line segments")
+            
+            # Now evaluate merged segments
+            for seg_idx, seg in enumerate(merged_segments):
+                x1, y1 = seg['x1'], seg['y1']
+                x2, y2 = seg['x2'], seg['y2']
+                length = seg['length']
+                mean_intensity = seg['intensity']
+                dist_to_text = seg['dist_to_text']
+                
                 # Store info about this horizontal line
                 horizontal_lines.append((x1, y1, x2, y2, length, mean_intensity, dist_to_text))
                 
@@ -240,12 +268,14 @@ def detect_scale_bar(
                            (255, 255, 0), 1)  # Cyan for all lines
                     # Add line info text
                     cv2.putText(image, 
-                              f"L{line_idx}: {length:.0f}px, I:{mean_intensity:.0f}, D:{dist_to_text:.0f}", 
+                              f"M{seg_idx}: {length:.0f}px, I:{mean_intensity:.0f}, D:{dist_to_text:.0f}", 
                               (line_x1, line_y1 - 5), 
                               cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 0), 1)
                 
                 # Check if this line meets all criteria
-                if dist_to_text < proximity_threshold and mean_intensity > intensity_threshold:
+                if (dist_to_text < proximity_threshold and 
+                    mean_intensity > intensity_threshold and 
+                    length > min_line_length):
                     if length > max_length:
                         max_length = length
                         longest_line = (x1, y1, x2, y2)
@@ -260,10 +290,12 @@ def detect_scale_bar(
                 for i, (x1, y1, x2, y2, length, intensity, dist) in enumerate(sorted_lines[:5]):
                     passes_intensity = intensity > intensity_threshold
                     passes_proximity = dist < proximity_threshold
+                    passes_length = length > min_line_length
                     system_logger.debug(
-                        f"  {i+1}. Length: {length:.1f}px, Intensity: {intensity:.1f} "
-                        f"{'✓' if passes_intensity else '✗'}, Distance: {dist:.1f}px "
-                        f"{'✓' if passes_proximity else '✗'}, Position: ({x1},{y1})-({x2},{y2})"
+                        f"  {i+1}. Length: {length:.1f}px {'✓' if passes_length else '✗'}, "
+                        f"Intensity: {intensity:.1f} {'✓' if passes_intensity else '✗'}, "
+                        f"Distance: {dist:.1f}px {'✓' if passes_proximity else '✗'}, "
+                        f"Position: ({x1},{y1})-({x2},{y2})"
                     )
                 
                 # Check for potential segmentation issues
@@ -309,3 +341,93 @@ def detect_scale_bar(
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
     return psum, um_pix
+
+
+def merge_collinear_segments(segments, max_gap=15, angle_tolerance=5, y_tolerance=5):
+    """
+    Merge line segments that are collinear and close together.
+    
+    Parameters:
+    - segments: List of segment dictionaries with x1, y1, x2, y2, etc.
+    - max_gap: Maximum horizontal gap to merge segments (pixels)
+    - angle_tolerance: Maximum angle difference to consider segments collinear (degrees)
+    - y_tolerance: Maximum vertical offset to consider segments on same line (pixels)
+    
+    Returns:
+    - List of merged segments
+    """
+    if not segments:
+        return []
+    
+    # Sort segments by leftmost x coordinate
+    sorted_segments = sorted(segments, key=lambda s: min(s['x1'], s['x2']))
+    
+    merged = []
+    current_group = [sorted_segments[0]]
+    
+    for seg in sorted_segments[1:]:
+        last = current_group[-1]
+        
+        # Get rightmost point of last segment
+        last_right_x = max(last['x1'], last['x2'])
+        last_y = (last['y1'] + last['y2']) / 2
+        
+        # Get leftmost point of current segment
+        curr_left_x = min(seg['x1'], seg['x2'])
+        curr_y = (seg['y1'] + seg['y2']) / 2
+        
+        # Calculate horizontal gap
+        gap = curr_left_x - last_right_x
+        
+        # Calculate vertical offset
+        y_offset = abs(curr_y - last_y)
+        
+        # Check if segments should be merged
+        if gap <= max_gap and y_offset <= y_tolerance:
+            current_group.append(seg)
+        else:
+            # Finalize current group and start new one
+            merged.append(merge_segment_group(current_group))
+            current_group = [seg]
+    
+    # Don't forget the last group
+    if current_group:
+        merged.append(merge_segment_group(current_group))
+    
+    return merged
+
+
+def merge_segment_group(group):
+    """
+    Merge a group of segments into a single segment.
+    Takes the leftmost and rightmost points, averages intensity and distance.
+    """
+    if len(group) == 1:
+        return group[0]
+    
+    # Find leftmost and rightmost points
+    all_x = [seg['x1'] for seg in group] + [seg['x2'] for seg in group]
+    all_y = [seg['y1'] for seg in group] + [seg['y2'] for seg in group]
+    
+    x1 = min(all_x)
+    x2 = max(all_x)
+    
+    # Average the y coordinates
+    y_avg = sum(all_y) / len(all_y)
+    y1 = y2 = int(y_avg)
+    
+    # Calculate new length
+    length = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+    
+    # Average intensity and distance (weighted by segment length)
+    total_length = sum(seg['length'] for seg in group)
+    avg_intensity = sum(seg['intensity'] * seg['length'] for seg in group) / total_length
+    avg_dist = sum(seg['dist_to_text'] * seg['length'] for seg in group) / total_length
+    
+    return {
+        'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2,
+        'length': length,
+        'intensity': avg_intensity,
+        'dist_to_text': avg_dist,
+        'line_idx': -1  # Merged segment
+    }
