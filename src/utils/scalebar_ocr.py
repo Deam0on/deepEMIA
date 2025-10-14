@@ -102,6 +102,7 @@ def detect_scale_bar(
     config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
     merge_gap = 15  # Default
     min_line_length = 30  # Default
+    edge_margin_factor = 0.1  # Default 10% margin from ROI edges
     
     if config_path.exists():
         try:
@@ -115,6 +116,7 @@ def detect_scale_bar(
                 proximity_threshold = scalebar_thresholds["proximity"]
             merge_gap = scalebar_thresholds.get("merge_gap", 15)
             min_line_length = scalebar_thresholds.get("min_line_length", 30)
+            edge_margin_factor = scalebar_thresholds.get("edge_margin_factor", 0.1)
         except Exception as e:
             system_logger.warning(f"Could not load thresholds from config: {e}")
 
@@ -144,6 +146,13 @@ def detect_scale_bar(
 
     roi = image[y_start:y_end, x_start:x_end].copy()
     gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    
+    # Calculate ROI dimensions and edge margins
+    roi_height, roi_width = gray_roi.shape[:2]
+    x_margin = int(roi_width * edge_margin_factor)
+    y_margin = int(roi_height * edge_margin_factor)
+    
+    system_logger.debug(f"ROI dimensions: {roi_width}x{roi_height}, margins: x={x_margin}, y={y_margin}")
 
     try:
         reader = easyocr.Reader(["en"], verbose=False)
@@ -222,6 +231,19 @@ def detect_scale_bar(
                 if angle > 10 and angle < 170:
                     continue
                 
+                # Check if line is too close to ROI edges
+                line_min_x = min(x1, x2)
+                line_max_x = max(x1, x2)
+                line_min_y = min(y1, y2)
+                line_max_y = max(y1, y2)
+                
+                if (line_min_x < x_margin or 
+                    line_max_x > roi_width - x_margin or
+                    line_min_y < y_margin or 
+                    line_max_y > roi_height - y_margin):
+                    system_logger.debug(f"Line {line_idx} too close to edge, skipping: ({x1},{y1})-({x2},{y2})")
+                    continue
+                
                 length = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
                 line_center = ((x1 + x2) // 2, (y1 + y2) // 2)
                 dist_to_text = sqrt(
@@ -255,8 +277,19 @@ def detect_scale_bar(
                 mean_intensity = seg['intensity']
                 dist_to_text = seg['dist_to_text']
                 
+                # Double-check edge constraint after merging
+                line_min_x = min(x1, x2)
+                line_max_x = max(x1, x2)
+                line_min_y = min(y1, y2)
+                line_max_y = max(y1, y2)
+                
+                near_edge = (line_min_x < x_margin or 
+                           line_max_x > roi_width - x_margin or
+                           line_min_y < y_margin or 
+                           line_max_y > roi_height - y_margin)
+                
                 # Store info about this horizontal line
-                horizontal_lines.append((x1, y1, x2, y2, length, mean_intensity, dist_to_text))
+                horizontal_lines.append((x1, y1, x2, y2, length, mean_intensity, dist_to_text, near_edge))
                 
                 # Draw all horizontal lines if debug enabled
                 if draw_debug:
@@ -264,18 +297,21 @@ def detect_scale_bar(
                     line_y1 = y_start + y1
                     line_x2 = x_start + x2
                     line_y2 = y_start + y2
-                    cv2.line(image, (line_x1, line_y1), (line_x2, line_y2), 
-                           (255, 255, 0), 1)  # Cyan for all lines
+                    # Use different color for lines near edge
+                    color = (128, 128, 128) if near_edge else (255, 255, 0)  # Gray if near edge, cyan otherwise
+                    cv2.line(image, (line_x1, line_y1), (line_x2, line_y2), color, 1)
                     # Add line info text
+                    edge_marker = " [EDGE]" if near_edge else ""
                     cv2.putText(image, 
-                              f"M{seg_idx}: {length:.0f}px, I:{mean_intensity:.0f}, D:{dist_to_text:.0f}", 
+                              f"M{seg_idx}: {length:.0f}px, I:{mean_intensity:.0f}, D:{dist_to_text:.0f}{edge_marker}", 
                               (line_x1, line_y1 - 5), 
-                              cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 0), 1)
+                              cv2.FONT_HERSHEY_SIMPLEX, 0.3, color, 1)
                 
-                # Check if this line meets all criteria
+                # Check if this line meets all criteria (including not near edge)
                 if (dist_to_text < proximity_threshold and 
                     mean_intensity > intensity_threshold and 
-                    length > min_line_length):
+                    length > min_line_length and
+                    not near_edge):
                     if length > max_length:
                         max_length = length
                         longest_line = (x1, y1, x2, y2)
@@ -287,14 +323,16 @@ def detect_scale_bar(
             if horizontal_lines:
                 sorted_lines = sorted(horizontal_lines, key=lambda x: x[4], reverse=True)
                 system_logger.debug("Top 5 line candidates:")
-                for i, (x1, y1, x2, y2, length, intensity, dist) in enumerate(sorted_lines[:5]):
+                for i, (x1, y1, x2, y2, length, intensity, dist, near_edge) in enumerate(sorted_lines[:5]):
                     passes_intensity = intensity > intensity_threshold
                     passes_proximity = dist < proximity_threshold
                     passes_length = length > min_line_length
+                    passes_edge = not near_edge
                     system_logger.debug(
                         f"  {i+1}. Length: {length:.1f}px {'✓' if passes_length else '✗'}, "
                         f"Intensity: {intensity:.1f} {'✓' if passes_intensity else '✗'}, "
                         f"Distance: {dist:.1f}px {'✓' if passes_proximity else '✗'}, "
+                        f"Edge: {'✓' if passes_edge else '✗ (too close)'}, "
                         f"Position: ({x1},{y1})-({x2},{y2})"
                     )
                 

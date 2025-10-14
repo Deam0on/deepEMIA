@@ -35,6 +35,7 @@ scalebar_thresholds:
   proximity: 50
   merge_gap: 15
   min_line_length: 30
+  edge_margin_factor: 0.1 
 
 measure_contrast_distribution: false
 
