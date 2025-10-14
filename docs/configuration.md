@@ -126,20 +126,43 @@ scale_bar_rois:
 ```yaml
 scalebar_thresholds:
   intensity: 100
-  proximity: 50
+  proximity: 100
+  merge_gap: 15
+  min_line_length: 30
+  edge_margin_factor: 0.1
 ```
 
 Thresholds for scale bar detection algorithm.
 
-- `intensity`: Minimum pixel intensity for scale bar elements (0-255)
+- `intensity`: Minimum pixel intensity for scale bar line detection (0-255)
   - Lower values: Detect darker scale bars
-  - Higher values: Only detect bright scale bars
+  - Higher values: Only detect bright/white scale bars
   - Default: 100
+  - **Tip**: Reduce if scale bars are dark; increase if too many false positives
 
-- `proximity`: Maximum pixel distance for grouping scale bar elements
-  - Lower values: Stricter grouping
-  - Higher values: More lenient grouping
-  - Default: 50
+- `proximity`: Maximum pixel distance between OCR text and scale bar line
+  - Distance from detected text to the scale bar line
+  - Lower values: Stricter text-to-line association
+  - Higher values: More lenient for text far from line
+  - Default: 100
+  - **Tip**: Increase if text is positioned far above/below the scale bar
+
+- `merge_gap`: Maximum horizontal gap to merge collinear line segments (pixels)
+  - Merges nearby line segments into single continuous line
+  - Helps when scale bar is detected as multiple segments
+  - Default: 15
+  - **Tip**: Increase if scale bars are fragmented
+
+- `min_line_length`: Minimum length for valid scale bar line (pixels)
+  - Filters out short noise lines
+  - Default: 30
+  - **Tip**: Adjust based on your image resolution
+
+- `edge_margin_factor`: Minimum distance from ROI edges (fraction of ROI size)
+  - Lines too close to edges are rejected as potential noise
+  - Default: 0.1 (10% margin from edges)
+  - Range: 0.0-0.5
+  - **Tip**: Reduce if legitimate scale bars are near ROI edges
 
 ### Measurement Configuration
 

@@ -293,6 +293,7 @@ Inference produces:
 - `results.csv`: Aggregated measurements for all images
 - `*_measurements.csv`: Per-image detailed measurements
 - `*_overlay.png`: Visualization images (if --visualize)
+  - Includes scale bar detection debug info (ROI, detected lines, selected scale bar)
 - Individual mask files (optional)
 
 ### Measurement Columns
@@ -352,16 +353,39 @@ Solutions:
 
 **5. Scale bar detection fails**
 
-Solution: Adjust ROI settings in config.yaml:
+Solutions:
 
-```yaml
-scale_bar_rois:
-  your_dataset:
-    x_start_factor: 0.7
-    y_start_factor: 0.05
-    width_factor: 1.0
-    height_factor: 0.05
-```
+1. **Adjust ROI position** if scale bar is not in default location:
+   ```yaml
+   scale_bar_rois:
+     your_dataset:
+       x_start_factor: 0.7  # Adjust horizontal position
+       y_start_factor: 0.05  # Adjust vertical position
+       width_factor: 1.0     # Adjust width
+       height_factor: 0.05   # Adjust height
+   ```
+
+2. **Adjust detection thresholds** in config.yaml:
+   ```yaml
+   scalebar_thresholds:
+     intensity: 100      # Lower if scale bar is dark
+     proximity: 100      # Increase if text is far from line
+     merge_gap: 15       # Increase if scale bar is fragmented
+     min_line_length: 30 # Adjust for your image resolution
+   ```
+
+3. **Check debug visualization** in output images:
+   - Green box shows ROI region
+   - Blue box shows detected text
+   - Cyan/gray lines show line candidates
+   - Red line shows selected scale bar
+   - Use this to diagnose detection issues
+
+4. **Common issues and fixes**:
+   - **No lines detected**: Increase ROI `height_factor` or reduce `intensity` threshold
+   - **Wrong line selected**: Adjust `proximity` or `edge_margin_factor`
+   - **Fragmented scale bar**: Increase `merge_gap`
+   - **Text not detected**: Adjust ROI position or check OCR requirements
 
 ### Log Files
 

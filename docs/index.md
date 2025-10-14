@@ -10,6 +10,7 @@ Welcome to the deepEMIA (Deep Learning Electron Microscopy Image Analysis) docum
 - [API Reference](api/overview.md) - Technical API documentation
 - [Architecture](architecture/pipeline-overview.md) - System design and architecture
 - [Examples](examples/basic-workflow.md) - Practical usage examples
+- [Scale Bar Troubleshooting](examples/scalebar-troubleshooting.md) - Debug scale bar detection issues
 - [Development](development/contributing.md) - Contributing to deepEMIA
 
 ## What is deepEMIA?

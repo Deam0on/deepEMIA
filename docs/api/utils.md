@@ -102,13 +102,56 @@ def detect_scale_bar(
     roi_config: dict = None,
     intensity_threshold: int = 200,
     proximity_threshold: int = 50,
-    dataset_name: str = None
+    dataset_name: str = None,
+    draw_debug: bool = False
 ) -> tuple
 ```
 
-Detect scale bar and extract scale information.
+Detect scale bar and extract scale information using OCR and Hough line detection.
 
-**Returns:** Tuple of (micrometers_per_pixel, scale_value, unit, roi_coords)
+**Parameters:**
+- `image`: Input image (will be modified in-place if draw_debug=True)
+- `roi_config`: ROI configuration dict (auto-loaded if None)
+- `intensity_threshold`: Minimum intensity for scale bar lines (0-255)
+- `proximity_threshold`: Max distance between text and line (pixels)
+- `dataset_name`: Dataset name for loading dataset-specific config
+- `draw_debug`: If True, draws debug visualizations on the image
+
+**Returns:** Tuple of (scale_bar_length_str, microns_per_pixel)
+
+**Debug Visualization:**
+
+When `draw_debug=True`, the function draws directly on the input image:
+- **Green box**: Scale bar ROI region
+- **Blue box**: Detected OCR text location
+- **Cyan lines**: All detected horizontal line candidates with metadata
+- **Gray lines**: Lines rejected for being too close to ROI edge
+- **Red thick line**: Selected scale bar line (or failure message)
+
+**Example:**
+
+```python
+from src.utils.scalebar_ocr import detect_scale_bar
+import cv2
+
+image = cv2.imread("image.jpg")
+scale, um_pix = detect_scale_bar(
+    image, 
+    dataset_name="my_dataset",
+    draw_debug=True  # Enable debug visualization
+)
+cv2.imwrite("output_with_debug.jpg", image)
+```
+
+### get_scalebar_roi_for_dataset
+
+```python
+def get_scalebar_roi_for_dataset(dataset_name: str = None) -> dict
+```
+
+Load scale bar ROI configuration for specific dataset.
+
+**Returns:** Dict with x_start_factor, y_start_factor, width_factor, height_factor
 
 ## Spatial Constraints (src.utils.spatial_constraints)
 
