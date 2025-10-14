@@ -10,6 +10,7 @@ This module provides functions for:
 The module integrates EasyOCR for text recognition and OpenCV for image processing.
 """
 
+from typing import List
 import cv2
 import easyocr
 import numpy as np
@@ -25,7 +26,7 @@ class ScaleBarDetectionError(Exception):
     pass
 
 
-def get_scalebar_roi_for_dataset(dataset_name=None):
+def get_scalebar_roi_for_dataset(dataset_name: str = None) -> dict:
     """
     Get scale bar ROI configuration for a specific dataset.
     Falls back to default if dataset-specific config not found.
@@ -381,7 +382,7 @@ def detect_scale_bar(
     return psum, um_pix
 
 
-def merge_collinear_segments(segments, max_gap=15, angle_tolerance=5, y_tolerance=5):
+def merge_collinear_segments(segments: List[dict], max_gap: int = 15, angle_tolerance: int = 5, y_tolerance: int = 5) -> List[dict]:
     """
     Merge line segments that are collinear and close together.
     
@@ -435,7 +436,7 @@ def merge_collinear_segments(segments, max_gap=15, angle_tolerance=5, y_toleranc
     return merged
 
 
-def merge_segment_group(group):
+def merge_segment_group(group: List[dict]) -> dict:
     """
     Merge a group of segments into a single segment.
     Takes the leftmost and rightmost points, averages intensity and distance.
