@@ -91,7 +91,7 @@ def check_gpu_availability(require_gpu: bool = False, interactive: bool = True) 
                 print("Please enter 'yes' or 'no'")
 
 
-def get_optimal_device(prefer_gpu=True):
+def get_optimal_device(prefer_gpu: bool = True) -> torch.device:
     """
     Get the optimal torch device based on availability.
     
