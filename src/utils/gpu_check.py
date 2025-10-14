@@ -15,7 +15,7 @@ import torch
 from src.utils.logger_utils import system_logger
 
 
-def check_gpu_availability(require_gpu=False, interactive=True):
+def check_gpu_availability(require_gpu: bool = False, interactive: bool = True) -> bool:
     """
     Check if GPU/CUDA is available and prompt user if not.
     
