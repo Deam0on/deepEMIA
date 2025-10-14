@@ -76,7 +76,7 @@ def get_scalebar_roi_for_dataset(dataset_name=None):
 
 def detect_scale_bar(
     image, roi_config=None, intensity_threshold=200, proximity_threshold=50, 
-    dataset_name=None, draw_debug=False
+    dataset_name=None, draw_debug=True
 ):
     """
     Detects scale bars in SEM images using OCR and Hough line detection.
