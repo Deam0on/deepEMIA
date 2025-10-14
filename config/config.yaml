@@ -18,10 +18,10 @@ scale_bar_rois:
   
   # Dataset-specific scale bar ROI overrides
   polyhipes_tommy:
-    x_start_factor: 0.5
+    x_start_factor: 0.7
     y_start_factor: 0.005
-    width_factor: 1
-    height_factor: 0.1
+    width_factor: 0.95
+    height_factor: 0.07
   
   # Add more dataset-specific ROIs as needed
   # example_dataset:
