@@ -1,6 +1,336 @@
-# Deep-Learning (primarily Electron Microscopy) Image Analysis Tool
+# deepEMIA# deepEMIA
 
-A modular, end-to-end computer vision pipeline for scientific image analysis, featuring dataset management, model training, evaluation, inference, and a Streamlit-based web interface. The project is designed for extensibility, reproducibility, security, and integration with Google Cloud Storage.
+
+
+Deep Learning Electron Microscopy Image Analysis Tool - A complete pipeline for scientific image segmentation and analysis.Deep Learning Electron Microscopy Image Analysis Tool - A complete pipeline for scientific image segmentation and analysis.
+
+
+
+## Overview## Overview
+
+
+
+deepEMIA provides an end-to-end computer vision pipeline for electron microscopy and scientific image analysis, featuring:deepEMIA provides an end-to-end computer vision pipeline for electron microscopy and scientific image analysis, featuring:
+
+
+
+- Dataset management and preparation- Dataset management and preparation
+
+- Model training with hyperparameter optimization- Model training with hyperparameter optimization
+
+- COCO-metrics evaluation- COCO-metrics evaluation
+
+- Automated inference with measurement extraction- Automated inference with measurement extraction
+
+- Interactive CLI wizard and web interface- Interactive CLI wizard and web interface
+
+- Google Cloud Storage integration- Google Cloud Storage integration
+
+
+
+## Quick Start## Quick Start
+
+
+
+### Installation### Installation
+
+
+
+```bash```bash
+
+git clone https://github.com/Deam0on/deepEMIA.gitgit clone https://github.com/Deam0on/deepEMIA.git
+
+cd deepEMIAcd deepEMIA
+
+pip install -r requirements.txtpip install -r requirements.txt
+
+``````
+
+
+
+### Setup### Setup
+
+
+
+```bash```bash
+
+python cli_main.py  # Interactive setup wizardpython cli_main.py  # Interactive setup wizard
+
+``````
+
+
+
+Or direct command:Or direct command:
+
+
+
+```bash```bash
+
+python main.py --task setup --dataset_name dummypython main.py --task setup --dataset_name dummy
+
+``````
+
+
+
+### Basic Usage### Basic Usage
+
+
+
+```bash```bash
+
+# Prepare dataset# Prepare dataset
+
+python main.py --task prepare --dataset_name my_datasetpython main.py --task prepare --dataset_name my_dataset
+
+
+
+# Train model with optimization# Train model with optimization
+
+python main.py --task train --dataset_name my_dataset --optimize --n-trials 20 --augmentpython main.py --task train --dataset_name my_dataset --optimize --n-trials 20 --augment
+
+
+
+# Run inference# Run inference
+
+python main.py --task inference --dataset_name my_dataset --threshold 0.65 --visualizepython main.py --task inference --dataset_name my_dataset --threshold 0.65 --visualize
+
+``````
+
+
+
+### Web Interface### Web Interface
+
+
+
+```bash```bash
+
+streamlit run gui/streamlit_gui.pystreamlit run gui/streamlit_gui.py
+
+``````
+
+
+
+## Key Features## Key Features
+
+
+
+- **Automated Pipeline**: Complete workflow from raw data to measurements- **Automated Pipeline**: Complete workflow from raw data to measurements
+
+- **Hyperparameter Optimization**: Automatic tuning with Optuna- **Hyperparameter Optimization**: Automatic tuning with Optuna
+
+- **Multi-Scale Inference**: Iterative detection with deduplication- **Multi-Scale Inference**: Iterative detection with deduplication
+
+- **Scale Bar Detection**: Automatic unit conversion from scale bars- **Scale Bar Detection**: Automatic unit conversion from scale bars
+
+- **Spatial Constraints**: Rule-based filtering (containment, overlap)- **Spatial Constraints**: Rule-based filtering (containment, overlap)
+
+- **Cloud Integration**: Seamless GCS sync and archival- **Cloud Integration**: Seamless GCS sync and archival
+
+- **Flexible Interfaces**: CLI wizard, direct CLI, and web GUI- **Flexible Interfaces**: CLI wizard, direct CLI, and web GUI
+
+
+
+## Documentation## Documentation
+
+
+
+Comprehensive documentation is available in the `docs/` directory:Comprehensive documentation is available in the `docs/` directory:
+
+
+
+- [Getting Started](docs/getting-started.md) - Installation and setup- [Getting Started](docs/getting-started.md) - Installation and setup
+
+- [User Guide](docs/user-guide.md) - Usage and workflows- [User Guide](docs/user-guide.md) - Usage and workflows
+
+- [Configuration Reference](docs/configuration.md) - Config file details- [Configuration Reference](docs/configuration.md) - Config file details
+
+- [API Reference](docs/api/overview.md) - Technical API docs- [API Reference](docs/api/overview.md) - Technical API docs
+
+- [Architecture](docs/architecture/pipeline-overview.md) - System design- [Architecture](docs/architecture/pipeline-overview.md) - System design
+
+- [Examples](docs/examples/basic-workflow.md) - Practical examples- [Examples](docs/examples/basic-workflow.md) - Practical examples
+
+- [Contributing](docs/development/contributing.md) - Development guide- [Contributing](docs/development/contributing.md) - Development guide
+
+
+
+## Requirements## Requirements
+
+
+
+- Python 3.8+- Python 3.8+
+
+- PyTorch with CUDA support (optional, for GPU acceleration)- PyTorch with CUDA support (optional, for GPU acceleration)
+
+- Google Cloud SDK (for GCS integration)- Google Cloud SDK (for GCS integration)
+
+- 16GB RAM minimum (32GB recommended for training)- 16GB RAM minimum (32GB recommended for training)
+
+
+
+## Technology Stack## Technology Stack
+
+
+
+- **Detectron2**: Instance segmentation- **Detectron2**: Instance segmentation
+
+- **PyTorch**: Deep learning framework- **PyTorch**: Deep learning framework
+
+- **Optuna**: Hyperparameter optimization- **Optuna**: Hyperparameter optimization
+
+- **OpenCV/scikit-image**: Image processing- **OpenCV/scikit-image**: Image processing
+
+- **Streamlit**: Web interface- **Streamlit**: Web interface
+
+- **Google Cloud Storage**: Data management- **Google Cloud Storage**: Data management
+
+
+
+## Output## Output
+
+
+
+Inference generates:Inference generates:
+
+
+
+- CSV files with geometric measurements (area, perimeter, axes, circularity)- CSV files with geometric measurements (area, perimeter, axes, circularity)
+
+- Wavelength analysis from particle colors- Wavelength analysis from particle colors
+
+- Visualization images with detected particles- Visualization images with detected particles
+
+- Per-image and aggregate statistics- Per-image and aggregate statistics
+
+
+
+## Common Commands## Common Commands
+
+
+
+```bash```bash
+
+# Interactive wizard (recommended for beginners)# Interactive wizard (recommended for beginners)
+
+python cli_main.pypython cli_main.py
+
+
+
+# Train with augmentation# Train with augmentation
+
+python main.py --task train --dataset_name mydata --augmentpython main.py --task train --dataset_name mydata --augment
+
+
+
+# Evaluate with visualizations# Evaluate with visualizations
+
+python main.py --task evaluate --dataset_name mydata --visualizepython main.py --task evaluate --dataset_name mydata --visualize
+
+
+
+# Multi-pass inference# Multi-pass inference
+
+python main.py --task inference --dataset_name mydata --pass multi 10 --threshold 0.6python main.py --task inference --dataset_name mydata --pass multi 10 --threshold 0.6
+
+``````
+
+
+
+## Configuration## Configuration
+
+
+
+Configuration is stored in `~/deepEMIA/config/config.yaml`. Key settings:Configuration is stored in `~/deepEMIA/config/config.yaml`. Key settings:
+
+
+
+- GCS bucket name- GCS bucket name
+
+- Scale bar detection ROIs- Scale bar detection ROIs
+
+- Hyperparameters (default and optimized)- Hyperparameters (default and optimized)
+
+- Inference settings (thresholds, stopping criteria)- Inference settings (thresholds, stopping criteria)
+
+- Performance optimizations- Performance optimizations
+
+
+
+See [Configuration Reference](docs/configuration.md) for details.See [Configuration Reference](docs/configuration.md) for details.
+
+
+
+## Security## Security
+
+
+
+- Environment variable password hashing- Environment variable password hashing
+
+- Path validation for file operations- Path validation for file operations
+
+- GCS service account authentication- GCS service account authentication
+
+- No plaintext credentials- No plaintext credentials
+
+
+
+## License## License
+
+
+
+This project is licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).This project is licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
+
+
+
+For commercial use, contact: [info.f@hladek.cz](mailto:info.f@hladek.cz)For commercial use, contact: info.f@hladek.cz
+
+
+
+## Support## Support
+
+
+
+- Documentation: See `docs/` directory- Documentation: See `docs/` directory
+
+- Issues: [GitHub Issues](https://github.com/Deam0on/deepEMIA/issues)- Issues: [GitHub Issues](https://github.com/Deam0on/deepEMIA/issues)
+
+- Logs: Check `~/logs/` for detailed error information- Logs: Check `~/logs/` for detailed error information
+
+
+
+## Citation## Citation
+
+
+
+If you use deepEMIA in your research, please cite:If you use deepEMIA in your research, please cite:
+
+
+
+```bibtex```bibtex
+
+@software{deepemia,@software{deepemia,
+
+  title={deepEMIA: Deep Learning Electron Microscopy Image Analysis},  title={deepEMIA: Deep Learning Electron Microscopy Image Analysis},
+
+  author={Hladek, F.},  author={Hladek, F.},
+
+  year={2025},  year={2025},
+
+  url={https://github.com/Deam0on/deepEMIA}  url={https://github.com/Deam0on/deepEMIA}
+
+}}
+
+``````
+
+
+
+## Acknowledgments## Acknowledgments
+
+
+
+Built with Detectron2 by Facebook AI Research (FAIR).Built with Detectron2 by Facebook AI Research (FAIR).
+
+
 
 ## Table of Contents
 
@@ -112,6 +442,26 @@ paths:
   category_json: "~/deepEMIA/dataset_info.json"
   # ... other paths
 measure_contrast_distribution: false  # Enable for particle analysis
+
+# Inference configuration
+inference_settings:
+  use_class_specific_inference: true  # Use class-specific processing
+  iterative_stopping:
+    min_total_masks: 10          # Minimum masks before considering early stop
+    min_relative_increase: 0.25  # 25% minimum increase requirement
+    max_consecutive_zero: 1      # Stop after N iterations with no new masks
+    min_iterations: 2            # Always run at least this many iterations
+  class_specific_settings:
+    class_0:  # Large particles
+      confidence_threshold: 0.5
+      iou_threshold: 0.7
+      min_size: 25
+    class_1:  # Small particles  
+      confidence_threshold: 0.3
+      iou_threshold: 0.5
+      min_size: 5
+      use_multiscale: true
+
 rcnn_hyperparameters:
   default:
     R50:
@@ -190,6 +540,8 @@ python main.py --task inference --dataset_name polyhipes --threshold 0.7 --visua
 - `--pass`: Inference mode (`single` or `multi [max_iters]`) - default: `single`
   - `single`: One inference pass per image
   - `multi N`: Iterative deduplication up to N iterations (default: 10)
+    - Early stopping based on configuration: `max_consecutive_zero`, `min_total_masks`, `min_relative_increase`
+    - Configurable via `inference_settings.iterative_stopping` in config.yaml
 
 For complete usage information and examples:
 
@@ -546,3 +898,29 @@ rcnn_hyperparameters:
 - **Automatic fallback**: If no dataset-specific parameters exist, the system gracefully falls back to global best or defaults
 - **Reproducibility**: All optimized parameters are saved in the configuration file for reproducible results
 - **Easy management**: No manual parameter tuning required - just run optimization and the system handles the rest
+
+---
+
+## 🚀 Performance Optimizations
+
+Recent optimizations have significantly improved both **speed** and **memory efficiency**:
+
+### Spatial Filtering Speed (5-10x faster)
+- Bounding box pre-filtering eliminates 80-90% of expensive mask comparisons
+- Vectorized NumPy operations for IoU/containment calculations
+- Spatial indexing for parent-child relationship checks
+
+### Memory Management (20-30% reduction)
+- Aggressive cleanup after spatial constraints
+- Per-tile memory management in tile-based inference
+- GPU cache clearing after every batch
+- Prevents OOM crashes on 16GB RAM systems
+
+**See [`OPTIMIZATIONS.md`](OPTIMIZATIONS.md) for technical details and [`CONFIG_UPDATES.md`](CONFIG_UPDATES.md) for configuration recommendations.**
+
+---
+
+## 📄 License
+
+This project is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License. See [`LICENCE.md`](LICENCE.md) for details.
+

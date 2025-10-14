@@ -111,47 +111,13 @@ def rgb_to_wavelength(r: int, g: int, b: int) -> float:
     return wavelength
 
 
-def detect_arrows(image: np.ndarray) -> List[Tuple[float, float]]:
-    """
-    Detects arrows in the image.
-
-    Parameters:
-    - image (numpy.ndarray): Input image
-
-    Returns:
-    - list: List of detected arrow coordinates
-    """
-    # Convert to grayscale
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    # Use edge detection
-    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
-
-    # Find contours
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    flow_vectors = []
-
-    for contour in contours:
-        if cv2.contourArea(contour) < 100:  # Filter out small contours
-            continue
-
-        [vx, vy, x, y] = cv2.fitLine(contour, cv2.DIST_L2, 0, 0.01, 0.01)
-
-        # Calculate the direction vector
-        direction = (vx[0], vy[0])
-        flow_vectors.append(direction)
-
-    return flow_vectors
-
-
 def calculate_measurements(
-    c: np.ndarray, 
-    single_im_mask: np.ndarray, 
-    um_pix: float = 1.0, 
+    c: np.ndarray,
+    single_im_mask: np.ndarray,
+    um_pix: float = 1.0,
     pixelsPerMetric: float = 1.0,
-    original_image: Optional[np.ndarray] = None, 
-    measure_contrast_distribution: bool = False
+    original_image: Optional[np.ndarray] = None,
+    measure_contrast_distribution: bool = False,
 ) -> Dict[str, Union[float, None]]:
     """
     Calculates geometric measurements for a given contour and mask.
@@ -237,7 +203,9 @@ def calculate_measurements(
         particle_pixels = gray[single_im_mask > 0]
         if len(particle_pixels) > 0:
             # Compute histogram (0-255)
-            hist, bin_edges = np.histogram(particle_pixels, bins=256, range=(0, 255), density=True)
+            hist, bin_edges = np.histogram(
+                particle_pixels, bins=256, range=(0, 255), density=True
+            )
             cdf = np.cumsum(hist)
             cdf /= cdf[-1]  # Normalize to 1
 

@@ -58,6 +58,13 @@ def evaluate_model(
     Returns:
     - None
     """
+    # GPU availability check at the start of evaluation
+    from src.utils.gpu_check import check_gpu_availability
+    
+    system_logger.info("Performing GPU availability check before evaluation...")
+    if not check_gpu_availability(require_gpu=False, interactive=True):
+        system_logger.warning("Continuing evaluation in CPU-only mode (may be slower)")
+    
     # Load dataset information
     dataset_info = read_dataset_info(CATEGORY_JSON)
 

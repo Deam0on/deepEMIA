@@ -25,6 +25,7 @@ from src.utils.config import get_config
 from src.utils.eta_utils import update_eta_data
 from src.utils.gcs_utils import download_data_from_bucket, upload_data_to_bucket
 from src.utils.logger_utils import system_logger
+from src.utils.gpu_check import check_gpu_availability, log_device_info
 
 config = get_config()
 bucket = config["bucket"]
@@ -66,8 +67,18 @@ def setup_config():
     proximity = input("  proximity threshold [default 50]: ").strip() or "50"
 
     print("\nConfigure measurement settings:")
-    measure_contrast = input("  measure_contrast_distribution [default false] (true/false): ").strip() or "false"
+    measure_contrast = (
+        input("  measure_contrast_distribution [default false] (true/false): ").strip()
+        or "false"
+    )
     measure_contrast = measure_contrast.lower() == "true"
+
+    print("\nConfigure inference settings:")
+    class_specific_default = (
+        input("  use_class_specific_inference [default true] (true/false): ").strip()
+        or "true"
+    )
+    use_class_specific_default = class_specific_default.lower() == "true"
 
     print("\nConfigure RCNN hyperparameters (press Enter to use defaults):")
     print("  R50 settings:")
@@ -75,14 +86,18 @@ def setup_config():
     r50_ims_per_batch = input("    ims_per_batch [default 2]: ").strip() or "2"
     r50_warmup_iters = input("    warmup_iters [default 1000]: ").strip() or "1000"
     r50_gamma = input("    gamma [default 0.1]: ").strip() or "0.1"
-    r50_batch_size_per_image = input("    batch_size_per_image [default 64]: ").strip() or "64"
+    r50_batch_size_per_image = (
+        input("    batch_size_per_image [default 64]: ").strip() or "64"
+    )
 
     print("  R101 settings:")
     r101_base_lr = input("    base_lr [default 0.00025]: ").strip() or "0.00025"
     r101_ims_per_batch = input("    ims_per_batch [default 2]: ").strip() or "2"
     r101_warmup_iters = input("    warmup_iters [default 1000]: ").strip() or "1000"
     r101_gamma = input("    gamma [default 0.1]: ").strip() or "0.1"
-    r101_batch_size_per_image = input("    batch_size_per_image [default 64]: ").strip() or "64"
+    r101_batch_size_per_image = (
+        input("    batch_size_per_image [default 64]: ").strip() or "64"
+    )
 
     config = {
         "bucket": bucket,
@@ -108,6 +123,22 @@ def setup_config():
             "proximity": int(proximity),
         },
         "measure_contrast_distribution": measure_contrast,
+        "inference_settings": {
+            "use_class_specific_inference": use_class_specific_default,
+            "class_specific_settings": {
+                "class_0": {
+                    "confidence_threshold": 0.5,
+                    "iou_threshold": 0.7,
+                    "min_size": 25,
+                },
+                "class_1": {
+                    "confidence_threshold": 0.3,
+                    "iou_threshold": 0.5,
+                    "min_size": 5,
+                    "use_multiscale": True,
+                },
+            },
+        },
         "rcnn_hyperparameters": {
             "default": {
                 "R50": {
@@ -144,9 +175,9 @@ def main():
     """
     parser = argparse.ArgumentParser(
         description="deepEMIA - Deep Learning Computer Vision Pipeline for Scientific Image Analysis.\n"
-                   "This tool provides dataset preparation, model training, evaluation, and inference capabilities.\n\n"
-                   "For an easier, interactive experience, use: python cli_main.py\n"
-                   "The CLI wizard guides you through all options step-by-step.",
+        "This tool provides dataset preparation, model training, evaluation, and inference capabilities.\n\n"
+        "For an easier, interactive experience, use: python cli_main.py\n"
+        "The CLI wizard guides you through all options step-by-step.",
         epilog="""
 QUICK START EXAMPLES:
 
@@ -167,11 +198,11 @@ Evaluation:
   python main.py --task evaluate --dataset_name polyhipes --visualize --rcnn combo
 
 Inference:
-  # Single pass inference
+  # Run inference with automatic iteration control (configured in config.yaml)
   python main.py --task inference --dataset_name polyhipes --threshold 0.7 --visualize
   
-  # Multi-pass inference with deduplication
-  python main.py --task inference --dataset_name polyhipes --threshold 0.65 --pass multi 10 --visualize --id
+  # Inference with instance IDs displayed
+  python main.py --task inference --dataset_name polyhipes --threshold 0.65 --visualize --id
 
 TASK DESCRIPTIONS:
 
@@ -191,7 +222,8 @@ ADVANCED FEATURES:
 
 • Hyperparameter Optimization: Use --optimize --n-trials N for automated tuning
 • Data Augmentation: Use --augment for enhanced training robustness  
-• Multi-pass Inference: Use --pass multi N for iterative deduplication
+• Iteration Control: Automatic via config.yaml iterative_stopping settings
+• Universal Class Processing: Inference always uses class-specific processing with size heuristics
 • Visualization: Use --visualize to save prediction overlays
 • Instance IDs: Use --id to draw instance identifiers on visualizations
 
@@ -267,10 +299,11 @@ For guided interactive mode: python cli_main.py
         type=str,
         default="101",
         choices=["50", "101", "combo"],
-        help="RCNN backbone architecture:\n"
+        help="RCNN backbone architecture for train/evaluate tasks:\n"
         "• '50': ResNet-50 (faster, good for small particles)\n"
         "• '101': ResNet-101 (slower, good for large particles)\n"
-        "• 'combo': Both models for universal detection [default: 101]",
+        "• 'combo': Both models [default: 101]\n"
+        "Note: Inference task auto-detects available models",
     )
     parser.add_argument(
         "--augment",
@@ -290,33 +323,51 @@ For guided interactive mode: python cli_main.py
         help="Number of Optuna optimization trials to run. More trials = better optimization but longer time. [default: 10]",
     )
     parser.add_argument(
-        "--pass",
-        dest="pass_mode",
-        nargs="+",
-        default=["single"],
-        metavar=("MODE", "MAX_ITERS"),
-        help="Inference pass mode:\n"
-        "• 'single': One inference pass per image (faster)\n"
-        "• 'multi [N]': Multi-pass with iterative deduplication up to N iterations (more accurate)\n"
-        "Example: --pass multi 5",
+        "--verbosity",
+        type=str,
+        default="info",
+        choices=["debug", "info", "warning", "error"],
+        help="Console logging verbosity level. File logs always include DEBUG. [default: info]",
+    )
+    parser.add_argument(
+        "--no-gpu-check",
+        action="store_true",
+        help="Skip GPU availability check (for automated/non-interactive execution).",
     )
 
     args = parser.parse_args()
 
+    # Set console logging level based on verbosity argument
+    from src.utils.logger_utils import set_console_log_level
+    import logging
+    verbosity_map = {
+        "debug": logging.DEBUG,
+        "info": logging.INFO,
+        "warning": logging.WARNING,
+        "error": logging.ERROR,
+    }
+    set_console_log_level(verbosity_map.get(args.verbosity.lower(), logging.INFO))
+
+    # === GPU AVAILABILITY CHECK ===
+    # Check GPU before any heavy operations (skip for setup task)
+    if args.task != "setup" and not args.no_gpu_check:
+        system_logger.info("Checking GPU availability...")
+        log_device_info()
+        
+        # Determine if this task requires GPU
+        gpu_intensive_tasks = ['train', 'inference', 'evaluate']
+        requires_gpu = args.task in gpu_intensive_tasks
+        
+        if not check_gpu_availability(require_gpu=requires_gpu, interactive=True):
+            system_logger.error("Execution aborted due to GPU unavailability")
+            import sys
+            sys.exit(1)
+    
+    # === END GPU CHECK ===
+
     # Validate arguments
     if args.task != "setup" and not args.dataset_name:
         parser.error(f"--dataset_name is required for task '{args.task}'")
-
-    # Parse pass_mode and max_iters
-    if args.pass_mode[0] == "multi":
-        pass_mode = "multi"
-        try:
-            max_iters = int(args.pass_mode[1])
-        except (IndexError, ValueError):
-            max_iters = 10  # Default if not provided
-    else:
-        pass_mode = "single"
-        max_iters = 1  # Not used in single mode
 
     if args.task == "setup":
         setup_config()
@@ -398,7 +449,7 @@ For guided interactive mode: python cli_main.py
 
     elif args.task == "inference":
         system_logger.info(
-            f"Running inference on dataset {args.dataset_name} using '{args.dataset_format}' format and RCNN {args.rcnn}..."
+            f"Running inference on dataset {args.dataset_name} using '{args.dataset_format}' format with auto-detected models..."
         )
 
         # Remove .png, .csv, .jpg files in the current directory
@@ -427,14 +478,40 @@ For guided interactive mode: python cli_main.py
             threshold=args.threshold,
             draw_id=args.draw_id,
             dataset_format=args.dataset_format,
-            rcnn=args.rcnn,
-            pass_mode=pass_mode,
-            max_iters=max_iters,  # <-- Pass max_iters to run_inference
         )
 
         task_end_time = datetime.now()
         inference_time_taken = (task_end_time - task_start_time).total_seconds()
         update_eta_data("inference", inference_time_taken, num_images)
+
+        # UPDATED: Use dedicated inference upload function
+        if args.upload:
+            system_logger.info("Uploading inference results to GCP...")
+
+            # Import the new function
+            from src.utils.gcs_utils import upload_inference_results
+
+            # Determine model info for remote path
+            # Model info reflects automatic iteration control
+            model_info = "auto_models_adaptive"
+
+            try:
+                upload_time_taken = upload_inference_results(
+                    dataset_name=args.dataset_name,
+                    model_info=model_info,
+                    output_dir=output_dir,
+                    current_dir=Path.cwd(),
+                )
+
+                if upload_time_taken > 0:
+                    system_logger.info(
+                        f"Inference results uploaded successfully in {upload_time_taken:.2f} seconds"
+                    )
+                else:
+                    system_logger.warning("No files were uploaded")
+
+            except Exception as e:
+                system_logger.error(f"Failed to upload inference results: {e}")
 
         # Delete inference data after inference
         if inference_path.exists():
@@ -463,15 +540,6 @@ For guided interactive mode: python cli_main.py
                 system_logger.info(f"Uploaded logs directory to gs://{bucket}/logs/")
             except subprocess.CalledProcessError as e:
                 system_logger.warning(f"Failed to upload logs directory: {e}")
-
-            # # Delete logs directory after upload
-            # try:
-            #     shutil.rmtree(logs_dir)
-            #     system_logger.info(f"Deleted local logs directory: {logs_dir}")
-            # except Exception as e:
-            #     system_logger.warning(
-            #         f"Could not delete local logs directory {logs_dir}: {e}"
-            #     )
 
         # Delete result files after upload
         for pattern in ("*.png", "*.csv"):
