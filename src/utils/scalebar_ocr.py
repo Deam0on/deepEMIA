@@ -76,18 +76,18 @@ def get_scalebar_roi_for_dataset(dataset_name=None):
 
 def detect_scale_bar(
     image, roi_config=None, intensity_threshold=200, proximity_threshold=50, 
-    dataset_name=None, debug_output_path=None
+    dataset_name=None, draw_debug=False
 ):
     """
     Detects scale bars in SEM images using OCR and Hough line detection.
 
     Parameters:
-    - image (numpy.ndarray): Input image
+    - image (numpy.ndarray): Input image (will be modified in-place if draw_debug=True)
     - roi_config (dict, optional): ROI configuration. If None, will load from config based on dataset_name
     - intensity_threshold (int): Minimum intensity for scale bar line detection
     - proximity_threshold (int): Maximum distance between text and line
     - dataset_name (str, optional): Dataset name for loading dataset-specific ROI
-    - debug_output_path (str, optional): Path to save debug visualization image
+    - draw_debug (bool): If True, draws debug visualizations directly on the input image
 
     Returns:
     - tuple: (scale_bar_length_str, microns_per_pixel)
@@ -131,13 +131,10 @@ def detect_scale_bar(
         f"ROI for scale bar OCR: x={x_start}:{x_end}, y={y_start}:{y_end}"
     )
 
-    # Create debug image if path provided
-    debug_image = None
-    if debug_output_path is not None:
-        debug_image = image.copy()
-        # Draw ROI rectangle on full image (in green)
-        cv2.rectangle(debug_image, (x_start, y_start), (x_end, y_end), (0, 255, 0), 2)
-        cv2.putText(debug_image, "ROI", (x_start, y_start - 10), 
+    # Draw ROI rectangle if debug enabled
+    if draw_debug:
+        cv2.rectangle(image, (x_start, y_start), (x_end, y_end), (0, 255, 0), 2)
+        cv2.putText(image, "ROI", (x_start, y_start - 10), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
     roi = image[y_start:y_end, x_start:x_end].copy()
@@ -170,15 +167,15 @@ def detect_scale_bar(
                     (y_min + y_max) // 2,
                 )
                 
-                # Draw text bounding box on debug image (in blue)
-                if debug_image is not None:
+                # Draw text bounding box if debug enabled
+                if draw_debug:
                     text_x_min = x_start + x_min
                     text_y_min = y_start + y_min
                     text_x_max = x_start + x_max
                     text_y_max = y_start + y_max
-                    cv2.rectangle(debug_image, (text_x_min, text_y_min), 
+                    cv2.rectangle(image, (text_x_min, text_y_min), 
                                 (text_x_max, text_y_max), (255, 0, 0), 2)
-                    cv2.putText(debug_image, f"Text: {text}", 
+                    cv2.putText(image, f"Text: {text}", 
                               (text_x_min, text_y_min - 5), 
                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)
                 
@@ -233,16 +230,16 @@ def detect_scale_bar(
                 # Store info about this horizontal line
                 horizontal_lines.append((x1, y1, x2, y2, length, mean_intensity, dist_to_text))
                 
-                # Draw all horizontal lines on debug image (in cyan)
-                if debug_image is not None:
+                # Draw all horizontal lines if debug enabled
+                if draw_debug:
                     line_x1 = x_start + x1
                     line_y1 = y_start + y1
                     line_x2 = x_start + x2
                     line_y2 = y_start + y2
-                    cv2.line(debug_image, (line_x1, line_y1), (line_x2, line_y2), 
+                    cv2.line(image, (line_x1, line_y1), (line_x2, line_y2), 
                            (255, 255, 0), 1)  # Cyan for all lines
                     # Add line info text
-                    cv2.putText(debug_image, 
+                    cv2.putText(image, 
                               f"L{line_idx}: {length:.0f}px, I:{mean_intensity:.0f}, D:{dist_to_text:.0f}", 
                               (line_x1, line_y1 - 5), 
                               cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 0), 1)
@@ -288,10 +285,10 @@ def detect_scale_bar(
         y1_full = y1 + y_start
         y2_full = y2 + y_start
         
-        # Draw selected scale bar line on debug image (in red, thicker)
-        if debug_image is not None:
-            cv2.line(debug_image, (x1_full, y1_full), (x2_full, y2_full), (0, 0, 255), 3)
-            cv2.putText(debug_image, f"SELECTED: {max_length:.0f}px", 
+        # Draw selected scale bar line if debug enabled
+        if draw_debug:
+            cv2.line(image, (x1_full, y1_full), (x2_full, y2_full), (0, 0, 255), 3)
+            cv2.putText(image, f"SELECTED: {max_length:.0f}px", 
                        (x1_full, y1_full - 10), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
         
@@ -305,18 +302,10 @@ def detect_scale_bar(
         psum = "0"
         system_logger.warning("No scale bar line detected near OCR text.")
         
-        # Add failure message to debug image
-        if debug_image is not None:
-            cv2.putText(debug_image, "SCALE BAR DETECTION FAILED", 
+        # Add failure message if debug enabled
+        if draw_debug:
+            cv2.putText(image, "SCALE BAR DETECTION FAILED", 
                        (x_start, y_start + 30), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-
-    # Save debug image if path provided
-    if debug_image is not None and debug_output_path is not None:
-        try:
-            cv2.imwrite(str(debug_output_path), debug_image)
-            system_logger.info(f"Debug image saved to: {debug_output_path}")
-        except Exception as e:
-            system_logger.error(f"Failed to save debug image: {e}")
 
     return psum, um_pix
