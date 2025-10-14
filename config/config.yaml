@@ -20,8 +20,8 @@ scale_bar_rois:
   polyhipes_tommy:
     x_start_factor: 0.5
     y_start_factor: 0.005
-    width_factor: 0.9
-    height_factor: 0.07
+    width_factor: 0.8
+    height_factor: 0.06
   
   # Add more dataset-specific ROIs as needed
   # example_dataset:
