@@ -32,7 +32,7 @@ scale_bar_rois:
 
 scalebar_thresholds:
   intensity: 100
-  proximity: 50
+  proximity: 100
   merge_gap: 15
   min_line_length: 30
   edge_margin_factor: 0.1 
