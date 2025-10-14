@@ -712,6 +712,16 @@ def main():
     print("This wizard will guide you through all available operations step-by-step.")
     print("For direct command-line usage: python main.py --help")
 
+    # GPU availability check at CLI startup (non-interactive)
+    try:
+        from src.utils.gpu_check import log_device_info
+        
+        print("\nChecking system configuration...\n")
+        log_device_info()
+        print()
+    except Exception as e:
+        print(f"Warning: Could not check GPU availability: {e}\n")
+
     while True:
         clear_screen()
         print_header()

@@ -25,6 +25,7 @@ from src.utils.config import get_config
 from src.utils.eta_utils import update_eta_data
 from src.utils.gcs_utils import download_data_from_bucket, upload_data_to_bucket
 from src.utils.logger_utils import system_logger
+from src.utils.gpu_check import check_gpu_availability, log_device_info
 
 config = get_config()
 bucket = config["bucket"]
@@ -328,6 +329,11 @@ For guided interactive mode: python cli_main.py
         choices=["debug", "info", "warning", "error"],
         help="Console logging verbosity level. File logs always include DEBUG. [default: info]",
     )
+    parser.add_argument(
+        "--no-gpu-check",
+        action="store_true",
+        help="Skip GPU availability check (for automated/non-interactive execution).",
+    )
 
     args = parser.parse_args()
 
@@ -341,6 +347,23 @@ For guided interactive mode: python cli_main.py
         "error": logging.ERROR,
     }
     set_console_log_level(verbosity_map.get(args.verbosity.lower(), logging.INFO))
+
+    # === GPU AVAILABILITY CHECK ===
+    # Check GPU before any heavy operations (skip for setup task)
+    if args.task != "setup" and not args.no_gpu_check:
+        system_logger.info("Checking GPU availability...")
+        log_device_info()
+        
+        # Determine if this task requires GPU
+        gpu_intensive_tasks = ['train', 'inference', 'evaluate']
+        requires_gpu = args.task in gpu_intensive_tasks
+        
+        if not check_gpu_availability(require_gpu=requires_gpu, interactive=True):
+            system_logger.error("Execution aborted due to GPU unavailability")
+            import sys
+            sys.exit(1)
+    
+    # === END GPU CHECK ===
 
     # Validate arguments
     if args.task != "setup" and not args.dataset_name:

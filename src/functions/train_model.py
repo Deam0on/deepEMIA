@@ -331,6 +331,17 @@ def train_on_dataset(
     Trains a model on the specified dataset with the selected backbone(s).
     If optimize=True, runs Optuna HPO instead of standard training.
     """
+    # GPU availability check at the start of training
+    from src.utils.gpu_check import check_gpu_availability
+    
+    system_logger.info("Performing GPU availability check before training...")
+    if not check_gpu_availability(require_gpu=True, interactive=True):
+        raise TrainingError(
+            "Training requires GPU but none is available. Aborting.",
+            stage="pre-training",
+            details={"dataset": dataset_name, "rcnn": rcnn}
+        )
+    
     check_disk_space(output_dir, min_gb=1)
 
     # Read dataset information

@@ -501,6 +501,13 @@ def run_inference(
     Note: Iteration count is now automatic via config.yaml iterative_stopping settings.
     """
     
+    # GPU availability check at the start of inference
+    from src.utils.gpu_check import check_gpu_availability
+    
+    system_logger.info("Performing GPU availability check before inference...")
+    if not check_gpu_availability(require_gpu=False, interactive=True):
+        system_logger.warning("Continuing inference in CPU-only mode (may be significantly slower)")
+    
     # Clean up old prediction files from previous runs
     cleanup_old_predictions(SPLIT_DIR, output_dir)
     
