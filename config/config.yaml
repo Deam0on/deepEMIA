@@ -68,49 +68,48 @@ inference_settings:
     min_iterations: 2
   
   # Confidence threshold mode: 'manual' or 'auto'
-  confidence_mode: 'auto'  # Set to 'manual' to use class_specific_settings thresholds
-  
+  confidence_mode: 'manual'   # switch to manual while tuning
   class_specific_settings:
-    class_0:  # Large particles
+    class_0:
       confidence_threshold: 0.5
       iou_threshold: 0.7
       min_size: 25
-      min_size_factor: 0.0001  # 0.01% of image area
-    class_1:  # Small particles
-      confidence_threshold: 0.3
+      min_size_factor: 0.0001
+    class_1:
+      confidence_threshold: 0.25   # lower to increase recall (watch FP)
       iou_threshold: 0.5
-      min_size: 3  # Absolute minimum
-      min_size_factor: 0.000005  # 0.0005% of image area (very aggressive)
+      min_size: 2                  # allow slightly smaller detections
+      min_size_factor: 0.000003    # reduce relative min size slightly
       use_multiscale: true
-  
+      # optional per-class override if supported by code:
+      # multiscale_scales: [1.0, 1.5, 2.0, 2.5, 3.0]
   # Multi-model ensemble settings
   ensemble_settings:
     enabled: true
-    small_classes_only: true  # Only use ensemble for small particles
+    small_classes_only: false    # try ensemble for all classes
     weights:
-      R50: 0.6  # R50 better for small particles
-      R101: 0.4  # R101 better for context
-  
+      R50: 0.6
+      R101: 0.4
   # Multi-scale settings
   multiscale_settings:
-    baseline_scales: [0.7, 1.0, 1.5, 2.0]  # Standard scales
-    aggressive_scales: [1.0, 1.5, 2.0, 2.5, 3.0]  # For very small particles
+    baseline_scales: [0.7, 1.0, 1.5, 2.0]
+    aggressive_scales: [1.0, 1.5, 2.0, 2.5, 3.0]  # keep max 3.0
     max_scale: 3.0
 
   # Tile-based inference settings
-  use_tile_based_inference: true  # Enable for small particles
+  use_tile_based_inference: true
   
   tile_settings:
-    tile_size: 512  # Base tile size before upscaling
-    overlap_ratio: 0.1  # 10% overlap (reduced from 20%)
-    upscale_factor: 2.0  # 2x upscaling for small particles
-    edge_filter_enabled: true
+    tile_size: 768                # increase tile to capture more context
+    overlap_ratio: 0.2            # increase overlap to reduce edge losses
+    upscale_factor: 3.0           # stronger upscaling for tiny particles
+    edge_filter_enabled: false    # avoid discarding tile-edge detections
     
     # Run tiling for all classes (not just small ones)
     classes_using_tiling: [0, 1]  # All classes use tiling
     
     # GPU batch processing for tiles
-    tile_batch_size: 2               # Reduce from 4 to 2
+    tile_batch_size: 1            # lower batch to fit memory if needed
 
   # Spatial constraints - Dataset-specific configurations
   # Controls class containment and overlap rules
@@ -129,7 +128,7 @@ inference_settings:
       
       # Minimum containment ratio required (0.0 to 1.0)
       # 0.95 means 95% of child must be inside parent
-      containment_threshold: 0.95
+      containment_threshold: 0.90  # relax from 0.95 to avoid over-pruning
       
       # Overlap rules per class
       overlap_rules:
@@ -152,6 +151,12 @@ inference_settings:
     #     0:
     #       allow_overlap: false
     #       max_iou_threshold: 0.15
+
+  iterative_stopping:
+    min_total_masks: 5            # allow refinement even when few masks
+    min_relative_increase: 0.15   # accept smaller improvements
+    max_consecutive_zero: 2
+    min_iterations: 3             # allow more refinement passes
 
 # L4 GPU Performance Optimizations
 # Specifically tuned for g2-standard-4 (4 vCPUs, 16GB RAM, 1x NVIDIA L4)
