@@ -50,10 +50,10 @@ from src.utils.mask_utils import postprocess_masks, rle_encoding
 from src.utils.measurements import calculate_measurements
 from src.utils.scalebar_ocr import detect_scale_bar
 from src.utils.spatial_constraints import apply_spatial_constraints
+from src.utils.config import get_config
 
-# Load config once at the start of your program
-with open(Path.home() / "deepEMIA" / "config" / "config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+# Load base config once at module level
+config = get_config()
 
 measure_contrast_distribution = config.get("measure_contrast_distribution", False)
 
@@ -502,6 +502,10 @@ def run_inference(
     Note: Iteration count is now automatic via config.yaml iterative_stopping settings.
     """
     
+    # Load dataset-specific config
+    dataset_config = get_config(dataset_name=dataset_name)
+    system_logger.info(f"Loaded configuration for dataset: {dataset_name}")
+    
     # GPU availability check at the start of inference
     from src.utils.gpu_check import check_gpu_availability
     
@@ -610,8 +614,8 @@ def run_inference(
     total_images = len(images_name)
     overall_start_time = time.perf_counter()
 
-    # Get the scale bar ROI profiles from already-loaded config
-    scale_bar_rois = config.get("scale_bar_rois", {})
+    # Get the scale bar ROI profiles from dataset-specific config
+    scale_bar_rois = dataset_config.get("scale_bar_rois", {})
     
     # Ensure there's a default profile
     if "default" not in scale_bar_rois:

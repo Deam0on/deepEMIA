@@ -12,11 +12,10 @@ based on spatial constraints defined in the configuration.
 
 import numpy as np
 from typing import Dict, List, Tuple, Set
-from pathlib import Path
-import yaml
 from functools import lru_cache
 
 from src.utils.logger_utils import system_logger
+from src.utils.config import get_config
 
 
 def load_spatial_constraints(dataset_name=None) -> dict:
@@ -29,8 +28,6 @@ def load_spatial_constraints(dataset_name=None) -> dict:
     Returns:
     - dict: Spatial constraints configuration
     """
-    config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
-    
     default_config = {
         'enabled': False,
         'containment_rules': {},
@@ -38,13 +35,9 @@ def load_spatial_constraints(dataset_name=None) -> dict:
         'containment_threshold': 0.95
     }
     
-    if not config_path.exists():
-        system_logger.warning(f"Config file not found: {config_path}, spatial constraints disabled")
-        return default_config
-    
     try:
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
+        # Load config with dataset-specific overrides
+        config = get_config(dataset_name=dataset_name)
         
         inference_settings = config.get('inference_settings', {})
         spatial_config = inference_settings.get('spatial_constraints', {})
@@ -63,10 +56,21 @@ def load_spatial_constraints(dataset_name=None) -> dict:
                 system_logger.info(f"Using dataset-specific spatial constraints for '{dataset_name}'")
                 return result
             else:
-                system_logger.info(f"No dataset-specific spatial constraints for '{dataset_name}', constraints disabled")
-                return default_config
+                system_logger.info(f"No dataset-specific spatial constraints for '{dataset_name}', checking default")
         
-        # If no dataset name provided, return default (disabled)
+        # Check default config
+        default_spatial = spatial_config.get('default', None)
+        if default_spatial:
+            result = {
+                'enabled': default_spatial.get('enabled', False),
+                'containment_rules': default_spatial.get('containment_rules', {}),
+                'overlap_rules': default_spatial.get('overlap_rules', {}),
+                'containment_threshold': default_spatial.get('containment_threshold', 0.95)
+            }
+            return result
+        
+        # No configuration found
+        system_logger.info("No spatial constraints configured, constraints disabled")
         return default_config
         
     except Exception as e:
