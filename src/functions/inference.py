@@ -676,11 +676,7 @@ def run_inference(
                 
                 # Attempt scale bar detection with dataset-specific ROI
                 try:
-                    psum, um_pix = detect_scale_bar(
-                        image=im.copy(),  # Use copy to avoid modifying original
-                        dataset_name=dataset_name,
-                        draw_debug=draw_scalebar  # Pass through
-                    )
+                    psum, um_pix = detect_scale_bar(image.copy(), roi_config=roi_config, dataset_name=dataset_name, draw_debug=draw_scalebar)
                     system_logger.info(
                         f"Scale bar detected: {psum} units = {um_pix:.4f} units/pixel"
                     )
