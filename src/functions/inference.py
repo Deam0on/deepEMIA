@@ -676,7 +676,18 @@ def run_inference(
                 
                 # Attempt scale bar detection with dataset-specific ROI
                 try:
-                    psum, um_pix = detect_scale_bar(image.copy(), roi_config=roi_config, dataset_name=dataset_name, draw_debug=draw_scalebar)
+                    if draw_scalebar:
+                        # Create a copy for debug visualization
+                        debug_image = image.copy()
+                        psum, um_pix = detect_scale_bar(debug_image, roi_config=roi_config, dataset_name=dataset_name, draw_debug=True)
+                        # Save the debug image with scalebar visualization
+                        debug_save_path = os.path.join(output_dir, f"{name}_scalebar_debug.png")
+                        cv2.imwrite(debug_save_path, debug_image)
+                        system_logger.info(f"Saved scalebar debug visualization to {debug_save_path}")
+                        del debug_image
+                    else:
+                        psum, um_pix = detect_scale_bar(image.copy(), roi_config=roi_config, dataset_name=dataset_name, draw_debug=False)
+                    
                     system_logger.info(
                         f"Scale bar detected: {psum} units = {um_pix:.4f} units/pixel"
                     )
@@ -929,7 +940,18 @@ def run_inference(
                     )
                     continue
 
-                psum, um_pix = detect_scale_bar(im, roi_config=None, dataset_name=dataset_name)
+                # Scale bar detection with debug visualization support
+                if draw_scalebar:
+                    debug_image = im.copy()
+                    psum, um_pix = detect_scale_bar(debug_image, roi_config=None, dataset_name=dataset_name, draw_debug=True)
+                    # Save debug image if not already saved in inference phase
+                    debug_save_path = os.path.join(output_dir, f"{test_img}_scalebar_debug.png")
+                    if not os.path.exists(debug_save_path):
+                        cv2.imwrite(debug_save_path, debug_image)
+                        system_logger.info(f"Saved scalebar debug visualization to {debug_save_path}")
+                    del debug_image
+                else:
+                    psum, um_pix = detect_scale_bar(im, roi_config=None, dataset_name=dataset_name, draw_debug=False)
 
                 # Use deduplicated masks and classes for this image
                 image_data = dedup_results.get(test_img, {})
