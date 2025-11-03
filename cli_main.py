@@ -667,6 +667,15 @@ def inference_task():
     if upload:
         args.append("--upload")
 
+    # Add after visualization options
+    draw_scalebar = get_yes_no(
+        "Draw scale bar ROI and detection on images (for debugging)?", 
+        default=False
+    )
+    
+    if draw_scalebar:
+        args.extend(["--draw-scalebar"])
+    
     return args
 
 

@@ -494,6 +494,7 @@ def run_inference(
     threshold=0.65,
     draw_id=False,
     dataset_format="json",
+    draw_scalebar=False,  # Add parameter
 ):
     """
     Runs inference on a dataset and saves the results.
@@ -675,7 +676,11 @@ def run_inference(
                 
                 # Attempt scale bar detection with dataset-specific ROI
                 try:
-                    psum, um_pix = detect_scale_bar(image.copy(), roi_config=None, dataset_name=dataset_name)
+                    psum, um_pix = detect_scale_bar(
+                        image=im.copy(),  # Use copy to avoid modifying original
+                        dataset_name=dataset_name,
+                        draw_debug=draw_scalebar  # Pass through
+                    )
                     system_logger.info(
                         f"Scale bar detected: {psum} units = {um_pix:.4f} units/pixel"
                     )
