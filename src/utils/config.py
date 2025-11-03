@@ -214,10 +214,14 @@ def create_dataset_config(dataset_name: str, template: str = "template") -> Path
         system_logger.warning(f"Dataset config already exists: {target_file}")
         return target_file
     
-    # Load template
-    if template == "template":
-        template_file = Path.home() / "deepEMIA" / "config" / "datasets.example" / "template.yaml"
+    # Load template - check example directory first, then datasets directory
+    example_dir = Path.home() / "deepEMIA" / "config" / "datasets.example"
+    
+    if template in ["template", "polyhipes_tommy", "update_test"]:
+        # Look in examples directory
+        template_file = example_dir / f"{template}.yaml"
     else:
+        # Look for existing dataset config as template
         template_file = config_dir / f"{template}.yaml"
     
     if not template_file.exists():
@@ -228,8 +232,9 @@ def create_dataset_config(dataset_name: str, template: str = "template") -> Path
     with open(template_file, 'r') as f:
         template_content = f.read()
     
-    # Replace template name with actual dataset name
-    template_content = template_content.replace("dataset_name", dataset_name)
+    # Replace template name with actual dataset name in metadata
+    template_content = template_content.replace(f'name: "{template}"', f'name: "{dataset_name}"')
+    template_content = template_content.replace(f"name: '{template}'", f"name: '{dataset_name}'")
     
     with open(target_file, 'w') as f:
         f.write(template_content)
