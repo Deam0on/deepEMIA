@@ -437,7 +437,7 @@ def iou(mask1, mask2):
 
 def cleanup_old_predictions(split_dir, output_dir=None):
     """
-    Remove old prediction visualization files (*_predictions.png, *_scalebar_debug.png) from directories.
+    Remove old prediction visualization files (*_predictions.png) from directories.
     
     This ensures that leftover predictions from previous runs don't cause confusion.
     
@@ -453,8 +453,7 @@ def cleanup_old_predictions(split_dir, output_dir=None):
     # Clean split_dir
     split_path = Path(split_dir)
     if split_path.exists():
-        # Remove both prediction visualizations and scalebar debug images
-        prediction_files = list(split_path.glob("*_predictions.png")) + list(split_path.glob("*_scalebar_debug.png"))
+        prediction_files = list(split_path.glob("*_predictions.png"))
         for pred_file in prediction_files:
             try:
                 pred_file.unlink()
@@ -469,8 +468,7 @@ def cleanup_old_predictions(split_dir, output_dir=None):
     if output_dir:
         output_path = Path(output_dir)
         if output_path.exists():
-            # Remove both prediction visualizations and scalebar debug images
-            prediction_files = list(output_path.glob("*_predictions.png")) + list(output_path.glob("*_scalebar_debug.png"))
+            prediction_files = list(output_path.glob("*_predictions.png"))
             for pred_file in prediction_files:
                 try:
                     pred_file.unlink()
@@ -496,21 +494,10 @@ def run_inference(
     threshold=0.65,
     draw_id=False,
     dataset_format="json",
-    draw_scalebar=False,
-    inference_mode="all_classes",  # "all_classes", "single_class", "separate_classes"
-    target_classes=None,  # List of class indices to process (None = all)
+    draw_scalebar=False,  # Add parameter
 ):
     """
     Runs inference on a dataset and saves the results.
-    
-    Inference Modes:
-    - "all_classes" (default): Process all classes together in one output
-    - "single_class": Process only specified class(es) in target_classes
-    - "separate_classes": Process each class separately with individual output directories
-    
-    Parameters:
-    - inference_mode: Controls which classes to process and how to organize outputs
-    - target_classes: List of class indices to process (None = all classes)
     
     Note: Iteration count is now automatic via config.yaml iterative_stopping settings.
     """
@@ -518,23 +505,6 @@ def run_inference(
     # Load dataset-specific config
     dataset_config = get_config(dataset_name=dataset_name)
     system_logger.info(f"Loaded configuration for dataset: {dataset_name}")
-
-    iterative_stopping = dataset_config.get('inference_settings', {}).get('iterative_stopping', {})
-    MIN_TOTAL_MASKS = iterative_stopping.get('min_total_masks', 10)
-    MIN_RELATIVE_INCREASE = iterative_stopping.get('min_relative_increase', 0.25)
-    MAX_CONSECUTIVE_ZERO = iterative_stopping.get('max_consecutive_zero', 2)
-    MIN_ITERATIONS = iterative_stopping.get('min_iterations', 2)
-
-    system_logger.info(
-        f"Iterative stopping: min_masks={MIN_TOTAL_MASKS}, "
-        f"min_increase={MIN_RELATIVE_INCREASE}, max_zero={MAX_CONSECUTIVE_ZERO}, "
-        f"min_iter={MIN_ITERATIONS}"
-    )
-
-    tile_settings_dataset = dataset_config.get('inference_settings', {}).get('tile_settings', {})
-    TILE_BATCH_SIZE_DATASET = tile_settings_dataset.get('tile_batch_size', TILE_BATCH_SIZE)
-
-    system_logger.info(f"Using tile batch size: {TILE_BATCH_SIZE_DATASET}")
     
     # GPU availability check at the start of inference
     from src.utils.gpu_check import check_gpu_availability
@@ -562,72 +532,6 @@ def run_inference(
     # FIX 1: Define num_classes from metadata
     num_classes = len(metadata.thing_classes)
     system_logger.debug(f"Number of classes: {num_classes} - {metadata.thing_classes}")
-
-    # === INFERENCE MODE HANDLING ===
-    # Determine which classes to process based on inference_mode
-    if target_classes is None:
-        # Default: process all classes
-        classes_to_process = list(range(num_classes))
-    else:
-        # Validate target_classes
-        classes_to_process = []
-        for cls_idx in target_classes:
-            if 0 <= cls_idx < num_classes:
-                classes_to_process.append(cls_idx)
-            else:
-                system_logger.warning(f"Invalid class index {cls_idx} (valid range: 0-{num_classes-1}), skipping")
-        
-        if not classes_to_process:
-            error_msg = f"No valid classes specified in target_classes: {target_classes}"
-            system_logger.error(error_msg)
-            raise ValueError(error_msg)
-    
-    # Log inference mode and classes
-    if inference_mode == "all_classes":
-        system_logger.info(f"Inference mode: ALL_CLASSES - Processing {len(classes_to_process)} classes together")
-        system_logger.info(f"Classes: {[metadata.thing_classes[i] for i in classes_to_process]}")
-    elif inference_mode == "single_class":
-        system_logger.info(f"Inference mode: SINGLE_CLASS - Processing only specified classes")
-        system_logger.info(f"Target classes: {[metadata.thing_classes[i] for i in classes_to_process]}")
-    elif inference_mode == "separate_classes":
-        system_logger.info(f"Inference mode: SEPARATE_CLASSES - Processing each class in separate outputs")
-        system_logger.info(f"Classes: {[metadata.thing_classes[i] for i in classes_to_process]}")
-    else:
-        error_msg = f"Invalid inference_mode: {inference_mode}. Must be 'all_classes', 'single_class', or 'separate_classes'"
-        system_logger.error(error_msg)
-        raise ValueError(error_msg)
-    
-    # Handle separate_classes mode: recursively call run_inference for each class
-    if inference_mode == "separate_classes":
-        system_logger.info(f"Running separate inference for {len(classes_to_process)} classes...")
-        
-        for cls_idx in classes_to_process:
-            class_name = metadata.thing_classes[cls_idx]
-            class_output_dir = os.path.join(output_dir, f"class_{cls_idx}_{class_name}")
-            os.makedirs(class_output_dir, exist_ok=True)
-            
-            system_logger.info(f"=" * 80)
-            system_logger.info(f"Processing class {cls_idx} ({class_name}) separately...")
-            system_logger.info(f"Output directory: {class_output_dir}")
-            system_logger.info(f"=" * 80)
-            
-            # Recursive call for single class
-            run_inference(
-                dataset_name=dataset_name,
-                output_dir=class_output_dir,
-                visualize=visualize,
-                threshold=threshold,
-                draw_id=draw_id,
-                dataset_format=dataset_format,
-                draw_scalebar=draw_scalebar,
-                inference_mode="single_class",  # Force single_class mode
-                target_classes=[cls_idx]  # Process only this class
-            )
-        
-        system_logger.info(f"=" * 80)
-        system_logger.info(f"Separate class inference complete! Results saved to class-specific subdirectories in: {output_dir}")
-        system_logger.info(f"=" * 80)
-        return  # Exit after processing all classes separately
 
     # Memory optimization: Clear unnecessary data
     del d
@@ -805,8 +709,7 @@ def run_inference(
                 all_scores_for_image = []
                 all_classes_for_image = []
                 
-                # Process only the selected classes (based on inference_mode)
-                for target_class in classes_to_process:
+                for target_class in range(num_classes):
                     is_small_class = target_class in small_classes
                     class_name = metadata.thing_classes[target_class]
                     
