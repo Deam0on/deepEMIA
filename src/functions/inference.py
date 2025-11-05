@@ -550,18 +550,31 @@ def run_inference(
     system_logger.info("L4 GPU optimizations enabled")
     system_logger.info(f"Batch sizes: inference={INFERENCE_BATCH_SIZE}, measurement={MEASUREMENT_BATCH_SIZE}, cleanup every {CLEANUP_FREQUENCY} images")
     
-    dataset_info = read_dataset_info(CATEGORY_JSON)
-    register_datasets(dataset_info, dataset_name, dataset_format=dataset_format)
-
-    # Force metadata population
-    system_logger.debug("Forcing metadata population from DatasetCatalog...")
-    d = DatasetCatalog.get(f"{dataset_name}_train")
-    metadata = MetadataCatalog.get(f"{dataset_name}_train")
-    system_logger.debug("Metadata populated successfully.")
-
-    # FIX 1: Define num_classes from metadata
-    num_classes = len(metadata.thing_classes)
-    system_logger.debug(f"Number of classes: {num_classes} - {metadata.thing_classes}")
+    system_logger.info(f"Dataset Info: {dataset_info}")
+    system_logger.info(f"Registering custom JSON dataset: {dataset_name}")
+    
+    # For inference, we don't need to register and split the dataset
+    # We just need the metadata (class names, category mapping)
+    _, _, class_names = dataset_info[dataset_name]
+    category_mapping = {name: idx for idx, name in enumerate(class_names)}
+    
+    system_logger.info(f"Category Mapping: {category_mapping}")
+    
+    # Create metadata for this dataset if it doesn't exist
+    metadata_name = f"{dataset_name}_inference"
+    
+    if metadata_name not in MetadataCatalog.list():
+        MetadataCatalog.get(metadata_name).set(
+            thing_classes=class_names,
+            thing_dataset_id_to_contiguous_id=category_mapping
+        )
+    
+    metadata = MetadataCatalog.get(metadata_name)
+    num_classes = len(class_names)
+    
+    system_logger.info(f"Metadata registered for {metadata_name}")
+    system_logger.info(f"Number of classes: {num_classes}")
+    system_logger.info(f"Class names: {class_names}")
 
     # === INFERENCE MODE HANDLING ===
     # Determine which classes to process based on inference_mode
