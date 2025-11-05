@@ -1238,6 +1238,24 @@ def run_inference(
     except Exception as e:
         system_logger.warning(f"Error during mask file cleanup: {e}")
     
+    # Clean up scalebar debug images if they exist
+    if draw_scalebar:
+        try:
+            debug_images = [f for f in os.listdir(output_dir) if f.endswith('_scalebar_debug.png')]
+            if debug_images:
+                system_logger.info(f"Cleaning up {len(debug_images)} scalebar debug images...")
+                for debug_img in debug_images:
+                    debug_path = os.path.join(output_dir, debug_img)
+                    try:
+                        os.remove(debug_path)
+                        system_logger.debug(f"Removed {debug_img}")
+                    except Exception as e:
+                        system_logger.warning(f"Failed to remove {debug_img}: {e}")
+            else:
+                system_logger.debug("No scalebar debug images found to clean up")
+        except Exception as e:
+            system_logger.warning(f"Error during scalebar debug cleanup: {e}")
+    
     system_logger.info("Inference completed successfully")
 
 
@@ -1310,16 +1328,16 @@ def run_class_specific_inference(
     # Class-specific postprocessing with parallel processing
     is_small_class = target_class in small_classes
     
-    if is_small_class:
-        min_size = 5  # Much smaller minimum for small particles
-        processed_masks = postprocess_masks(
-            filtered_masks, filtered_scores, image, min_crys_size=min_size
-        )
-    else:
-        min_size = 25  # Standard size for large particles
-        processed_masks = postprocess_masks(
-            filtered_masks, filtered_scores, image, min_crys_size=min_size
-        )
+    # Get min_size from config (class-specific or fallback to defaults)
+    class_config = config.get("inference_settings", {}).get(
+        "class_specific_settings", {}
+    ).get(f"class_{target_class}", {})
+    
+    min_size = class_config.get("min_size", 5 if is_small_class else 25)
+    
+    processed_masks = postprocess_masks(
+        filtered_masks, filtered_scores, image, min_crys_size=min_size
+    )
 
     # L4 OPTIMIZATION: Parallel mask processing using config
     if len(processed_masks) > 2 and PARALLEL_MASK_PROCESSING:
