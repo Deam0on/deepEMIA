@@ -36,16 +36,9 @@ logs/
 *.log
 
 # Dataset files
+!config/datasets
 dataset_info.json
 split_dir/
-
-# Dataset-specific configurations (created on VMs only)
-# config/datasets/*.yaml
-# config/datasets/*.yml
-
-# Keep example templates and .gitkeep
-!config/datasets/.gitkeep
-!config/datasets.example/
 
 # Output and temporary files
 output/
