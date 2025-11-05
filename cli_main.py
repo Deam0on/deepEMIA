@@ -854,20 +854,10 @@ def inference_task():
     print(
         "\nNOTE: System now auto-detects available models and always uses class-specific inference"
     )
-    print("      Dataset-specific settings (scale bar ROI, spatial constraints) are applied automatically")
+    print("      Dataset-specific settings (confidence, IoU, scale bar ROI, spatial constraints)")
+    print("      are applied automatically from config/datasets/<dataset_name>.yaml")
 
     dataset_name = get_dataset_selection_with_retry("Select dataset for inference")
-
-    # Detection threshold
-    print("\nDetection Threshold Configuration:")
-    print("   Higher threshold = fewer, more confident detections")
-    print("   Lower threshold = more detections, including uncertain ones")
-    threshold = get_float_input(
-        "Detection confidence threshold (0.0-1.0)",
-        default=0.65,
-        min_val=0.0,
-        max_val=1.0,
-    )
 
     # Dataset format
     dataset_format = get_user_choice(
@@ -904,8 +894,6 @@ def inference_task():
         "inference",
         "--dataset_name",
         dataset_name,
-        "--threshold",
-        str(threshold),
         "--dataset_format",
         dataset_format_value,
         "--verbosity",
