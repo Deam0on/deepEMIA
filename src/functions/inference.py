@@ -506,6 +506,63 @@ def run_inference(
     dataset_config = get_config(dataset_name=dataset_name)
     system_logger.info(f"Loaded configuration for dataset: {dataset_name}")
     
+    # ==========================================
+    # EXTRACT INFERENCE SETTINGS FROM DATASET CONFIG
+    # ==========================================
+    
+    # Get inference_settings (supports both 'inference_settings' and 'inference_overrides')
+    inf_settings = dataset_config.get("inference_overrides", {})
+    if not inf_settings:
+        inf_settings = dataset_config.get("inference_settings", {})
+    
+    # Confidence mode
+    confidence_mode = inf_settings.get("confidence_mode", "auto")
+    use_class_specific = inf_settings.get("use_class_specific_inference", True)
+    
+    # Class-specific settings
+    class_specific_settings = inf_settings.get("class_specific_settings", {})
+    
+    # Iterative stopping settings (override module-level defaults)
+    iter_stop = inf_settings.get("iterative_stopping", {})
+    min_total_masks = iter_stop.get("min_total_masks", MIN_TOTAL_MASKS)
+    min_relative_increase = iter_stop.get("min_relative_increase", MIN_RELATIVE_INCREASE)
+    max_consecutive_zero = iter_stop.get("max_consecutive_zero", MAX_CONSECUTIVE_ZERO)
+    min_iterations = iter_stop.get("min_iterations", MIN_ITERATIONS)
+    
+    # Tile settings (override module-level defaults)
+    tile_cfg = inf_settings.get("tile_settings", {})
+    use_tile_based = inf_settings.get("use_tile_based_inference", True)
+    tile_size = tile_cfg.get("tile_size", 512)
+    overlap_ratio = tile_cfg.get("overlap_ratio", 0.1)
+    upscale_factor = tile_cfg.get("upscale_factor", 2.0)
+    edge_filter_enabled = tile_cfg.get("edge_filter_enabled", True)
+    classes_using_tiling = tile_cfg.get("classes_using_tiling", [0, 1])
+    tile_batch_size = tile_cfg.get("tile_batch_size", TILE_BATCH_SIZE)
+    
+    # Ensemble settings (override module-level defaults)
+    ensemble_cfg = inf_settings.get("ensemble_settings", {})
+    ensemble_enabled = ensemble_cfg.get("enabled", ENSEMBLE_ENABLED)
+    ensemble_small_only = ensemble_cfg.get("small_classes_only", ENSEMBLE_SMALL_CLASSES_ONLY)
+    ensemble_weights = ensemble_cfg.get("weights", ENSEMBLE_WEIGHTS)
+    
+    # Log the loaded settings
+    system_logger.info("=" * 60)
+    system_logger.info(f"INFERENCE SETTINGS FOR '{dataset_name}':")
+    system_logger.info(f"  Confidence mode: {confidence_mode}")
+    system_logger.info(f"  Use class-specific inference: {use_class_specific}")
+    system_logger.info(f"  Tile-based: {use_tile_based}, size={tile_size}px, overlap={overlap_ratio}, upscale={upscale_factor}x")
+    system_logger.info(f"  Edge filter: {edge_filter_enabled}")
+    system_logger.info(f"  Ensemble: {ensemble_enabled}, small_only={ensemble_small_only}, weights={ensemble_weights}")
+    system_logger.info(f"  Iterative stopping: min_masks={min_total_masks}, min_increase={min_relative_increase}, max_zero={max_consecutive_zero}, min_iter={min_iterations}")
+    
+    # Log class-specific settings
+    for class_key, cls_settings in class_specific_settings.items():
+        conf = cls_settings.get('confidence_threshold', 'auto')
+        iou = cls_settings.get('iou_threshold', 0.7)
+        min_sz = cls_settings.get('min_size', 25)
+        system_logger.info(f"  {class_key}: confidence={conf}, iou={iou}, min_size={min_sz}")
+    system_logger.info("=" * 60)
+    
     # GPU availability check at the start of inference
     from src.utils.gpu_check import check_gpu_availability
     
@@ -715,20 +772,38 @@ def run_inference(
                     
                     system_logger.debug(f"Processing class {target_class} ({class_name})...")
                     
-                    # Get adaptive confidence threshold based on image quality
-                    confidence_thresh = get_confidence_threshold(image, target_class, small_classes)
+                    # Get class-specific settings from loaded config
+                    class_key = f"class_{target_class}"
+                    class_cfg = class_specific_settings.get(class_key, {})
                     
-                    # Get class-specific IOU threshold
-                    class_config = config.get("inference_settings", {}).get(
-                        "class_specific_settings", {}
-                    ).get(f"class_{target_class}", {})
+                    # Determine confidence threshold based on mode
+                    if confidence_mode == 'manual':
+                        # Use configured threshold
+                        confidence_thresh = class_cfg.get(
+                            "confidence_threshold", 
+                            0.3 if is_small_class else 0.5
+                        )
+                        system_logger.debug(f"Using manual confidence threshold: {confidence_thresh}")
+                    else:
+                        # Use adaptive threshold
+                        confidence_thresh = get_confidence_threshold(image, target_class, small_classes)
+                        system_logger.debug(f"Using adaptive confidence threshold: {confidence_thresh}")
                     
-                    iou_thresh = class_config.get(
+                    # Get class-specific IOU threshold from loaded config
+                    iou_thresh = class_cfg.get(
                         "iou_threshold", 0.5 if is_small_class else 0.7
                     )
                     
-                    # Use ensemble for small classes if multiple predictors available
-                    active_predictors = predictors if (is_small_class and len(predictors) > 1) else [predictors[0]]
+                    system_logger.info(f"Class {target_class} ({class_name}): confidence={confidence_thresh:.3f}, iou={iou_thresh:.3f}")
+                    
+                    # Use ensemble for small classes if multiple predictors available and enabled
+                    use_ensemble_for_class = ensemble_enabled and (
+                        not ensemble_small_only or is_small_class
+                    )
+                    active_predictors = (
+                        predictors if (use_ensemble_for_class and len(predictors) > 1) 
+                        else [predictors[0]]
+                    )
                     
                     # Tile-based inference (for all classes)
                     system_logger.info(f"Running tile-based inference for class {target_class}")
@@ -738,10 +813,14 @@ def run_inference(
                         target_class,
                         small_classes,
                         confidence_thresh,
-                        tile_size=tile_settings.get("tile_size", 512),
-                        overlap_ratio=tile_settings.get("overlap_ratio", 0.1),
-                        upscale_factor=tile_settings.get("upscale_factor", 2.0),
-                        scale_bar_info={"um_pix": um_pix, "psum": psum}
+                        tile_size=tile_size,
+                        overlap_ratio=overlap_ratio,
+                        upscale_factor=upscale_factor,
+                        scale_bar_info={"um_pix": um_pix, "psum": psum},
+                        iou_threshold=iou_thresh,
+                        edge_filter_enabled=edge_filter_enabled,
+                        class_specific_settings=class_specific_settings,
+                        confidence_mode=confidence_mode
                     )
                 
                     system_logger.debug(
@@ -1260,7 +1339,9 @@ def run_inference(
 
 
 def run_class_specific_inference(
-    predictor, image, target_class, small_classes, confidence_threshold=0.3, iou_threshold=0.7
+    predictor, image, target_class, small_classes, 
+    confidence_threshold=0.3, iou_threshold=0.7,
+    class_specific_settings=None, confidence_mode='auto'
 ):
     """
     Run inference targeting a specific class with L4 GPU optimizations.
@@ -1273,6 +1354,8 @@ def run_class_specific_inference(
     - small_classes: Set of classes considered "small"
     - confidence_threshold: Confidence threshold for this class
     - iou_threshold: IoU threshold for this class
+    - class_specific_settings: Dict of class-specific settings from config
+    - confidence_mode: 'auto' or 'manual' mode for confidence thresholding
 
     Returns:
     - tuple: (masks, scores, classes) for the target class only
@@ -1281,7 +1364,9 @@ def run_class_specific_inference(
     if isinstance(predictor, list):
         return run_ensemble_inference(
             predictor, image, target_class, small_classes, 
-            confidence_threshold, iou_threshold
+            confidence_threshold, iou_threshold,
+            class_specific_settings=class_specific_settings,
+            confidence_mode=confidence_mode
         )
     
     # Single predictor mode
@@ -1328,12 +1413,15 @@ def run_class_specific_inference(
     # Class-specific postprocessing with parallel processing
     is_small_class = target_class in small_classes
     
-    # Get min_size from config (class-specific or fallback to defaults)
-    class_config = config.get("inference_settings", {}).get(
-        "class_specific_settings", {}
-    ).get(f"class_{target_class}", {})
+    # Get min_size from passed config settings (not module-level config)
+    if class_specific_settings is None:
+        class_specific_settings = {}
     
-    min_size = class_config.get("min_size", 5 if is_small_class else 25)
+    class_key = f"class_{target_class}"
+    class_cfg = class_specific_settings.get(class_key, {})
+    min_size = class_cfg.get("min_size", 5 if is_small_class else 25)
+    
+    system_logger.debug(f"Class {target_class}: using min_size={min_size} (from config)")
     
     processed_masks = postprocess_masks(
         filtered_masks, filtered_scores, image, min_crys_size=min_size
@@ -1368,6 +1456,8 @@ def run_ensemble_inference(
     small_classes,
     conf_threshold,
     iou_threshold,
+    class_specific_settings=None,
+    confidence_mode='auto'
 ):
     """
     Run ensemble inference using multiple models (e.g., R50 + R101).
@@ -1380,6 +1470,8 @@ def run_ensemble_inference(
     - small_classes: Set of small class IDs
     - conf_threshold: Confidence threshold
     - iou_threshold: IoU threshold for deduplication
+    - class_specific_settings: Dict of class-specific settings from config
+    - confidence_mode: 'auto' or 'manual' mode
     
     Returns:
     - tuple: (combined_masks, combined_scores, combined_classes)
@@ -1388,7 +1480,12 @@ def run_ensemble_inference(
     all_scores = []
     all_classes = []
     
+    # Use ensemble_weights from parent scope (loaded from dataset config)
+    # This will be set in run_inference() function
     model_names = ["R50", "R101"][:len(predictors)]
+    
+    # Get weights from the config settings passed through
+    # Default to module-level ENSEMBLE_WEIGHTS if not available
     weights = list(ENSEMBLE_WEIGHTS.values())[:len(predictors)]
     
     for model_name, predictor, weight in zip(model_names, predictors, weights):
@@ -2182,7 +2279,11 @@ def tile_based_inference_pipeline(
     tile_size=512,
     overlap_ratio=0.1,
     upscale_factor=2.0,
-    scale_bar_info=None
+    scale_bar_info=None,
+    iou_threshold=0.7,
+    edge_filter_enabled=True,
+    class_specific_settings=None,
+    confidence_mode='auto'
 ):
     """
     Tile-based inference for detecting particles at multiple scales.
@@ -2197,6 +2298,12 @@ def tile_based_inference_pipeline(
     - Full-image pass: Maintains spatial context for large particles
     - Tile-based pass: Makes small particles appear larger (more detectable)
     - GPU batching: Process multiple tiles simultaneously for speed
+    
+    Args:
+        iou_threshold: IOU threshold for NMS (from config)
+        edge_filter_enabled: Whether to filter detections at tile edges (from config)
+        class_specific_settings: Dict of class-specific settings (from config)
+        confidence_mode: 'auto' or 'manual' (from config)
     """
     
     system_logger.info(f"Tile-based inference for class {target_class}: tile_size={tile_size}px, overlap={overlap_ratio*100:.0f}%, upscale={upscale_factor}x")
@@ -2207,7 +2314,9 @@ def tile_based_inference_pipeline(
     # Full-image inference
     full_image_masks, full_image_scores, full_image_classes = run_class_specific_inference(
         predictor, image, target_class, small_classes, 
-        confidence_threshold, iou_threshold=0.7
+        confidence_threshold, iou_threshold=iou_threshold,
+        class_specific_settings=class_specific_settings,
+        confidence_mode=confidence_mode
     )
     
     system_logger.info(f"Full image: {len(full_image_masks)} instances, generating {tile_size}px tiles with {overlap_ratio*100:.0f}% overlap")
@@ -2252,7 +2361,9 @@ def tile_based_inference_pipeline(
                 # Run inference on upscaled tile
                 tile_masks, tile_scores, tile_classes = run_class_specific_inference(
                     predictor, upscaled_tile, target_class, small_classes,
-                    confidence_threshold, iou_threshold=0.5
+                    confidence_threshold, iou_threshold=iou_threshold,
+                    class_specific_settings=class_specific_settings,
+                    confidence_mode=confidence_mode
                 )
                 
                 system_logger.debug(f"Tile {global_tile_idx + 1}: Found {len(tile_masks)} instances")
@@ -2267,8 +2378,8 @@ def tile_based_inference_pipeline(
                             interpolation=cv2.INTER_NEAREST
                         ).astype(bool)
                         
-                        # Filter edge masks (likely incomplete)
-                        if is_edge_mask(downscaled_mask, tile_size, overlap_ratio):
+                        # Filter edge masks (likely incomplete) - only if enabled
+                        if edge_filter_enabled and is_edge_mask(downscaled_mask, tile_size, overlap_ratio):
                             system_logger.debug(f"Tile {global_tile_idx + 1}: Filtered edge mask {i+1}")
                             continue
                         
