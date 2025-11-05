@@ -644,6 +644,7 @@ def run_inference(
         return  # Exit after processing all classes separately
 
     # Memory optimization: Clear unnecessary data
+    del d
     gc.collect()
 
     # AUTO-DETECT AVAILABLE MODELS AND OPTIMIZE FOR L4
