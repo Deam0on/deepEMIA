@@ -7,169 +7,108 @@ all required fields are present and have valid values.
 
 from typing import Dict, Any, List
 from pathlib import Path
-import os
 
 from src.utils.logger_utils import system_logger
 
 
 class ConfigValidationError(Exception):
-    """Raised when configuration validation fails."""
-
+    """Custom exception for configuration validation errors."""
     pass
 
 
 # Configuration schema definition
-CONFIG_SCHEMA = {
-    "bucket": {
-        "type": str,
-        "required": True,
-        "description": "Google Cloud Storage bucket name",
-    },
-    "paths": {
-        "type": dict,
-        "required": True,
-        "fields": {
-            "main_script": {"type": str, "required": True},
-            "split_dir": {"type": str, "required": True},
-            "category_json": {"type": str, "required": True},
-            "eta_file": {"type": str, "required": True},
-            "logs_dir": {"type": str, "required": True},
-            "output_dir": {"type": str, "required": True},
-            "local_dataset_root": {"type": str, "required": True},
-        },
-    },
-    "scale_bar_rois": {
-        "type": dict,
-        "required": True,
-        "fields": {
-            "default": {
-                "type": dict,
-                "required": True,
-                "fields": {
-                    "x_start_factor": {"type": (int, float), "required": True},
-                    "y_start_factor": {"type": (int, float), "required": True},
-                    "width_factor": {"type": (int, float), "required": True},
-                    "height_factor": {"type": (int, float), "required": True},
-                },
-            }
-        },
-    },
-    "scalebar_thresholds": {
-        "type": dict,
-        "required": True,
-        "fields": {
-            "intensity": {"type": int, "required": True},
-            "proximity": {"type": int, "required": True},
-        },
-    },
-    "measure_contrast_distribution": {
-        "type": bool,
-        "required": False,
-        "default": False,
-    },
-    "rcnn_hyperparameters": {
-        "type": dict,
-        "required": False,
-        "fields": {
-            "default": {"type": dict, "required": False},
-            "best": {"type": dict, "required": False},
-        },
-    },
-    "l4_performance_optimizations": {
-        "type": dict,
-        "required": False,
-        "description": "L4 GPU performance optimization settings",
-    },
-    "inference_settings": {
-        "type": dict,
-        "required": False,
-        "description": "Inference-specific settings including class-specific and iterative stopping",
-    },
+REQUIRED_SECTIONS = {
+    'bucket': str,
+    'paths': dict,
+    'scale_bar_rois': dict,
+    'scalebar_thresholds': dict,
+    'rcnn_hyperparameters': dict,
+    'inference_settings': dict,
+    'l4_performance_optimizations': dict
 }
 
+REQUIRED_PATHS = [
+    'main_script',
+    'split_dir',
+    'category_json',
+    'eta_file',
+    'logs_dir',
+    'output_dir',
+    'local_dataset_root'
+]
 
-def validate_field(value: Any, field_schema: Dict[str, Any], field_name: str) -> Any:
-    """Validate a single field against its schema."""
-    field_type = field_schema.get("type")
-    required = field_schema.get("required", False)
-    default = field_schema.get("default")
+# Optional paths that won't trigger warnings
+OPTIONAL_PATHS = ['dataset_configs_dir']
 
-    # Handle missing required fields
-    if value is None:
-        if required:
-            raise ConfigValidationError(f"Required field '{field_name}' is missing")
-        return default
+REQUIRED_SCALEBAR_KEYS = ['intensity', 'proximity']
 
-    # Type validation
-    if field_type and not isinstance(value, field_type):
-        raise ConfigValidationError(
-            f"Field '{field_name}' must be of type {field_type.__name__ if hasattr(field_type, '__name__') else field_type}, got {type(value).__name__}"
-        )
+# Optional scalebar threshold keys that won't trigger warnings
+OPTIONAL_SCALEBAR_KEYS = ['merge_gap', 'min_line_length', 'edge_margin_factor']
 
-    # Nested object validation
-    if field_type == dict and "fields" in field_schema:
-        return validate_config_dict(value, field_schema["fields"], field_name)
+REQUIRED_INFERENCE_KEYS = [
+    'use_class_specific_inference',
+    'confidence_mode',
+    'class_specific_settings',
+    'ensemble_settings'
+]
 
-    # Path validation for path fields
-    if (
-        field_name.endswith("_dir")
-        or field_name.endswith("_file")
-        or "path" in field_name.lower()
-    ):
-        expanded_path = Path(value).expanduser()
-        # Create parent directories if they don't exist
-        if field_name.endswith("_dir") or field_name.endswith("_file"):
-            try:
-                expanded_path.parent.mkdir(parents=True, exist_ok=True)
-            except Exception as e:
-                print(f"Warning: Could not create directory for {field_name}: {e}")
-
-    return value
-
-
-def validate_config_dict(
-    config_dict: Dict[str, Any], schema: Dict[str, Any], prefix: str = ""
-) -> Dict[str, Any]:
-    """Validate a configuration dictionary against a schema."""
-    validated_config = {}
-
-    for field_name, field_schema in schema.items():
-        full_field_name = f"{prefix}.{field_name}" if prefix else field_name
-        field_value = config_dict.get(field_name)
-
-        validated_config[field_name] = validate_field(
-            field_value, field_schema, full_field_name
-        )
-
-    # Check for unexpected fields
-    unexpected_fields = set(config_dict.keys()) - set(schema.keys())
-    if unexpected_fields:
-        system_logger.warning(
-            f"Unexpected configuration fields found: {unexpected_fields}"
-        )
-        # Include unexpected fields in validated config
-        for field in unexpected_fields:
-            validated_config[field] = config_dict[field]
-
-    return validated_config
+REQUIRED_L4_KEYS = [
+    'inference_batch_size',
+    'measurement_batch_size',
+    'clear_cache_frequency',
+    'max_memory_usage'
+]
 
 
 def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Validate the complete configuration against the schema.
+    Validates the configuration dictionary.
 
     Args:
-        config: The configuration dictionary to validate
+        config (dict): Raw configuration dictionary
 
     Returns:
-        dict: The validated and normalized configuration
+        dict: Validated configuration dictionary
 
     Raises:
-        ConfigValidationError: If validation fails
+        ConfigValidationError: If configuration is invalid
     """
-    try:
-        return validate_config_dict(config, CONFIG_SCHEMA)
-    except ConfigValidationError:
-        raise
-    except Exception as e:
-        raise ConfigValidationError(f"Configuration validation failed: {str(e)}")
+    # Check required top-level sections
+    for section, expected_type in REQUIRED_SECTIONS.items():
+        if section not in config:
+            raise ConfigValidationError(f"Missing required configuration section: {section}")
+        if not isinstance(config[section], expected_type):
+            raise ConfigValidationError(
+                f"Configuration section '{section}' must be of type {expected_type.__name__}"
+            )
+
+    # Validate paths section
+    for path_key in REQUIRED_PATHS:
+        if path_key not in config['paths']:
+            raise ConfigValidationError(f"Missing required path configuration: {path_key}")
+
+    # Validate scale_bar_rois has default
+    if 'default' not in config['scale_bar_rois']:
+        raise ConfigValidationError("scale_bar_rois must contain a 'default' configuration")
+
+    # Validate scalebar_thresholds - only check required keys
+    for key in REQUIRED_SCALEBAR_KEYS:
+        if key not in config['scalebar_thresholds']:
+            raise ConfigValidationError(f"Missing required scalebar_thresholds key: {key}")
+
+    # Validate rcnn_hyperparameters structure
+    if 'default' not in config['rcnn_hyperparameters']:
+        raise ConfigValidationError("rcnn_hyperparameters must contain a 'default' configuration")
+
+    # Validate inference_settings
+    for key in REQUIRED_INFERENCE_KEYS:
+        if key not in config['inference_settings']:
+            raise ConfigValidationError(f"Missing required inference_settings key: {key}")
+
+    # Validate L4 optimizations
+    for key in REQUIRED_L4_KEYS:
+        if key not in config['l4_performance_optimizations']:
+            raise ConfigValidationError(f"Missing required l4_performance_optimizations key: {key}")
+
+    system_logger.debug("Configuration validation passed")
+    return config

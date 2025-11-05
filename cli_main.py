@@ -152,27 +152,26 @@ def get_yes_no(prompt, default=None):
 def get_string_input(prompt, default=None, required=True):
     """
     Get string input from user.
-
+    
     Args:
         prompt (str): The prompt to display to the user.
         default (str, optional): Default value if user presses enter.
-        required (bool): Whether the input is required.
-
+        required (bool): Whether input is required (if False, empty input is allowed).
+    
     Returns:
-        str: The user's input.
+        str: The user input or default value.
     """
     while True:
         if default:
-            response = input(f"{prompt} [default: {default}]: ").strip()
-            if not response:
+            user_input = input(f"{prompt} [default: {default}]: ").strip()
+            if not user_input:
                 return default
+            return user_input
         else:
-            response = input(f"{prompt}: ").strip()
-
-        if response or not required:
-            return response
-        else:
-            print("This field is required.")
+            user_input = input(f"{prompt}: ").strip()
+            if user_input or not required:  # Return if we have input OR if not required
+                return user_input if user_input else None
+            print("This field is required. Please enter a value.")
 
 
 def get_float_input(prompt, default=None, min_val=None, max_val=None):
@@ -842,20 +841,15 @@ def evaluate_task():
 
 
 def inference_task():
-    """
-    Handle inference task.
-
-    Returns:
-        list or None: Command arguments for inference task, or None if cancelled.
-    """
-    print("\nINFERENCE TASK")
-    print("This will run inference on new images using your trained model.")
-    print("The system will detect, measure, and analyze particles in your images.")
+    """Handle the inference task with user prompts."""
     print(
-        "\nNOTE: System now auto-detects available models and always uses class-specific inference"
+        "\nInference will:\n"
+        "   • Detect and segment particles in images\n"
+        "   • Measure geometric properties\n"
+        "   • Generate CSV results and visualizations\n"
+        "   • Support single or multi-pass modes\n"
     )
-    print("      Dataset-specific settings (scale bar ROI, spatial constraints) are applied automatically")
-
+    
     dataset_name = get_dataset_selection_with_retry("Select dataset for inference")
 
     # Inference mode selection
@@ -863,46 +857,72 @@ def inference_task():
     print("   all_classes: Process all classes together (default)")
     print("   single_class: Process only specific class(es)")
     print("   separate_classes: Process each class in separate output directories")
+    print()
     
     inference_mode = get_user_choice(
-        "\nSelect inference mode:",
+        "Select inference mode",
         ["all_classes (process all together)", "single_class (specific classes only)", "separate_classes (individual outputs)"],
-        default="all_classes (process all together)"
+        default="1"
     )
-    inference_mode_value = inference_mode.split()[0]
     
-    # If single_class mode, get target classes
-    target_classes_str = None
-    if inference_mode_value == "single_class":
-        # Load metadata to show available classes
+    # Map choice to actual mode string
+    mode_map = {
+        "all_classes (process all together)": "all_classes",
+        "single_class (specific classes only)": "single_class", 
+        "separate_classes (individual outputs)": "separate_classes"
+    }
+    inference_mode = mode_map[inference_mode]
+    
+    target_classes = None
+    
+    # If single_class mode, get class selection
+    if inference_mode == "single_class":
         try:
-            # Import necessary modules
-            from detectron2.data import MetadataCatalog, DatasetCatalog
-            from src.data.datasets import read_dataset_info, register_datasets
-            from src.utils.constants import CATEGORY_JSON
+            # Try to load dataset info to show class names
+            from src.utils.config import get_config
+            config = get_config()
+            category_json_path = Path.home() / "deepEMIA" / "dataset_info.json"
             
-            # Try to register and get metadata
-            dataset_info = read_dataset_info(CATEGORY_JSON)
-            register_datasets(dataset_info, dataset_name, dataset_format="json")
-            metadata = MetadataCatalog.get(f"{dataset_name}_train")
+            if category_json_path.exists():
+                import json
+                with open(category_json_path, 'r') as f:
+                    dataset_info = json.load(f)
+                
+                if dataset_name in dataset_info:
+                    class_names = dataset_info[dataset_name][2]  # List of class names
+                    print("\nAvailable classes:")
+                    for i, name in enumerate(class_names):
+                        print(f"  {i}. {name}")
+                    
+                    class_input = get_string_input(
+                        "\nEnter class indices (comma-separated, e.g., '0,1')",
+                        required=True
+                    )
+                else:
+                    print(f"\nWarning: Dataset '{dataset_name}' not found in dataset_info.json")
+                    class_input = get_string_input(
+                        "Enter class indices manually (comma-separated, e.g., '0,1')",
+                        required=True
+                    )
+            else:
+                print("\nWarning: dataset_info.json not found")
+                class_input = get_string_input(
+                    "Enter class indices manually (comma-separated, e.g., '0,1')",
+                    required=True
+                )
             
-            print("\nAvailable classes:")
-            for i, class_name in enumerate(metadata.thing_classes):
-                print(f"   {i}: {class_name}")
-            
-            target_classes_str = get_string_input(
-                "\nEnter class indices to process (comma-separated, e.g., '0,2' or '1')",
-                allow_empty=False
-            ).strip()
+            # Parse class indices
+            target_classes = [int(x.strip()) for x in class_input.split(',')]
+            print(f"Selected classes: {target_classes}")
             
         except Exception as e:
             print(f"\nWarning: Could not load class names: {e}")
-            print("Please enter class indices manually (e.g., '0,1' for classes 0 and 1)")
-            target_classes_str = get_string_input(
-                "\nEnter class indices (comma-separated)",
-                allow_empty=False
-            ).strip()
-
+            class_input = get_string_input(
+                "Enter class indices manually (comma-separated, e.g., '0,1')",
+                required=True
+            )
+            target_classes = [int(x.strip()) for x in class_input.split(',')]
+    
     # Detection threshold
     print("\nDetection Threshold Configuration:")
     print("   Higher threshold = fewer, more confident detections")
@@ -963,11 +983,11 @@ def inference_task():
         args.append("--id")
 
     # Add inference mode arguments
-    if inference_mode_value != "all_classes":
-        args.extend(["--inference_mode", inference_mode_value])
+    if inference_mode != "all_classes":
+        args.extend(["--inference_mode", inference_mode])
     
-    if target_classes_str:
-        args.extend(["--target_classes", target_classes_str])
+    if target_classes:
+        args.extend(["--target_classes", ",".join(map(str, target_classes))])
 
     # Download/Upload
     print("\nCloud Storage Options:")
