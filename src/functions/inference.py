@@ -550,7 +550,6 @@ def run_inference(
     system_logger.info("L4 GPU optimizations enabled")
     system_logger.info(f"Batch sizes: inference={INFERENCE_BATCH_SIZE}, measurement={MEASUREMENT_BATCH_SIZE}, cleanup every {CLEANUP_FREQUENCY} images")
     
-    dataset_info = read_dataset_info(CATEGORY_JSON)
     system_logger.info(f"Dataset Info: {dataset_info}")
     system_logger.info(f"Registering custom JSON dataset: {dataset_name}")
     
