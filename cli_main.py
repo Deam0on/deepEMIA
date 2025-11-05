@@ -850,8 +850,19 @@ def inference_task():
         "   • Support single or multi-pass modes\n"
     )
     
-    dataset_name = get_dataset_selection_with_retry("Select dataset for inference")
-
+    clear_screen()
+    print_header()
+    print("INFERENCE TASK")
+    print("This will run inference on new images using your trained model.")
+    print("The system will detect, measure, and analyze particles in your images.")
+    print()
+    print("NOTE: System now auto-detects available models and always uses class-specific inference")
+    print("      Dataset-specific settings (scale bar ROI, spatial constraints) are applied automatically")
+    print()
+    
+    # Dataset selection
+    dataset_name = get_dataset_selection()
+    
     # Inference mode selection
     print("\nInference Mode:")
     print("   all_classes: Process all classes together (default)")
@@ -859,19 +870,20 @@ def inference_task():
     print("   separate_classes: Process each class in separate output directories")
     print()
     
-    inference_mode = get_user_choice(
+    # Use numeric choices instead of full text
+    mode_choice = get_user_choice(
         "Select inference mode",
-        ["all_classes (process all together)", "single_class (specific classes only)", "separate_classes (individual outputs)"],
+        ["1", "2", "3"],
         default="1"
     )
     
-    # Map choice to actual mode string
+    # Map numeric choice to actual mode string
     mode_map = {
-        "all_classes (process all together)": "all_classes",
-        "single_class (specific classes only)": "single_class", 
-        "separate_classes (individual outputs)": "separate_classes"
+        "1": "all_classes",
+        "2": "single_class", 
+        "3": "separate_classes"
     }
-    inference_mode = mode_map[inference_mode]
+    inference_mode = mode_map[mode_choice]
     
     target_classes = None
     
@@ -923,48 +935,37 @@ def inference_task():
             )
             target_classes = [int(x.strip()) for x in class_input.split(',')]
     
-    # Detection threshold
-    print("\nDetection Threshold Configuration:")
-    print("   Higher threshold = fewer, more confident detections")
-    print("   Lower threshold = more detections, including uncertain ones")
+    # Get threshold
     threshold = get_float_input(
-        "Detection confidence threshold (0.0-1.0)",
-        default=0.65,
+        "Enter confidence threshold",
+        default=0.5,
         min_val=0.0,
         max_val=1.0,
     )
-
-    # Dataset format
+    
+    # Get dataset format
     dataset_format = get_user_choice(
-        "\nDataset annotation format:",
-        ["json (one JSON per image - most common)", "coco (standard COCO format)"],
-        default="json (one JSON per image - most common)",
+        "Select dataset format",
+        ["coco", "json"],
+        default="json",
     )
-    dataset_format_value = dataset_format.split()[0]
-
-    # Visualization options
-    print("\nVisualization Options:")
-    visualize = get_yes_no(
-        "Generate visualization overlays showing detections?", default=True
-    )
-    draw_id = False
-    if visualize:
-        draw_id = get_yes_no(
-            "Draw instance ID numbers on visualizations?", default=False
-        )
-
-    # Logging verbosity
-    print("\nLogging Verbosity:")
-    print("   INFO: Standard output (recommended)")
-    print("   DEBUG: Detailed output for troubleshooting")
+    
+    # Get verbosity level
     verbosity = get_user_choice(
-        "Select logging verbosity:",
-        ["INFO (standard)", "DEBUG (detailed)"],
-        default="INFO (standard)",
+        "Select verbosity level", ["debug", "info", "warning", "error"], default="info"
     )
-    verbosity_level = verbosity.split()[0].lower()
-
+    
+    # Ask for optional flags
+    visualize = get_yes_no("Generate visualizations?", default="y")
+    identify = get_yes_no("Add identification information?", default="y")
+    download = get_yes_no("Download dataset from GCS?", default="y")
+    upload = get_yes_no("Upload results to GCS?", default="y")
+    draw_scalebar = get_yes_no("Draw scale bar detection (debug)?", default="n")
+    
+    # Construct command
     args = [
+        "python",
+        str(MAIN_SCRIPT),
         "--task",
         "inference",
         "--dataset_name",
@@ -972,45 +973,39 @@ def inference_task():
         "--threshold",
         str(threshold),
         "--dataset_format",
-        dataset_format_value,
+        dataset_format,
         "--verbosity",
-        verbosity_level,
+        verbosity,
     ]
-
-    if visualize:
-        args.append("--visualize")
-    if draw_id:
-        args.append("--id")
-
-    # Add inference mode arguments
-    if inference_mode != "all_classes":
-        args.extend(["--inference_mode", inference_mode])
     
+    # Add inference mode and target classes to args
+    args.extend(["--inference_mode", inference_mode])
     if target_classes:
         args.extend(["--target_classes", ",".join(map(str, target_classes))])
-
-    # Download/Upload
-    print("\nCloud Storage Options:")
-    download = get_yes_no(
-        "Download inference data from Google Cloud Storage?", default=True
-    )
-    upload = get_yes_no("Upload results to Google Cloud Storage?", default=True)
-
+    
+    if visualize:
+        args.append("--visualize")
+    if identify:
+        args.append("--id")
     if download:
         args.append("--download")
     if upload:
         args.append("--upload")
-
-    # Add after visualization options
-    draw_scalebar = get_yes_no(
-        "Draw scale bar ROI and detection on images (for debugging)?", 
-        default=False
-    )
-    
     if draw_scalebar:
-        args.extend(["--draw-scalebar"])
+        args.append("--draw-scalebar")
     
-    return args
+    # Display command
+    print("\n" + "=" * 60)
+    print("Command to execute:")
+    print(" ".join(args))
+    print("=" * 60)
+    
+    # Confirm execution
+    if get_yes_no("\nExecute this command?", default="y"):
+        execute_command(args)
+    else:
+        print("Command cancelled.")
+        input("\nPress Enter to return to main menu...")
 
 
 def execute_command(args):
