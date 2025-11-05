@@ -13,9 +13,6 @@ from pathlib import Path
 import json
 import yaml
 
-# Define path to main script
-MAIN_SCRIPT = Path(__file__).parent / "main.py"
-
 
 def clear_screen():
     """Clear the terminal screen."""
@@ -873,26 +870,20 @@ def inference_task():
     print("   separate_classes: Process each class in separate output directories")
     print()
     
-    # Simplified mode selection - just show as options 1, 2, 3
-    mode_choices = [
-        "all_classes - process all together",
-        "single_class - specific classes only",
-        "separate_classes - individual outputs"
-    ]
-    
+    # Use numeric choices instead of full text
     mode_choice = get_user_choice(
         "Select inference mode",
-        mode_choices,
-        default=mode_choices[0]
+        ["1", "2", "3"],
+        default="1"
     )
     
-    # Extract the mode from the choice
-    if "all_classes" in mode_choice:
-        inference_mode = "all_classes"
-    elif "single_class" in mode_choice:
-        inference_mode = "single_class"
-    else:
-        inference_mode = "separate_classes"
+    # Map numeric choice to actual mode string
+    mode_map = {
+        "1": "all_classes",
+        "2": "single_class", 
+        "3": "separate_classes"
+    }
+    inference_mode = mode_map[mode_choice]
     
     target_classes = None
     
@@ -965,14 +956,16 @@ def inference_task():
     )
     
     # Ask for optional flags
-    visualize = get_yes_no("Generate visualizations?", default=True)
-    identify = get_yes_no("Add identification information?", default=True)
-    download = get_yes_no("Download dataset from GCS?", default=True)
-    upload = get_yes_no("Upload results to GCS?", default=True)
-    draw_scalebar = get_yes_no("Draw scale bar detection (debug)?", default=False)
+    visualize = get_yes_no("Generate visualizations?", default="y")
+    identify = get_yes_no("Add identification information?", default="y")
+    download = get_yes_no("Download dataset from GCS?", default="y")
+    upload = get_yes_no("Upload results to GCS?", default="y")
+    draw_scalebar = get_yes_no("Draw scale bar detection (debug)?", default="n")
     
     # Construct command
     args = [
+        "python",
+        str(MAIN_SCRIPT),
         "--task",
         "inference",
         "--dataset_name",
@@ -1001,7 +994,18 @@ def inference_task():
     if draw_scalebar:
         args.append("--draw-scalebar")
     
-    return args
+    # Display command
+    print("\n" + "=" * 60)
+    print("Command to execute:")
+    print(" ".join(args))
+    print("=" * 60)
+    
+    # Confirm execution
+    if get_yes_no("\nExecute this command?", default="y"):
+        execute_command(args)
+    else:
+        print("Command cancelled.")
+        input("\nPress Enter to return to main menu...")
 
 
 def execute_command(args):
