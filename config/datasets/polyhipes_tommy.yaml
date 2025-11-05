@@ -1,0 +1,106 @@
+# Dataset-specific configuration for polyhipes_tommy
+# OPTIMIZED FOR MAXIMUM DETECTION (spatial constraints OFF)
+
+metadata:
+  name: "polyhipes_tommy"
+  description: "Tommy's polyhipes dataset - optimized for maximum detection"
+  created: "2025-11-05"
+  notes: |
+    OPTIMIZATION STRATEGY:
+    - Very aggressive detection thresholds for both classes
+    - Lower confidence thresholds to catch more candidates
+    - Lower IOU thresholds to reduce over-merging
+    - Smaller minimum sizes to detect tiny particles
+    - Ensemble enabled for both classes (not just small ones)
+    - Aggressive multi-scale inference
+    - Spatial constraints disabled for this configuration
+
+# Custom scale bar ROI for this dataset
+scale_bar_roi:
+  x_start_factor: 0.5
+  y_start_factor: 0.005
+  width_factor: 0.8
+  height_factor: 0.065
+
+# Adjusted scalebar thresholds for better detection
+scalebar_thresholds:
+  intensity: 100
+  proximity: 100
+  merge_gap: 15
+  min_line_length: 30
+  edge_margin_factor: 0.1
+
+# Spatial constraints DISABLED for maximum detection
+spatial_constraints:
+  enabled: false
+  # Note: All rules below are kept for reference but won't be applied
+  containment_rules:
+    1: 0
+  containment_threshold: 0.95
+  overlap_rules:
+    0:
+      allow_overlap: false
+      allow_touch: true
+      max_iou_threshold: 0.1
+    1:
+      allow_overlap: true
+      allow_touch: true
+      max_iou_threshold: 0.9
+
+# Store optimized hyperparameters after tuning
+rcnn_hyperparameters:
+  best_R50: {}
+  best_R101: {}
+
+# AGGRESSIVE inference settings for MAXIMUM detection
+inference_overrides:
+  use_class_specific_inference: true
+  confidence_mode: 'manual'  # Use manual thresholds for aggressive detection
+  
+  # Iterative stopping - allow more iterations
+  iterative_stopping:
+    min_total_masks: 5          # Lower to start accepting results earlier
+    min_relative_increase: 0.15 # Lower to continue even with small gains
+    max_consecutive_zero: 2     # Allow more iterations with zero new detections
+    min_iterations: 3           # Ensure at least 3 iterations
+  
+  # AGGRESSIVE class-specific detection settings
+  class_specific_settings:
+    class_0:  # Large particles (containers)
+      confidence_threshold: 0.35  # LOWERED from 0.5 - catch more candidates
+      iou_threshold: 0.5          # LOWERED from 0.7 - reduce over-merging
+      min_size: 15                # LOWERED from 25 - detect smaller Class 0
+      min_size_factor: 0.00005    # LOWERED from 0.0001 - very aggressive
+      use_multiscale: true        # ADDED - enable multi-scale for Class 0
+    
+    class_1:  # Small particles (nested inside)
+      confidence_threshold: 0.2   # LOWERED from 0.3 - very aggressive
+      iou_threshold: 0.4          # LOWERED from 0.5 - reduce merging
+      min_size: 2                 # LOWERED from 3 - absolute minimum
+      min_size_factor: 0.000001   # LOWERED from 0.000005 - extremely aggressive
+      use_multiscale: true        # Keep multi-scale enabled
+  
+  # Ensemble settings - APPLY TO ALL CLASSES
+  ensemble_settings:
+    enabled: true
+    small_classes_only: false    # CHANGED - apply to ALL classes for better detection
+    weights:
+      R50: 0.55  # Slightly favor R50 for better small particle detection
+      R101: 0.45
+  
+  # AGGRESSIVE multi-scale detection settings
+  multiscale_settings:
+    baseline_scales: [0.5, 0.7, 1.0, 1.5, 2.0, 2.5]  # EXPANDED - more scales
+    aggressive_scales: [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5]  # EXPANDED
+    max_scale: 3.5  # INCREASED from 3.0 - allow higher upscaling
+  
+  # Tile-based inference with aggressive settings
+  use_tile_based_inference: true
+  
+  tile_settings:
+    tile_size: 512
+    overlap_ratio: 0.15         # INCREASED from 0.1 - more overlap for edge particles
+    upscale_factor: 2.5         # INCREASED from 2.0 - more aggressive upscaling
+    edge_filter_enabled: false  # DISABLED - keep edge detections
+    classes_using_tiling: [0, 1]
+    tile_batch_size: 2

@@ -340,6 +340,19 @@ For guided interactive mode: python cli_main.py
         default=False,
         help="Draw scale bar ROI and detection results on output images for debugging. Shows the ROI box and detected scale bar line."
     )
+    parser.add_argument(
+        "--inference_mode",
+        type=str,
+        default="all_classes",
+        choices=["all_classes", "single_class", "separate_classes"],
+        help="Inference mode: 'all_classes' (default, process all together), 'single_class' (specific classes only), 'separate_classes' (individual outputs per class)."
+    )
+    parser.add_argument(
+        "--target_classes",
+        type=str,
+        default=None,
+        help="Comma-separated list of class indices to process (e.g., '0,2' or '1'). Used with --inference_mode single_class or separate_classes."
+    )
     
     args = parser.parse_args()
 
@@ -477,6 +490,17 @@ For guided interactive mode: python cli_main.py
         )
 
         task_start_time = datetime.now()
+        
+        # Parse target_classes if provided
+        target_classes_list = None
+        if args.target_classes:
+            try:
+                target_classes_list = [int(x.strip()) for x in args.target_classes.split(',')]
+                system_logger.info(f"Target classes: {target_classes_list}")
+            except ValueError as e:
+                system_logger.error(f"Invalid target_classes format: {args.target_classes}. Expected comma-separated integers.")
+                raise ValueError(f"Invalid target_classes format: {e}")
+        
         run_inference(
             args.dataset_name,
             output_dir,
@@ -485,6 +509,8 @@ For guided interactive mode: python cli_main.py
             draw_id=args.draw_id,
             dataset_format=args.dataset_format,
             draw_scalebar=args.draw_scalebar,
+            inference_mode=args.inference_mode,
+            target_classes=target_classes_list,
         )
 
         task_end_time = datetime.now()

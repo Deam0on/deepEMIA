@@ -858,6 +858,51 @@ def inference_task():
 
     dataset_name = get_dataset_selection_with_retry("Select dataset for inference")
 
+    # Inference mode selection
+    print("\nInference Mode:")
+    print("   all_classes: Process all classes together (default)")
+    print("   single_class: Process only specific class(es)")
+    print("   separate_classes: Process each class in separate output directories")
+    
+    inference_mode = get_user_choice(
+        "\nSelect inference mode:",
+        ["all_classes (process all together)", "single_class (specific classes only)", "separate_classes (individual outputs)"],
+        default="all_classes (process all together)"
+    )
+    inference_mode_value = inference_mode.split()[0]
+    
+    # If single_class mode, get target classes
+    target_classes_str = None
+    if inference_mode_value == "single_class":
+        # Load metadata to show available classes
+        try:
+            # Import necessary modules
+            from detectron2.data import MetadataCatalog, DatasetCatalog
+            from src.data.datasets import read_dataset_info, register_datasets
+            from src.utils.constants import CATEGORY_JSON
+            
+            # Try to register and get metadata
+            dataset_info = read_dataset_info(CATEGORY_JSON)
+            register_datasets(dataset_info, dataset_name, dataset_format="json")
+            metadata = MetadataCatalog.get(f"{dataset_name}_train")
+            
+            print("\nAvailable classes:")
+            for i, class_name in enumerate(metadata.thing_classes):
+                print(f"   {i}: {class_name}")
+            
+            target_classes_str = get_string_input(
+                "\nEnter class indices to process (comma-separated, e.g., '0,2' or '1')",
+                allow_empty=False
+            ).strip()
+            
+        except Exception as e:
+            print(f"\nWarning: Could not load class names: {e}")
+            print("Please enter class indices manually (e.g., '0,1' for classes 0 and 1)")
+            target_classes_str = get_string_input(
+                "\nEnter class indices (comma-separated)",
+                allow_empty=False
+            ).strip()
+
     # Detection threshold
     print("\nDetection Threshold Configuration:")
     print("   Higher threshold = fewer, more confident detections")
@@ -916,6 +961,13 @@ def inference_task():
         args.append("--visualize")
     if draw_id:
         args.append("--id")
+
+    # Add inference mode arguments
+    if inference_mode_value != "all_classes":
+        args.extend(["--inference_mode", inference_mode_value])
+    
+    if target_classes_str:
+        args.extend(["--target_classes", target_classes_str])
 
     # Download/Upload
     print("\nCloud Storage Options:")
