@@ -88,12 +88,6 @@ inference_overrides:
       R50: 0.6   # R50 better for small particles
       R101: 0.4  # R101 better for context
   
-  # Multi-scale detection settings
-  multiscale_settings:
-    baseline_scales: [0.7, 1.0, 1.5, 2.0]
-    aggressive_scales: [1.0, 1.5, 2.0, 2.5, 3.0]
-    max_scale: 3.0
-  
   # Tile-based inference for better small particle detection
   use_tile_based_inference: true
   

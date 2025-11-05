@@ -35,12 +35,6 @@ env/
 logs/
 *.log
 
-# Dataset-specific configurations (created on VMs only)
-config/datasets/*.yaml
-config/datasets/*.yml
-
-
-
 # Dataset files
 !config/datasets
 dataset_info.json
