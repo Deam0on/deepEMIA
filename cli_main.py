@@ -619,13 +619,12 @@ def get_dataset_and_variant_selection():
     Returns:
     - tuple: (dataset_name, variant_name)
     """
-    from src.utils.config import get_all_datasets_with_variants
+    from src.utils.config import get_all_datasets_with_variants, list_dataset_variants
     
     datasets_with_variants = get_all_datasets_with_variants()
     
     if not datasets_with_variants:
-        print("Error: No dataset configurations found")
-        print("Please create a dataset configuration first using the 'setup' option.")
+        system_logger.error("No dataset configurations found")
         return None, None
     
     # Select dataset
