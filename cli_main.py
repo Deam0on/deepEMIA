@@ -641,19 +641,9 @@ def prepare_task():
         dataset_name,
         "--dataset_format",
         dataset_format_value,
+        "--download",
+        "--upload",
     ]
-
-    # Download/Upload options
-    print("\nCloud Storage Options:")
-    download = get_yes_no("Download dataset from Google Cloud Storage?", default=True)
-    upload = get_yes_no(
-        "Upload prepared dataset splits to Google Cloud Storage?", default=True
-    )
-
-    if download:
-        args.append("--download")
-    if upload:
-        args.append("--upload")
 
     return args
 
@@ -757,19 +747,9 @@ def train_task():
     if optimize:
         args.extend(["--optimize", "--n-trials", str(n_trials)])
 
-    # Download/Upload
-    print("\nCloud Storage Options:")
-    download = get_yes_no(
-        "Download training data from Google Cloud Storage?", default=True
-    )
-    upload = get_yes_no(
-        "Upload trained models and results to Google Cloud Storage?", default=True
-    )
-
-    if download:
-        args.append("--download")
-    if upload:
-        args.append("--upload")
+    # Always enable download and upload
+    args.append("--download")
+    args.append("--upload")
 
     return args
 
@@ -819,24 +799,12 @@ def evaluate_task():
         rcnn_value,
         "--dataset_format",
         dataset_format_value,
+        "--download",
+        "--upload",
     ]
 
     if visualize:
         args.append("--visualize")
-
-    # Download/Upload
-    print("\nCloud Storage Options:")
-    download = get_yes_no(
-        "Download evaluation data from Google Cloud Storage?", default=True
-    )
-    upload = get_yes_no(
-        "Upload evaluation results to Google Cloud Storage?", default=True
-    )
-
-    if download:
-        args.append("--download")
-    if upload:
-        args.append("--upload")
 
     return args
 
@@ -905,18 +873,6 @@ def inference_task():
     if draw_id:
         args.append("--id")
 
-    # Download/Upload
-    print("\nCloud Storage Options:")
-    download = get_yes_no(
-        "Download inference data from Google Cloud Storage?", default=True
-    )
-    upload = get_yes_no("Upload results to Google Cloud Storage?", default=True)
-
-    if download:
-        args.append("--download")
-    if upload:
-        args.append("--upload")
-
     # Add after visualization options
     draw_scalebar = get_yes_no(
         "Draw scale bar ROI and detection on images (for debugging)?", 
@@ -925,6 +881,10 @@ def inference_task():
     
     if draw_scalebar:
         args.extend(["--draw-scalebar"])
+    
+    # Always enable download and upload
+    args.append("--download")
+    args.append("--upload")
     
     return args
 
