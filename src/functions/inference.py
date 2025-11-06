@@ -544,6 +544,10 @@ def run_inference(
     ensemble_enabled = ensemble_cfg.get("enabled", ENSEMBLE_ENABLED)
     ensemble_small_only = ensemble_cfg.get("small_classes_only", ENSEMBLE_SMALL_CLASSES_ONLY)
     ensemble_weights = ensemble_cfg.get("weights", ENSEMBLE_WEIGHTS)
+
+    #
+    inference_config = inf_settings.get("inference_settings", {})
+    classes_to_infer = inference_config.get("classes_to_infer", None)
     
     # Log the loaded settings
     system_logger.info("=" * 60)
@@ -765,8 +769,15 @@ def run_inference(
                 all_masks_for_image = []
                 all_scores_for_image = []
                 all_classes_for_image = []
+
+                # Determine which classes to process
+                if classes_to_infer is None:
+                    target_classes = range(num_classes)
+                else:
+                    target_classes = [c for c in classes_to_infer if c < num_classes]
+                    system_logger.info(f"Inferencing selected classes only: {target_classes}")
                 
-                for target_class in range(num_classes):
+                for target_class in target_classes:
                     is_small_class = target_class in small_classes
                     class_name = metadata.thing_classes[target_class]
                     

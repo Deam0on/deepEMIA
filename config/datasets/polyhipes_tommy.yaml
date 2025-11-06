@@ -51,6 +51,9 @@ rcnn_hyperparameters:
 
 # AGGRESSIVE inference settings for MAXIMUM detections
 inference_overrides:
+  inference_settings:
+    classes_to_infer: [0]  # null = all classes, or [0, 1] for specific classes
+
   use_class_specific_inference: true
   confidence_mode: 'manual'  # Use manual to apply our aggressive thresholds
   
