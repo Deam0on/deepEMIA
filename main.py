@@ -344,36 +344,21 @@ For guided interactive mode: python cli_main.py
         "--config_variant",
         type=str,
         default="default",
-        help="Configuration variant for the dataset (e.g., 'default', 'class0_maximized', 'balanced')"
+        help="Configuration variant for the dataset (e.g., 'default', 'class_0_max', 'balanced')"
     )
     
     args = parser.parse_args()
-
-    # Set console logging level based on verbosity argument
-    from src.utils.logger_utils import set_console_log_level
-    import logging
-    verbosity_map = {
-        "debug": logging.DEBUG,
-        "info": logging.INFO,
-        "warning": logging.WARNING,
-        "error": logging.ERROR,
-    }
-    set_console_log_level(verbosity_map.get(args.verbosity.lower(), logging.INFO))
-
-    # === GPU AVAILABILITY CHECK ===
-    # Check GPU before any heavy operations (skip for setup task)
-    if args.task != "setup" and not args.no_gpu_check:
-        system_logger.info("Checking GPU availability...")
-        log_device_info()
-        
-        # Determine if this task requires GPU
-        gpu_intensive_tasks = ['train', 'inference', 'evaluate']
-        requires_gpu = args.task in gpu_intensive_tasks
-        
-        if not check_gpu_availability(require_gpu=requires_gpu, interactive=True):
-            system_logger.error("Execution aborted due to GPU unavailability")
-            import sys
-            sys.exit(1)
+    
+    # Load config with variant support
+    if args.task != "setup":
+        config = get_config(dataset_name=args.dataset_name, variant=args.config_variant)
+    
+    # Check GPU before any heavy operations
+    from src.utils.gpu_check import check_gpu_availability, log_device_info
+    
+    system_logger.info("Checking GPU availability...")
+    check_gpu_availability(require_gpu=False, interactive=True)
+    log_device_info()
     
     # === END GPU CHECK ===
 
@@ -383,200 +368,37 @@ For guided interactive mode: python cli_main.py
 
     if args.task == "setup":
         setup_config()
-        return
-
-    local_path = Path.home() / "deepEMIA"
-    try:
-        subprocess.run(
-            [
-                "gsutil",
-                "-m",
-                "cp",
-                "-r",
-                f"gs://{bucket}/dataset_info.json",
-                str(local_path),
-            ],
-            check=True,
-        )
-        system_logger.info("Successfully copied dataset_info.json from GCS.")
-    except subprocess.CalledProcessError as e:
-        system_logger.error(f"Failed to copy dataset_info.json from GCS: {e}")
-        raise
-
-    img_dir = local_dataset_path / "DATASET" / args.dataset_name
-    output_dir = SPLIT_DIR
-
-    total_start_time = datetime.now()
-    download_time_taken = 0
-    upload_time_taken = 0
-
-    system_logger.info(f"Running task: {args.task} on dataset: {args.dataset_name}")
-
-    if args.task == "prepare":
-        system_logger.info(f"Preparing dataset {args.dataset_name}...")
-        task_start_time = datetime.now()
-        split_dataset(img_dir, args.dataset_name)
-        task_end_time = datetime.now()
-
+    elif args.task == "prepare":
+        download_dataset_info()
+        split_dataset(img_dir, args.dataset_name, test_size=0.2)
     elif args.task == "train":
-        # Download data
-        system_logger.info(f"Downloading training data for {args.dataset_name}...")
-        download_time_taken = download_data_from_bucket()
-
-        # Train or optimize
-        system_logger.info(
-            f"Training model on dataset {args.dataset_name} using '{args.dataset_format}' format and RCNN {args.rcnn}..."
-        )
         train_on_dataset(
             args.dataset_name,
-            output_dir,
+            args.output_dir or str(SPLIT_DIR),
             dataset_format=args.dataset_format,
             rcnn=args.rcnn,
             augment=args.augment,
             optimize=args.optimize,
             n_trials=args.n_trials,
         )
-
-        # Delete dataset after training
-        dataset_path = local_dataset_path / "DATASET" / args.dataset_name
-        if dataset_path.exists():
-            shutil.rmtree(dataset_path)
-            system_logger.info(
-                f"Deleted training data at {dataset_path} after training."
-            )
-
     elif args.task == "evaluate":
-        system_logger.info(
-            f"Evaluating model on dataset {args.dataset_name} using '{args.dataset_format}' format..."
-        )
-        task_start_time = datetime.now()
         evaluate_model(
             args.dataset_name,
-            output_dir,
-            args.visualize,
+            args.output_dir or str(SPLIT_DIR),
+            visualize=args.visualize,
             dataset_format=args.dataset_format,
             rcnn=args.rcnn,
         )
-        task_end_time = datetime.now()
-
     elif args.task == "inference":
-        system_logger.info(
-            f"Running inference on dataset {args.dataset_name} using '{args.dataset_format}' format with auto-detected models..."
-        )
-
-        # Remove .png, .csv, .jpg files in the current directory
-        for pattern in ("*.png", "*.csv", "*.jpg"):
-            for file_path in glob.glob(pattern):
-                try:
-                    os.remove(file_path)
-                    system_logger.info(f"Removed file: {file_path}")
-                except Exception as e:
-                    system_logger.warning(f"Could not remove file {file_path}: {e}")
-
-        # Download inference data
-        inference_path = local_dataset_path / "DATASET" / "INFERENCE"
-        system_logger.info("Downloading inference data...")
-        download_time_taken = download_data_from_bucket()
-
-        num_images = len(
-            [f for f in os.listdir(img_dir) if f.endswith((".tif", ".png", ".jpg"))]
-        )
-
-        task_start_time = datetime.now()
         run_inference(
             args.dataset_name,
-            output_dir,
+            args.output_dir or str(SPLIT_DIR),
             visualize=args.visualize,
             threshold=args.threshold,
-            draw_id=args.draw_id,
+            draw_id=args.id,
             dataset_format=args.dataset_format,
             draw_scalebar=args.draw_scalebar,
         )
-
-        task_end_time = datetime.now()
-        inference_time_taken = (task_end_time - task_start_time).total_seconds()
-        update_eta_data("inference", inference_time_taken, num_images)
-
-        # UPDATED: Use dedicated inference upload function
-        if args.upload:
-            system_logger.info("Uploading inference results to GCP...")
-
-            # Import the new function
-            from src.utils.gcs_utils import upload_inference_results
-
-            # Determine model info for remote path
-            # Model info reflects automatic iteration control
-            model_info = "auto_models_adaptive"
-
-            try:
-                upload_time_taken = upload_inference_results(
-                    dataset_name=args.dataset_name,
-                    model_info=model_info,
-                    output_dir=output_dir,
-                    current_dir=Path.cwd(),
-                )
-
-                if upload_time_taken > 0:
-                    system_logger.info(
-                        f"Inference results uploaded successfully in {upload_time_taken:.2f} seconds"
-                    )
-                else:
-                    system_logger.warning("No files were uploaded")
-
-            except Exception as e:
-                system_logger.error(f"Failed to upload inference results: {e}")
-
-        # Delete inference data after inference
-        if inference_path.exists():
-            shutil.rmtree(inference_path)
-            system_logger.info(
-                f"Deleted inference data at {inference_path} after inference."
-            )
-
-    total_end_time = datetime.now()
-    total_time_taken = (total_end_time - total_start_time).total_seconds()
-
-    if args.upload:
-        system_logger.info(
-            f"Uploading results for dataset {args.dataset_name} to bucket..."
-        )
-        upload_time_taken = upload_data_to_bucket()
-
-        # Upload logs directory to the bucket
-        logs_dir = LOGS_DIR
-        if logs_dir.exists():
-            try:
-                subprocess.run(
-                    ["gsutil", "-m", "cp", "-r", str(logs_dir), f"gs://{bucket}/logs/"],
-                    check=True,
-                )
-                system_logger.info(f"Uploaded logs directory to gs://{bucket}/logs/")
-            except subprocess.CalledProcessError as e:
-                system_logger.warning(f"Failed to upload logs directory: {e}")
-
-        # Delete result files after upload
-        for pattern in ("*.png", "*.csv"):
-            for file_path in Path.home().glob(pattern):
-                try:
-                    file_path.unlink()
-                    system_logger.info(f"Deleted result file: {file_path}")
-                except Exception as e:
-                    system_logger.warning(
-                        f"Could not delete result file {file_path}: {e}"
-                    )
-        output_dir = Path.home() / "output"
-        if output_dir.exists():
-            shutil.rmtree(output_dir)
-            system_logger.info(f"Deleted output directory: {output_dir}")
-
-    if args.task != "inference":
-        update_eta_data(args.task, total_time_taken)
-
-    if args.download:
-        update_eta_data("download", download_time_taken)
-    if args.upload:
-        update_eta_data("upload", upload_time_taken)
-
 
 if __name__ == "__main__":
 
