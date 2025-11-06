@@ -40,57 +40,54 @@ def deep_merge(base: Dict, override: Dict) -> Dict:
     return result
 
 
-def load_dataset_config(dataset_name: str, variant: str = "default") -> Optional[Dict[str, Any]]:
+def load_dataset_config(dataset_name: str) -> Optional[Dict[str, Any]]:
     """
-    Load dataset-specific configuration with variant support.
+    Load dataset-specific configuration if it exists.
     
     Parameters:
     - dataset_name: Name of the dataset
-    - variant: Configuration variant (default: "default")
     
     Returns:
     - Dataset configuration dictionary or None if not found
     """
-    cache_key = f"{dataset_name}:{variant}"
-    if cache_key in _dataset_configs:
-        return _dataset_configs[cache_key]
+    if dataset_name in _dataset_configs:
+        return _dataset_configs[dataset_name]
     
+    # Try to find dataset config file
     config_dir = Path.home() / "deepEMIA" / "config" / "datasets"
+    config_file = config_dir / f"{dataset_name}.yaml"
     
-    # Try directory-based variant first (preferred)
-    variant_file = config_dir / dataset_name / f"{variant}.yaml"
-    
-    # Fallback to flat structure with naming convention
-    if not variant_file.exists():
-        variant_file = config_dir / f"{dataset_name}_{variant}.yaml"
-    
-    if not variant_file.exists():
-        system_logger.debug(f"No config found for '{dataset_name}' variant '{variant}'")
+    if not config_file.exists():
+        system_logger.debug(f"No dataset-specific config found for '{dataset_name}'")
         return None
     
     try:
-        with open(variant_file, 'r') as f:
+        with open(config_file, 'r') as f:
             dataset_config = yaml.safe_load(f)
         
-        _dataset_configs[cache_key] = dataset_config
-        system_logger.info(f"Loaded config: {dataset_name}/{variant}")
+        _dataset_configs[dataset_name] = dataset_config
+        system_logger.info(f"Loaded dataset-specific config for '{dataset_name}'")
         return dataset_config
         
     except Exception as e:
-        system_logger.error(f"Error loading config for '{dataset_name}:{variant}': {e}")
+        system_logger.error(f"Error loading dataset config for '{dataset_name}': {e}")
         return None
 
 
-def get_config(dataset_name: str = None, variant: str = "default") -> Dict[str, Any]:
+def get_config(dataset_name: str = None) -> Dict[str, Any]:
     """
-    Loads configuration with dataset and variant support.
+    Loads and returns the project configuration from config.yaml.
+    If dataset_name is provided, merges dataset-specific overrides.
 
     Parameters:
-    - dataset_name: Optional dataset name
-    - variant: Configuration variant (default: "default")
+    - dataset_name: Optional dataset name for dataset-specific config
 
     Returns:
         dict: The loaded and validated configuration dictionary.
+
+    Raises:
+        FileNotFoundError: If the config file does not exist.
+        yaml.YAMLError: If the config file cannot be parsed.
     """
     global _config
     
@@ -101,16 +98,18 @@ def get_config(dataset_name: str = None, variant: str = "default") -> Dict[str, 
             with open(config_path, "r") as f:
                 raw_config = yaml.safe_load(f)
 
+            # Validate configuration
             try:
                 from src.utils.config_validator import validate_config
                 _config = validate_config(raw_config)
                 system_logger.info(f"Loaded and validated configuration from {config_path}")
             except ImportError:
                 _config = raw_config
-                system_logger.warning("Configuration validator not available")
+                system_logger.warning("Configuration validator not available, using unvalidated config")
             except Exception as e:
                 system_logger.error(f"Configuration validation failed: {e}")
                 _config = raw_config
+                system_logger.warning("Using unvalidated configuration due to validation error")
 
         except FileNotFoundError:
             system_logger.error(f"Configuration file not found: {config_path}")
@@ -123,17 +122,56 @@ def get_config(dataset_name: str = None, variant: str = "default") -> Dict[str, 
     if dataset_name is None:
         return _config
     
-    # Load and merge dataset-specific config with variant
-    dataset_config = load_dataset_config(dataset_name, variant)
+    # Load and merge dataset-specific config
+    dataset_config = load_dataset_config(dataset_name)
     
     if dataset_config is None:
         return _config
     
     # Deep merge configs
     merged_config = deep_merge(_config, {})
-    merged_config = deep_merge(merged_config, dataset_config)
     
-    system_logger.debug(f"Merged config for dataset '{dataset_name}' variant '{variant}'")
+    # Handle scale_bar_roi
+    if 'scale_bar_roi' in dataset_config:
+        if 'scale_bar_rois' not in merged_config:
+            merged_config['scale_bar_rois'] = {}
+        merged_config['scale_bar_rois'][dataset_name] = dataset_config['scale_bar_roi']
+    
+    # Handle scalebar_thresholds override
+    if 'scalebar_thresholds' in dataset_config:
+        merged_config['scalebar_thresholds'] = deep_merge(
+            merged_config.get('scalebar_thresholds', {}),
+            dataset_config['scalebar_thresholds']
+        )
+    
+    # Handle spatial constraints
+    if 'spatial_constraints' in dataset_config:
+        if 'spatial_constraints' not in merged_config.get('inference_settings', {}):
+            if 'inference_settings' not in merged_config:
+                merged_config['inference_settings'] = {}
+            merged_config['inference_settings']['spatial_constraints'] = {}
+        merged_config['inference_settings']['spatial_constraints'][dataset_name] = \
+            dataset_config['spatial_constraints']
+    
+    # Handle rcnn_hyperparameters
+    if 'rcnn_hyperparameters' in dataset_config:
+        if 'best' not in merged_config['rcnn_hyperparameters']:
+            merged_config['rcnn_hyperparameters']['best'] = {}
+        
+        for key in ['best_R50', 'best_R101']:
+            if key in dataset_config['rcnn_hyperparameters']:
+                backbone = key.replace('best_', '')
+                merged_config['rcnn_hyperparameters']['best'][backbone] = \
+                    dataset_config['rcnn_hyperparameters'][key]
+    
+    # Handle inference overrides
+    if 'inference_overrides' in dataset_config:
+        merged_config['inference_settings'] = deep_merge(
+            merged_config.get('inference_settings', {}),
+            dataset_config['inference_overrides']
+        )
+    
+    system_logger.debug(f"Merged config for dataset '{dataset_name}'")
     return merged_config
 
 
@@ -154,68 +192,6 @@ def list_dataset_configs() -> list:
         configs.append(config_file.stem)
     
     return sorted(configs)
-
-
-def list_dataset_variants(dataset_name: str) -> list:
-    """
-    List all available configuration variants for a dataset.
-    
-    Parameters:
-    - dataset_name: Name of the dataset
-    
-    Returns:
-    - List of available variant names
-    """
-    config_dir = Path.home() / "deepEMIA" / "config" / "datasets"
-    variants = []
-    
-    # Check directory-based structure
-    dataset_dir = config_dir / dataset_name
-    if dataset_dir.exists() and dataset_dir.is_dir():
-        for config_file in dataset_dir.glob("*.yaml"):
-            variants.append(config_file.stem)
-    
-    # Check flat structure
-    for config_file in config_dir.glob(f"{dataset_name}_*.yaml"):
-        variant = config_file.stem.replace(f"{dataset_name}_", "")
-        if variant not in variants:
-            variants.append(variant)
-    
-    return sorted(variants) if variants else ["default"]
-
-
-def get_all_datasets_with_variants() -> Dict[str, List[str]]:
-    """
-    Get all datasets and their available variants.
-    
-    Returns:
-    - Dictionary mapping dataset names to list of variants
-    """
-    config_dir = Path.home() / "deepEMIA" / "config" / "datasets"
-    datasets = {}
-    
-    if not config_dir.exists():
-        return datasets
-    
-    # Directory-based variants
-    for dataset_dir in config_dir.iterdir():
-        if dataset_dir.is_dir() and not dataset_dir.name.startswith('.'):
-            variants = [f.stem for f in dataset_dir.glob("*.yaml")]
-            if variants:
-                datasets[dataset_dir.name] = sorted(variants)
-    
-    # Flat structure variants
-    for config_file in config_dir.glob("*.yaml"):
-        if '_' in config_file.stem:
-            parts = config_file.stem.split('_', 1)
-            if len(parts) == 2:
-                dataset_name, variant = parts
-                if dataset_name not in datasets:
-                    datasets[dataset_name] = []
-                if variant not in datasets[dataset_name]:
-                    datasets[dataset_name].append(variant)
-    
-    return datasets
 
 
 def create_dataset_config(dataset_name: str, template: str = "template") -> Path:

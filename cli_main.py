@@ -611,62 +611,22 @@ def get_dataset_selection(prompt_text="Select dataset"):
     )
 
 
-def get_dataset_and_variant_selection():
-    """
-    Get dataset and variant selection from user.
-    
-    Returns:
-    - tuple: (dataset_name, variant_name)
-    """
-    from src.utils.config import get_all_datasets_with_variants, list_dataset_variants
-    
-    datasets_with_variants = get_all_datasets_with_variants()
-    
-    if not datasets_with_variants:
-        system_logger.error("No dataset configurations found")
-        return None, None
-    
-    # Select dataset
-    dataset_list = list(datasets_with_variants.keys())
-    dataset_name = get_user_choice(
-        "Select dataset:",
-        dataset_list,
-        default=dataset_list[0] if dataset_list else None
-    )
-    
-    if not dataset_name:
-        return None, None
-    
-    # Select variant
-    variants = datasets_with_variants.get(dataset_name, ["default"])
-    
-    if len(variants) == 1:
-        variant = variants[0]
-        print(f"Using configuration variant: {variant}")
-    else:
-        print(f"\nAvailable configurations for '{dataset_name}':")
-        for i, var in enumerate(variants, 1):
-            print(f"  {i}. {var}")
-        
-        variant = get_user_choice(
-            "Select configuration variant:",
-            variants,
-            default=variants[0]
-        )
-    
-    return dataset_name, variant
-
-
 def prepare_task():
-    """Handle prepare task with variant selection."""
+    """
+    Handle prepare task.
+
+    Returns:
+        list or None: Command arguments for prepare task, or None if cancelled.
+    """
     print("\nPREPARE TASK")
     print("This will split your dataset into training and testing sets.")
-    
-    dataset_name, variant = get_dataset_and_variant_selection()
-    
-    if not dataset_name:
-        return None
-    
+    print(
+        "Typically uses 80% for training and 20% for testing with stratified splitting."
+    )
+
+    dataset_name = get_dataset_selection_with_retry("Select dataset to prepare")
+
+    # Dataset format
     dataset_format = get_user_choice(
         "\nDataset annotation format:",
         ["json (one JSON per image - most common)", "coco (standard COCO format)"],
@@ -675,10 +635,12 @@ def prepare_task():
     dataset_format_value = dataset_format.split()[0]
 
     args = [
-        "--task", "prepare",
-        "--dataset_name", dataset_name,
-        "--dataset_format", dataset_format_value,
-        "--config_variant", variant,
+        "--task",
+        "prepare",
+        "--dataset_name",
+        dataset_name,
+        "--dataset_format",
+        dataset_format_value,
         "--download",
         "--upload",
     ]
@@ -687,15 +649,18 @@ def prepare_task():
 
 
 def train_task():
-    """Handle train task with variant selection."""
+    """
+    Handle train task.
+
+    Returns:
+        list or None: Command arguments for train task, or None if cancelled.
+    """
     print("\nTRAIN TASK")
     print("This will train instance segmentation models on your dataset.")
-    
-    dataset_name, variant = get_dataset_and_variant_selection()
-    
-    if not dataset_name:
-        return None
-    
+    print("Training uses Detectron2 with ResNet backbones and can take several hours.")
+
+    dataset_name = get_dataset_selection_with_retry("Select dataset to train on")
+
     # Show current hyperparameters for this dataset
     try:
         # Import here to avoid issues if modules aren't available
@@ -770,12 +735,10 @@ def train_task():
         "train",
         "--dataset_name",
         dataset_name,
-        "--dataset_format",
-        dataset_format_value,
         "--rcnn",
         rcnn_value,
-        "--config_variant",
-        variant,
+        "--dataset_format",
+        dataset_format_value,
     ]
 
     if augment:
@@ -847,14 +810,23 @@ def evaluate_task():
 
 
 def inference_task():
-    """Handle inference task with variant selection."""
+    """
+    Handle inference task.
+
+    Returns:
+        list or None: Command arguments for inference task, or None if cancelled.
+    """
     print("\nINFERENCE TASK")
-    
-    dataset_name, variant = get_dataset_and_variant_selection()
-    
-    if not dataset_name:
-        return None
-    
+    print("This will run inference on new images using your trained model.")
+    print("The system will detect, measure, and analyze particles in your images.")
+    print(
+        "\nNOTE: System now auto-detects available models and always uses class-specific inference"
+    )
+    print("      Dataset-specific settings (confidence, IoU, scale bar ROI, spatial constraints)")
+    print("      are applied automatically from config/datasets/<dataset_name>.yaml")
+
+    dataset_name = get_dataset_selection_with_retry("Select dataset for inference")
+
     # Dataset format
     dataset_format = get_user_choice(
         "\nDataset annotation format:",
@@ -894,8 +866,6 @@ def inference_task():
         dataset_format_value,
         "--verbosity",
         verbosity_level,
-        "--config_variant",
-        variant,
     ]
 
     if visualize:

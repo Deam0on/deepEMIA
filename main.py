@@ -340,12 +340,6 @@ For guided interactive mode: python cli_main.py
         default=False,
         help="Draw scale bar ROI and detection results on output images for debugging. Shows the ROI box and detected scale bar line."
     )
-    parser.add_argument(
-        "--config_variant",
-        type=str,
-        default="default",
-        help="Configuration variant for the dataset (e.g., 'default', 'class0_maximized', 'balanced')"
-    )
     
     args = parser.parse_args()
 
