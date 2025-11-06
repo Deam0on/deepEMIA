@@ -8,7 +8,8 @@ Includes configuration validation for security and reliability.
 """
 
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+from datetime import datetime
 
 import yaml
 
@@ -137,59 +138,12 @@ def get_config(dataset_name: str = None, variant: str = "default") -> Dict[str, 
     return merged_config
 
 
-def list_dataset_configs() -> list:
-    """
-    List all available dataset-specific configuration files.
-    
-    Returns:
-    - List of dataset names with configs
-    """
-    config_dir = Path.home() / "deepEMIA" / "config" / "datasets"
-    
-    if not config_dir.exists():
-        return []
-    
-    configs = []
-    for config_file in config_dir.glob("*.yaml"):
-        configs.append(config_file.stem)
-    
-    return sorted(configs)
-
-
-def list_dataset_variants(dataset_name: str) -> list:
-    """
-    List all available configuration variants for a dataset.
-    
-    Parameters:
-    - dataset_name: Name of the dataset
-    
-    Returns:
-    - List of available variant names
-    """
-    config_dir = Path.home() / "deepEMIA" / "config" / "datasets"
-    variants = []
-    
-    # Check directory-based structure
-    dataset_dir = config_dir / dataset_name
-    if dataset_dir.exists() and dataset_dir.is_dir():
-        for config_file in dataset_dir.glob("*.yaml"):
-            variants.append(config_file.stem)
-    
-    # Check flat structure
-    for config_file in config_dir.glob(f"{dataset_name}_*.yaml"):
-        variant = config_file.stem.replace(f"{dataset_name}_", "")
-        if variant not in variants:
-            variants.append(variant)
-    
-    return sorted(variants) if variants else ["default"]
-
-
 def get_all_datasets_with_variants() -> Dict[str, List[str]]:
     """
-    Get all datasets and their available variants.
+    Get all datasets and their available configuration variants.
     
     Returns:
-    - Dictionary mapping dataset names to list of variants
+        Dict[str, List[str]]: Dictionary mapping dataset names to list of variants
     """
     config_dir = Path.home() / "deepEMIA" / "config" / "datasets"
     datasets = {}
@@ -197,72 +151,82 @@ def get_all_datasets_with_variants() -> Dict[str, List[str]]:
     if not config_dir.exists():
         return datasets
     
-    # Directory-based variants
+    # Iterate through all subdirectories
     for dataset_dir in config_dir.iterdir():
         if dataset_dir.is_dir() and not dataset_dir.name.startswith('.'):
+            # Look for YAML files in each dataset directory
             variants = [f.stem for f in dataset_dir.glob("*.yaml")]
             if variants:
                 datasets[dataset_dir.name] = sorted(variants)
     
-    # Flat structure variants
-    for config_file in config_dir.glob("*.yaml"):
-        if '_' in config_file.stem:
-            parts = config_file.stem.split('_', 1)
-            if len(parts) == 2:
-                dataset_name, variant = parts
-                if dataset_name not in datasets:
-                    datasets[dataset_name] = []
-                if variant not in datasets[dataset_name]:
-                    datasets[dataset_name].append(variant)
-    
     return datasets
+
+
+def list_dataset_configs() -> List[str]:
+    """
+    List all available dataset configuration directories.
+    
+    Returns:
+        List[str]: List of dataset names with configurations
+    """
+    config_dir = Path.home() / "deepEMIA" / "config" / "datasets"
+    
+    if not config_dir.exists():
+        return []
+    
+    datasets = []
+    for dataset_dir in config_dir.iterdir():
+        if dataset_dir.is_dir() and not dataset_dir.name.startswith('.'):
+            # Check if it has YAML files
+            if list(dataset_dir.glob("*.yaml")):
+                datasets.append(dataset_dir.name)
+    
+    return sorted(datasets)
 
 
 def create_dataset_config(dataset_name: str, template: str = "template") -> Path:
     """
-    Create a new dataset-specific config from template.
+    Create a new dataset configuration from a template.
     
     Parameters:
-    - dataset_name: Name for the new dataset config
-    - template: Template to use ('template' or existing dataset name)
+        dataset_name: Name of the dataset
+        template: Template to use (template, polyhipes_tommy, update_test)
     
     Returns:
-    - Path to created config file
+        Path: Path to the created config file
     """
     config_dir = Path.home() / "deepEMIA" / "config" / "datasets"
-    config_dir.mkdir(parents=True, exist_ok=True)
+    dataset_dir = config_dir / dataset_name
+    dataset_dir.mkdir(parents=True, exist_ok=True)
     
-    target_file = config_dir / f"{dataset_name}.yaml"
-    
-    if target_file.exists():
-        system_logger.warning(f"Dataset config already exists: {target_file}")
-        return target_file
-    
-    # Load template - check example directory first, then datasets directory
-    example_dir = Path.home() / "deepEMIA" / "config" / "datasets.example"
-    
-    if template in ["template", "polyhipes_tommy", "update_test"]:
-        # Look in examples directory
-        template_file = example_dir / f"{template}.yaml"
-    else:
-        # Look for existing dataset config as template
-        template_file = config_dir / f"{template}.yaml"
+    # Load template
+    template_dir = Path(__file__).parent.parent.parent / "config" / "datasets.example"
+    template_file = template_dir / f"{template}.yaml"
     
     if not template_file.exists():
-        system_logger.error(f"Template not found: {template_file}")
-        raise FileNotFoundError(f"Template not found: {template_file}")
+        # Fallback to template.yaml
+        template_file = template_dir / "template.yaml"
     
-    # Copy template
-    with open(template_file, 'r') as f:
-        template_content = f.read()
+    # Copy template to dataset directory with "default" variant name
+    output_file = dataset_dir / "default.yaml"
     
-    # Replace template name with actual dataset name in metadata
-    template_content = template_content.replace(f'name: "{template}"', f'name: "{dataset_name}"')
-    template_content = template_content.replace(f"name: '{template}'", f"name: '{dataset_name}'")
+    if template_file.exists():
+        with open(template_file, 'r') as f:
+            content = f.read()
+        
+        with open(output_file, 'w') as f:
+            f.write(content)
+    else:
+        # Create minimal config if template not found
+        minimal_config = f"""# Dataset-specific configuration for {dataset_name}
+
+metadata:
+  name: "{dataset_name}"
+  description: "Configuration for {dataset_name}"
+  created: "{datetime.now().isoformat()}"
+"""
+        with open(output_file, 'w') as f:
+            f.write(minimal_config)
     
-    with open(target_file, 'w') as f:
-        f.write(template_content)
-    
-    system_logger.info(f"Created dataset config: {target_file}")
-    return target_file
+    return output_file
 
