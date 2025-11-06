@@ -7,15 +7,13 @@ system_logger is configured to print simplified logs to the terminal and full lo
 """
 
 import argparse
-import atexit
-import glob
 import os
+import json
 import shutil
+import random
 import subprocess
 from datetime import datetime
 from pathlib import Path
-
-import yaml
 
 from src.data.datasets import split_dataset
 from src.functions.evaluate_model import evaluate_model
@@ -178,227 +176,228 @@ def main():
         "This tool provides dataset preparation, model training, evaluation, and inference capabilities.\n\n"
         "For an easier, interactive experience, use: python cli_main.py\n"
         "The CLI wizard guides you through all options step-by-step.",
-        epilog="""
-QUICK START EXAMPLES:
-
-Setup (First Time):
-  python main.py --task setup
-  
-Prepare Dataset:
-  python main.py --task prepare --dataset_name polyhipes
-
-Training:
-  # Basic training
-  python main.py --task train --dataset_name polyhipes --rcnn 101
-  
-  # Advanced training with optimization
-  python main.py --task train --dataset_name polyhipes --rcnn combo --optimize --n-trials 20 --augment
-
-Evaluation:
-  python main.py --task evaluate --dataset_name polyhipes --visualize --rcnn combo
-
-Inference:
-  # Run inference with automatic iteration control (configured in config.yaml)
-  python main.py --task inference --dataset_name polyhipes --threshold 0.7 --visualize
-  
-  # Inference with instance IDs displayed
-  python main.py --task inference --dataset_name polyhipes --threshold 0.65 --visualize --id
-
-TASK DESCRIPTIONS:
-
-setup      First-time configuration (bucket, scale bar settings, hyperparameters)
-prepare    Split dataset into train/test sets and register with Detectron2
-train      Train instance segmentation models (R50, R101, or both)
-evaluate   Evaluate trained models on test set with COCO metrics
-inference  Run inference on new images with measurements and analysis
-
-RCNN BACKBONE OPTIONS:
-
-50         Fast R-CNN with ResNet-50 backbone (good for small particles)
-101        Fast R-CNN with ResNet-101 backbone (good for large particles, default)
-combo      Dual model approach - uses both R50 and R101 for universal detection
-
-ADVANCED FEATURES:
-
-• Hyperparameter Optimization: Use --optimize --n-trials N for automated tuning
-• Data Augmentation: Use --augment for enhanced training robustness  
-• Iteration Control: Automatic via config.yaml iterative_stopping settings
-• Universal Class Processing: Inference always uses class-specific processing with size heuristics
-• Visualization: Use --visualize to save prediction overlays
-• Instance IDs: Use --id to draw instance identifiers on visualizations
-
-CLOUD INTEGRATION:
-
-• Automatic GCS sync with --download/--upload flags
-• Progress tracking with ETA estimation
-• Comprehensive logging to ~/logs/
-
-For detailed documentation, see README.md
-For guided interactive mode: python cli_main.py
-""",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+
+    # Core task argument
     parser.add_argument(
         "--task",
         type=str,
         required=True,
-        choices=["prepare", "train", "evaluate", "inference", "setup"],
-        help="Task to perform:\n"
-        "• 'prepare': Split dataset into train/test sets and register with Detectron2\n"
-        "• 'train': Train instance segmentation models (supports R50, R101, or combo)\n"
-        "• 'evaluate': Evaluate trained models on test set with COCO metrics\n"
-        "• 'inference': Run inference on new images with advanced measurements\n"
-        "• 'setup': Interactive first-time configuration (bucket, hyperparameters, etc.)",
+        choices=["setup", "prepare", "train", "evaluate", "inference"],
+        help="Task to perform",
     )
+
+    # Dataset arguments
     parser.add_argument(
         "--dataset_name",
         type=str,
-        required=False,
-        help="Dataset name to use (e.g., 'polyhipes', 'crystals'). Must exist in dataset_info.json. Not required for setup task.",
+        default=None,
+        help="Name of the dataset to use",
     )
-    parser.add_argument(
-        "--threshold",
-        type=float,
-        default=0.65,
-        help="Detection confidence threshold for inference (0.0-1.0). Higher = fewer, more confident detections. [default: 0.65]",
-    )
+
     parser.add_argument(
         "--dataset_format",
         type=str,
         default="json",
         choices=["json", "coco"],
-        help="Dataset annotation format: 'json' (one JSON per image) or 'coco' (standard COCO format). [default: json]",
+        help="Dataset annotation format",
     )
+
     parser.add_argument(
-        "--visualize",
-        action="store_true",
-        default=False,
-        help="Generate and save visualization overlays during evaluation/inference. Shows predictions on original images.",
+        "--config_variant",
+        type=str,
+        default="default",
+        help="Configuration variant for the dataset (e.g., 'default', 'class_0_max', 'balanced')",
     )
-    parser.add_argument(
-        "--download",
-        action="store_true",
-        default=True,
-        help="Download required data from Google Cloud Storage before task execution. [default: True]",
-    )
-    parser.add_argument(
-        "--upload",
-        action="store_true",
-        default=True,
-        help="Upload results and logs to Google Cloud Storage after task completion. [default: True]",
-    )
-    parser.add_argument(
-        "--id",
-        dest="draw_id",
-        action="store_true",
-        help="Draw instance ID numbers on inference visualization overlays for easier tracking.",
-    )
-    parser.set_defaults(draw_id=False)
+
+    # Model arguments
     parser.add_argument(
         "--rcnn",
         type=str,
         default="101",
         choices=["50", "101", "combo"],
-        help="RCNN backbone architecture for train/evaluate tasks:\n"
-        "• '50': ResNet-50 (faster, good for small particles)\n"
-        "• '101': ResNet-101 (slower, good for large particles)\n"
-        "• 'combo': Both models [default: 101]\n"
-        "Note: Inference task auto-detects available models",
+        help="RCNN backbone architecture (50, 101, or combo)",
     )
+
+    # Training arguments
     parser.add_argument(
         "--augment",
         action="store_true",
-        help="Enable data augmentation during training (rotation, flip, brightness). Improves model robustness.",
+        help="Enable data augmentation during training",
     )
-    # --- Optuna HPO flags ---
+
     parser.add_argument(
         "--optimize",
         action="store_true",
-        help="Run Optuna hyperparameter optimization during training. Automatically finds best parameters.",
+        help="Enable hyperparameter optimization with Optuna",
     )
+
     parser.add_argument(
         "--n-trials",
         type=int,
         default=10,
-        help="Number of Optuna optimization trials to run. More trials = better optimization but longer time. [default: 10]",
+        help="Number of Optuna trials for optimization",
     )
+
+    # Inference arguments
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.65,
+        help="Confidence threshold for inference",
+    )
+
+    parser.add_argument(
+        "--visualize",
+        action="store_true",
+        help="Generate visualization overlays",
+    )
+
+    parser.add_argument(
+        "--id",
+        action="store_true",
+        dest="draw_id",
+        help="Draw instance IDs on visualizations",
+    )
+
+    parser.add_argument(
+        "--draw_scalebar",
+        action="store_true",
+        help="Draw scale bar ROI and detection on images (for debugging)",
+    )
+
+    # Output arguments
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default=None,
+        help="Output directory for results",
+    )
+
+    # Cloud storage arguments
+    parser.add_argument(
+        "--download",
+        action="store_true",
+        help="Download data from GCS before processing",
+    )
+
+    parser.add_argument(
+        "--upload",
+        action="store_true",
+        help="Upload results to GCS after processing",
+    )
+
+    # Logging arguments
     parser.add_argument(
         "--verbosity",
         type=str,
-        default="info",
-        choices=["debug", "info", "warning", "error"],
-        help="Console logging verbosity level. File logs always include DEBUG. [default: info]",
+        default="INFO",
+        choices=["INFO", "DEBUG"],
+        help="Logging verbosity level",
     )
-    parser.add_argument(
-        "--no-gpu-check",
-        action="store_true",
-        help="Skip GPU availability check (for automated/non-interactive execution).",
-    )
-    parser.add_argument(
-        "--draw-scalebar",
-        action="store_true",
-        default=False,
-        help="Draw scale bar ROI and detection results on output images for debugging. Shows the ROI box and detected scale bar line."
-    )
-    parser.add_argument(
-        "--config_variant",
-        type=str,
-        default="default",
-        help="Configuration variant for the dataset (e.g., 'default', 'class_0_max', 'balanced')"
-    )
-    
+
     args = parser.parse_args()
-    
-    # Load config with variant support
+
+    # Set logging verbosity
+    if args.verbosity == "DEBUG":
+        from src.utils.logger_utils import set_console_log_level
+        import logging
+        set_console_log_level(logging.DEBUG)
+
+    # Load config with dataset and variant support
     if args.task != "setup":
         config = get_config(dataset_name=args.dataset_name, variant=args.config_variant)
     
     # Check GPU before any heavy operations
-    from src.utils.gpu_check import check_gpu_availability, log_device_info
-    
     system_logger.info("Checking GPU availability...")
     check_gpu_availability(require_gpu=False, interactive=True)
     log_device_info()
-    
-    # === END GPU CHECK ===
 
-    # Validate arguments
-    if args.task != "setup" and not args.dataset_name:
-        parser.error(f"--dataset_name is required for task '{args.task}'")
+    # Execute task
+    try:
+        if args.task == "setup":
+            setup_config()
 
-    if args.task == "setup":
-        setup_config()
-    elif args.task == "prepare":
-        download_dataset_info()
-        split_dataset(img_dir, args.dataset_name, test_size=0.2)
-    elif args.task == "train":
-        train_on_dataset(
-            args.dataset_name,
-            args.output_dir or str(SPLIT_DIR),
-            dataset_format=args.dataset_format,
-            rcnn=args.rcnn,
-            augment=args.augment,
-            optimize=args.optimize,
-            n_trials=args.n_trials,
-        )
-    elif args.task == "evaluate":
-        evaluate_model(
-            args.dataset_name,
-            args.output_dir or str(SPLIT_DIR),
-            visualize=args.visualize,
-            dataset_format=args.dataset_format,
-            rcnn=args.rcnn,
-        )
-    elif args.task == "inference":
-        run_inference(
-            args.dataset_name,
-            args.output_dir or str(SPLIT_DIR),
-            visualize=args.visualize,
-            threshold=args.threshold,
-            draw_id=args.id,
-            dataset_format=args.dataset_format,
-            draw_scalebar=args.draw_scalebar,
-        )
+        elif args.task == "prepare":
+            if not args.dataset_name:
+                system_logger.error("--dataset_name required for prepare task")
+                return
+            
+            if args.download:
+                download_data_from_bucket()
+            
+            img_dir = Path.home() / "DATASET" / args.dataset_name
+            split_dataset(str(img_dir), args.dataset_name, test_size=0.2)
+            
+            if args.upload:
+                upload_data_to_bucket()
+
+        elif args.task == "train":
+            if not args.dataset_name:
+                system_logger.error("--dataset_name required for train task")
+                return
+            
+            if args.download:
+                download_data_from_bucket()
+            
+            train_on_dataset(
+                args.dataset_name,
+                args.output_dir or str(SPLIT_DIR),
+                dataset_format=args.dataset_format,
+                rcnn=args.rcnn,
+                augment=args.augment,
+                optimize=args.optimize,
+                n_trials=args.n_trials,
+            )
+            
+            if args.upload:
+                upload_data_to_bucket()
+
+        elif args.task == "evaluate":
+            if not args.dataset_name:
+                system_logger.error("--dataset_name required for evaluate task")
+                return
+            
+            if args.download:
+                download_data_from_bucket()
+            
+            evaluate_model(
+                args.dataset_name,
+                args.output_dir or str(SPLIT_DIR),
+                visualize=args.visualize,
+                dataset_format=args.dataset_format,
+                rcnn=int(args.rcnn) if args.rcnn != "combo" else 101,
+            )
+            
+            if args.upload:
+                upload_data_to_bucket()
+
+        elif args.task == "inference":
+            if not args.dataset_name:
+                system_logger.error("--dataset_name required for inference task")
+                return
+            
+            if args.download:
+                download_data_from_bucket()
+            
+            run_inference(
+                args.dataset_name,
+                args.output_dir or str(SPLIT_DIR),
+                visualize=args.visualize,
+                threshold=args.threshold,
+                draw_id=args.draw_id,
+                dataset_format=args.dataset_format,
+                draw_scalebar=args.draw_scalebar,
+            )
+            
+            if args.upload:
+                upload_data_to_bucket()
+
+    except Exception as e:
+        system_logger.error(f"Task failed: {e}", exc_info=True)
+        raise
+
 
 if __name__ == "__main__":
 
