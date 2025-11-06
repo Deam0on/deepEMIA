@@ -59,42 +59,42 @@ inference_overrides:
   
   # Aggressive iterative stopping - keep going until we find everything
   iterative_stopping:
-    min_total_masks: 50          # Lower threshold to iterate more
-    min_relative_increase: 0.05  # Lower from 0.25 - accept smaller improvements
-    max_consecutive_zero: 3      # Increased from 1 - try harder
-    min_iterations: 5            # Increased from 2 - ensure thorough search
+    min_total_masks: 25          # LOWERED - accept fewer masks to iterate more
+    min_relative_increase: 0.02  # LOWERED from 0.05 - accept 2% improvements
+    max_consecutive_zero: 5      # INCREASED from 3 - try much harder
+    min_iterations: 8            # INCREASED from 5 - ensure exhaustive search
   
   # VERY AGGRESSIVE class-specific detection settings
   class_specific_settings:
-    class_0:  # Large particles - AGGRESSIVE
-      confidence_threshold: 0.65   # VERY LOW - from 0.5 (will detect uncertain ones)
-      iou_threshold: 0.65         # LOWER - from 0.7 (less aggressive NMS merging)
-      min_size: 15                # REDUCED from 25 (smaller particles)
-      min_size_factor: 0.00005    # REDUCED from 0.0001 (very aggressive)
-      use_multiscale: true        # Enable multi-scale for Class 0 too
+    class_0:  # Large particles - MAXIMUM DETECTION
+      confidence_threshold: 0.50  # VERY LOW - detect even uncertain instances
+      iou_threshold: 0.85         # HIGH IOU - minimal NMS merging/suppression
+      min_size: 10                # VERY SMALL - detect tiniest Class 0 instances
+      min_size_factor: 0.00001    # EXTREMELY LOW - tiny pixel-level detection
+      use_multiscale: true        # Enable multi-scale detection across all sizes
     
     class_1:  # Small particles - MAXIMUM AGGRESSION
-      confidence_threshold: 0.65   # VERY LOW - from 0.3 (detect everything possible)
-      iou_threshold: 0.65          # VERY LOW - from 0.5 (minimal NMS merging)
+      confidence_threshold: 0.65  # VERY LOW - from 0.3 (detect everything possible)
+      iou_threshold: 0.65         # VERY LOW - from 0.5 (minimal NMS merging)
       min_size: 1                 # MINIMUM - from 3 (tiniest particles)
       min_size_factor: 0.000001   # EXTREMELY LOW - from 0.000005
       use_multiscale: true        # Multi-scale detection enabled
   
-  # Ensemble for better detection (especially small particles)
+  # Ensemble for better Class 0 detection accuracy
   ensemble_settings:
     enabled: true
-    small_classes_only: false    # Apply to ALL classes for max detection
+    small_classes_only: false    # Apply to all classes
     weights:
-      R50: 0.50   # Slightly favor R50 for small particles
-      R101: 0.50  # R101 for context
+      R50: 0.50   # Balance both models
+      R101: 0.50  # Balance both models
   
   # Aggressive tile-based inference
   use_tile_based_inference: true
   
   tile_settings:
     tile_size: 512
-    overlap_ratio: 0.15         # Increased from 0.1 for better edge detection
-    upscale_factor: 3.5         # Increased from 2.0 for better small particle detection
+    overlap_ratio: 0.35         # INCREASED from 0.25 - maximum edge detection
+    upscale_factor: 4.0         # INCREASED from 3.5 - better small detail detection
     edge_filter_enabled: false  # DISABLED - keep all detections including edges
-    classes_using_tiling: [0, 1]
+    classes_using_tiling: [0]   # ONLY Class 0 tiling
     tile_batch_size: 2
