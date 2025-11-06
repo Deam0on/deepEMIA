@@ -494,28 +494,26 @@ def run_inference(
     threshold=0.65,
     draw_id=False,
     dataset_format="json",
-    draw_scalebar=False,
+    draw_scalebar=False,  # Add parameter
 ):
     """
-    Run inference on a dataset with configurable settings.
+    Runs inference on a dataset and saves the results.
     
-    The function loads dataset-specific configuration including:
-    - Class-specific thresholds
-    - Tile-based inference settings
-    - Ensemble settings
-    - Spatial constraints
+    Note: Iteration count is now automatic via config.yaml iterative_stopping settings.
     """
-    # Load config with dataset and variant support
-    config = get_config(dataset_name=dataset_name)
+    
+    # Load dataset-specific config
+    dataset_config = get_config(dataset_name=dataset_name)
+    system_logger.info(f"Loaded configuration for dataset: {dataset_name}")
     
     # ==========================================
     # EXTRACT INFERENCE SETTINGS FROM DATASET CONFIG
     # ==========================================
     
     # Get inference_settings (supports both 'inference_settings' and 'inference_overrides')
-    inf_settings = config.get("inference_overrides", {})
+    inf_settings = dataset_config.get("inference_overrides", {})
     if not inf_settings:
-        inf_settings = config.get("inference_settings", {})
+        inf_settings = dataset_config.get("inference_settings", {})
     
     # Confidence mode
     confidence_mode = inf_settings.get("confidence_mode", "auto")
