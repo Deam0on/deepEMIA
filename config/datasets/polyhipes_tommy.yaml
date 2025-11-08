@@ -55,7 +55,7 @@ inference_overrides:
     classes_to_infer: [0]  # null = all classes, or [0, 1] for specific classes
 
   use_class_specific_inference: true
-  confidence_mode: 'manual'  # Use manual to apply our aggressive thresholds
+  confidence_mode: 'auto'  # Use manual to apply our aggressive thresholds
   
   # Aggressive iterative stopping - keep going until we find everything
   iterative_stopping:
@@ -92,7 +92,7 @@ inference_overrides:
   use_tile_based_inference: true
   
   tile_settings:
-    tile_size: 512
+    tile_size: 256
     overlap_ratio: 0.35         # INCREASED from 0.25 - maximum edge detection
     upscale_factor: 4.0         # INCREASED from 3.5 - better small detail detection
     edge_filter_enabled: false  # DISABLED - keep all detections including edges

@@ -22,6 +22,10 @@ def load_spatial_constraints(dataset_name=None) -> dict:
     """
     Load spatial constraint configuration for a dataset.
     
+    Supports two configuration locations:
+    1. Top-level 'spatial_constraints' in dataset config (PREFERRED)
+    2. Nested under 'inference_settings.spatial_constraints' (LEGACY)
+    
     Parameters:
     - dataset_name (str, optional): Name of the dataset
     
@@ -39,35 +43,52 @@ def load_spatial_constraints(dataset_name=None) -> dict:
         # Load config with dataset-specific overrides
         config = get_config(dataset_name=dataset_name)
         
+        # PRIMARY: Check top-level 'spatial_constraints' (recommended location)
+        spatial_config_top = config.get('spatial_constraints', None)
+        if spatial_config_top is not None:
+            result = {
+                'enabled': spatial_config_top.get('enabled', False),
+                'containment_rules': spatial_config_top.get('containment_rules', {}),
+                'overlap_rules': spatial_config_top.get('overlap_rules', {}),
+                'containment_threshold': spatial_config_top.get('containment_threshold', 0.95)
+            }
+            system_logger.info(
+                f"Loaded spatial constraints from top-level config: "
+                f"enabled={result['enabled']}, overlap_rules={len(result['overlap_rules'])} classes, "
+                f"containment_rules={len(result['containment_rules'])} rules"
+            )
+            return result
+        
+        # FALLBACK: Check legacy location under 'inference_settings.spatial_constraints'
         inference_settings = config.get('inference_settings', {})
         spatial_config = inference_settings.get('spatial_constraints', {})
         
-        # Check for dataset-specific configuration first
-        if dataset_name:
-            dataset_config = spatial_config.get(dataset_name, None)
-            if dataset_config:
-                # Use dataset-specific configuration
+        if spatial_config:
+            # Check for dataset-specific configuration first
+            if dataset_name:
+                dataset_config = spatial_config.get(dataset_name, None)
+                if dataset_config:
+                    # Use dataset-specific configuration
+                    result = {
+                        'enabled': dataset_config.get('enabled', False),
+                        'containment_rules': dataset_config.get('containment_rules', {}),
+                        'overlap_rules': dataset_config.get('overlap_rules', {}),
+                        'containment_threshold': dataset_config.get('containment_threshold', 0.95)
+                    }
+                    system_logger.info(f"Using dataset-specific spatial constraints from legacy location for '{dataset_name}'")
+                    return result
+            
+            # Check default config
+            default_spatial = spatial_config.get('default', None)
+            if default_spatial:
                 result = {
-                    'enabled': dataset_config.get('enabled', False),
-                    'containment_rules': dataset_config.get('containment_rules', {}),
-                    'overlap_rules': dataset_config.get('overlap_rules', {}),
-                    'containment_threshold': dataset_config.get('containment_threshold', 0.95)
+                    'enabled': default_spatial.get('enabled', False),
+                    'containment_rules': default_spatial.get('containment_rules', {}),
+                    'overlap_rules': default_spatial.get('overlap_rules', {}),
+                    'containment_threshold': default_spatial.get('containment_threshold', 0.95)
                 }
-                system_logger.info(f"Using dataset-specific spatial constraints for '{dataset_name}'")
+                system_logger.info("Using default spatial constraints from legacy location")
                 return result
-            else:
-                system_logger.info(f"No dataset-specific spatial constraints for '{dataset_name}', checking default")
-        
-        # Check default config
-        default_spatial = spatial_config.get('default', None)
-        if default_spatial:
-            result = {
-                'enabled': default_spatial.get('enabled', False),
-                'containment_rules': default_spatial.get('containment_rules', {}),
-                'overlap_rules': default_spatial.get('overlap_rules', {}),
-                'containment_threshold': default_spatial.get('containment_threshold', 0.95)
-            }
-            return result
         
         # No configuration found
         system_logger.info("No spatial constraints configured, constraints disabled")

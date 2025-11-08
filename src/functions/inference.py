@@ -437,9 +437,13 @@ def iou(mask1, mask2):
 
 def cleanup_old_predictions(split_dir, output_dir=None):
     """
-    Remove old prediction visualization files (*_predictions.png) from directories.
+    Remove old prediction visualization files and debug images from directories.
     
-    This ensures that leftover predictions from previous runs don't cause confusion.
+    This ensures that leftover predictions and debug images from previous runs don't cause confusion.
+    
+    Cleans up:
+    - *_predictions.png - Old prediction visualizations
+    - *_scalebar_debug.png - Old scale bar debug images
     
     Parameters:
     - split_dir (Path or str): Path to the split directory containing old predictions
@@ -450,17 +454,21 @@ def cleanup_old_predictions(split_dir, output_dir=None):
     """
     removed_count = 0
     
+    # File patterns to clean up
+    cleanup_patterns = ["*_predictions.png", "*_scalebar_debug.png"]
+    
     # Clean split_dir
     split_path = Path(split_dir)
     if split_path.exists():
-        prediction_files = list(split_path.glob("*_predictions.png"))
-        for pred_file in prediction_files:
-            try:
-                pred_file.unlink()
-                removed_count += 1
-                system_logger.debug(f"Removed old prediction file: {pred_file.name}")
-            except Exception as e:
-                system_logger.warning(f"Failed to remove {pred_file.name}: {e}")
+        for pattern in cleanup_patterns:
+            old_files = list(split_path.glob(pattern))
+            for old_file in old_files:
+                try:
+                    old_file.unlink()
+                    removed_count += 1
+                    system_logger.debug(f"Removed old file: {old_file.name}")
+                except Exception as e:
+                    system_logger.warning(f"Failed to remove {old_file.name}: {e}")
     else:
         system_logger.debug(f"Split directory does not exist: {split_path}")
     
@@ -468,21 +476,22 @@ def cleanup_old_predictions(split_dir, output_dir=None):
     if output_dir:
         output_path = Path(output_dir)
         if output_path.exists():
-            prediction_files = list(output_path.glob("*_predictions.png"))
-            for pred_file in prediction_files:
-                try:
-                    pred_file.unlink()
-                    removed_count += 1
-                    system_logger.debug(f"Removed old prediction file: {pred_file.name}")
-                except Exception as e:
-                    system_logger.warning(f"Failed to remove {pred_file.name}: {e}")
+            for pattern in cleanup_patterns:
+                old_files = list(output_path.glob(pattern))
+                for old_file in old_files:
+                    try:
+                        old_file.unlink()
+                        removed_count += 1
+                        system_logger.debug(f"Removed old file: {old_file.name}")
+                    except Exception as e:
+                        system_logger.warning(f"Failed to remove {old_file.name}: {e}")
         else:
             system_logger.debug(f"Output directory does not exist: {output_path}")
     
     if removed_count > 0:
-        system_logger.info(f"Cleaned up {removed_count} old prediction visualization(s)")
+        system_logger.info(f"Cleaned up {removed_count} old visualization file(s) (predictions and debug images)")
     else:
-        system_logger.debug("No old prediction files found to clean up")
+        system_logger.debug("No old visualization files found to clean up")
     
     return removed_count
 
@@ -1328,23 +1337,15 @@ def run_inference(
     except Exception as e:
         system_logger.warning(f"Error during mask file cleanup: {e}")
     
-    # Clean up scalebar debug images if they exist
+    # Log scalebar debug images if they were generated
+    # (old debug images are cleaned up at the start of inference via cleanup_old_predictions)
     if draw_scalebar:
         try:
             debug_images = [f for f in os.listdir(output_dir) if f.endswith('_scalebar_debug.png')]
             if debug_images:
-                system_logger.info(f"Cleaning up {len(debug_images)} scalebar debug images...")
-                for debug_img in debug_images:
-                    debug_path = os.path.join(output_dir, debug_img)
-                    try:
-                        os.remove(debug_path)
-                        system_logger.debug(f"Removed {debug_img}")
-                    except Exception as e:
-                        system_logger.warning(f"Failed to remove {debug_img}: {e}")
-            else:
-                system_logger.debug("No scalebar debug images found to clean up")
+                system_logger.info(f"Generated {len(debug_images)} scalebar debug images")
         except Exception as e:
-            system_logger.warning(f"Error during scalebar debug cleanup: {e}")
+            system_logger.debug(f"Could not count debug images: {e}")
     
     system_logger.info("Inference completed successfully")
 
