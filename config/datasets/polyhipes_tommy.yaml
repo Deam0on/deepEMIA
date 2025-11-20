@@ -1,15 +1,16 @@
 # Dataset-specific configuration for polyhipes_tommy
-# Optimized for MAXIMUM detection of both classes (spatial constraints OFF)
+# Optimized for CONSERVATIVE detection with spatial filtering
 
 metadata:
   name: "polyhipes_tommy"
-  description: "Tommy's polyhipes dataset - optimized for maximum detections"
-  created: "2025-11-05"
+  description: "Tommy's polyhipes dataset - CONSERVATIVE DETECTION with spatial filtering"
+  created: "2025-11-20"
   notes: |
-    OPTIMIZATION GOAL: Maximize detections of both Class 0 and Class 1
-    Spatial constraints DISABLED for maximum detection
-    Very aggressive settings - will detect more but may include false positives
-    Enable spatial constraints after to filter invalid detections
+    FIX: Reduce false positives and overlapping detections
+    - Higher confidence thresholds
+    - Lower IoU thresholds (merge duplicates)
+    - Spatial constraints ENABLED
+    - Less aggressive iteration
 
 # Custom scale bar ROI for this dataset
 scale_bar_roi:
@@ -26,75 +27,70 @@ scalebar_thresholds:
   min_line_length: 30         # Reduced from 30 for shorter scale bars
   edge_margin_factor: 0.1    # Reduced from 0.1 for edge-close bars
 
-# Spatial constraints DISABLED for maximum detection
-spatial_constraints:
-  enabled: true
-  
-  # Keep rules defined for when you want to enable them
-  containment_rules:
-    1: 0
-  containment_threshold: 0.95
-  overlap_rules:
-    0:
-      allow_overlap: false
-      allow_touch: true
-      max_iou_threshold: 0.1
-    1:
-      allow_overlap: true
-      allow_touch: true
-      max_iou_threshold: 0.9
-
 # Optimized hyperparameters (will be populated by training)
 rcnn_hyperparameters:
   best_R50: {}
   best_R101: {}
 
-# AGGRESSIVE inference settings for MAXIMUM detections
+# CONSERVATIVE inference settings
 inference_overrides:
-  inference_settings:
-    classes_to_infer: [0]  # null = all classes, or [0, 1] for specific classes
-
   use_class_specific_inference: true
-  confidence_mode: 'auto'  # Use manual to apply our aggressive thresholds
-  
-  # Aggressive iterative stopping - keep going until we find everything
-  iterative_stopping:
-    min_total_masks: 25          # LOWERED - accept fewer masks to iterate more
-    min_relative_increase: 0.02  # LOWERED from 0.05 - accept 2% improvements
-    max_consecutive_zero: 5      # INCREASED from 3 - try much harder
-    min_iterations: 8            # INCREASED from 5 - ensure exhaustive search
-  
-  # VERY AGGRESSIVE class-specific detection settings
-  class_specific_settings:
-    class_0:  # Large particles - MAXIMUM DETECTION
-      confidence_threshold: 0.50  # VERY LOW - detect even uncertain instances
-      iou_threshold: 0.85         # HIGH IOU - minimal NMS merging/suppression
-      min_size: 10                # VERY SMALL - detect tiniest Class 0 instances
-      min_size_factor: 0.00001    # EXTREMELY LOW - tiny pixel-level detection
-      use_multiscale: true        # Enable multi-scale detection across all sizes
+  confidence_mode: 'manual'
+
+  # SPATIAL CONSTRAINTS - MOVED TO TOP LEVEL (CRITICAL FIX!)
+  spatial_constraints:
+    enabled: true
     
-    class_1:  # Small particles - MAXIMUM AGGRESSION
-      confidence_threshold: 0.65  # VERY LOW - from 0.3 (detect everything possible)
-      iou_threshold: 0.65         # VERY LOW - from 0.5 (minimal NMS merging)
-      min_size: 1                 # MINIMUM - from 3 (tiniest particles)
-      min_size_factor: 0.000001   # EXTREMELY LOW - from 0.000005
-      use_multiscale: true        # Multi-scale detection enabled
+    containment_rules:
+      1: 0  # Pore throats (1) must be inside Pores (0)
+    
+    containment_threshold: 0.95
+    
+    overlap_rules:
+      0:  # Pores
+        allow_overlap: false
+        allow_touch: true
+        max_iou_threshold: 0.30  # INCREASED from 0.1 - allow some overlap during merging
+      1:  # Pore throats
+        allow_overlap: true
+        allow_touch: true
+        max_iou_threshold: 0.9
   
-  # Ensemble for better Class 0 detection accuracy
+  iterative_stopping:
+    min_total_masks: 50           # INCREASED - stop earlier
+    min_relative_increase: 0.05   # INCREASED - need 5% improvement
+    max_consecutive_zero: 2       # REDUCED - give up faster
+    min_iterations: 3             # REDUCED - fewer mandatory iterations
+  
+  class_specific_settings:
+    class_0:  # Pores
+      confidence_threshold: 0.70  # INCREASED from 0.50
+      iou_threshold: 0.50         # REDUCED from 0.85 - merge overlaps
+      min_size: 500               # INCREASED from 10 - filter fragments
+      min_size_factor: 0.0001
+      use_multiscale: true
+    
+    class_1:  # Pore throats
+      confidence_threshold: 0.75  # INCREASED from 0.65
+      iou_threshold: 0.50         # REDUCED from 0.65 - merge overlaps
+      min_size: 50                # INCREASED from 1 - filter noise
+      min_size_factor: 0.00001
+      use_multiscale: true
+  
   ensemble_settings:
     enabled: true
-    small_classes_only: false    # Apply to all classes
+    small_classes_only: true
     weights:
-      R50: 0.50   # Balance both models
-      R101: 0.50  # Balance both models
+      R50: 0.50
+      R101: 0.50
+    min_ensemble_confidence: 0.6  # NEW - only keep high-confidence ensemble results
   
-  # Aggressive tile-based inference
   use_tile_based_inference: true
   
   tile_settings:
-    tile_size: 256
-    overlap_ratio: 0.35         # INCREASED from 0.25 - maximum edge detection
-    upscale_factor: 4.0         # INCREASED from 3.5 - better small detail detection
-    edge_filter_enabled: false  # DISABLED - keep all detections including edges
-    classes_using_tiling: [0]   # ONLY Class 0 tiling
+    tile_size: 512                # INCREASED from 256 - larger context
+    overlap_ratio: 0.15           # REDUCED from 0.35 - less redundancy
+    upscale_factor: 3.5           # REDUCED from 4.0 - less aggressive
+    edge_filter_enabled: false    # Keep false for now
+    classes_using_tiling: [0, 1]
     tile_batch_size: 2
