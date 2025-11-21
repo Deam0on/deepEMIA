@@ -75,23 +75,9 @@ def load_dataset_config(dataset_name: str) -> Optional[Dict[str, Any]]:
 
 
 def get_config(dataset_name: str = None) -> Dict[str, Any]:
-    """
-    Loads and returns the project configuration from config.yaml.
-    If dataset_name is provided, merges dataset-specific overrides.
-
-    Parameters:
-    - dataset_name: Optional dataset name for dataset-specific config
-
-    Returns:
-        dict: The loaded and validated configuration dictionary.
-
-    Raises:
-        FileNotFoundError: If the config file does not exist.
-        yaml.YAMLError: If the config file cannot be parsed.
-    """
+    """Load config with consistent dataset override handling."""
     global _config
     
-    # Load base config once
     if _config is None:
         config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
         try:
@@ -118,18 +104,29 @@ def get_config(dataset_name: str = None) -> Dict[str, Any]:
             system_logger.error(f"Error parsing configuration file: {e}")
             raise
     
-    # If no dataset specified, return base config
     if dataset_name is None:
         return _config
     
-    # Load and merge dataset-specific config
     dataset_config = load_dataset_config(dataset_name)
-    
     if dataset_config is None:
         return _config
     
-    # Deep merge configs
     merged_config = deep_merge(_config, {})
+    
+    # === CONSISTENT NAMING FIX ===
+    # Map inference_overrides -> inference_settings for consistency
+    if 'inference_overrides' in dataset_config:
+        if 'inference_settings' not in merged_config:
+            merged_config['inference_settings'] = {}
+        
+        # Deep merge, ensuring spatial_constraints are properly nested
+        override_config = dataset_config['inference_overrides']
+        merged_config['inference_settings'] = deep_merge(
+            merged_config['inference_settings'],
+            override_config
+        )
+        
+        system_logger.debug(f"Applied inference_overrides for '{dataset_name}'")
     
     # Handle scale_bar_roi
     if 'scale_bar_roi' in dataset_config:
@@ -163,13 +160,6 @@ def get_config(dataset_name: str = None) -> Dict[str, Any]:
                 backbone = key.replace('best_', '')
                 merged_config['rcnn_hyperparameters']['best'][backbone] = \
                     dataset_config['rcnn_hyperparameters'][key]
-    
-    # Handle inference overrides
-    if 'inference_overrides' in dataset_config:
-        merged_config['inference_settings'] = deep_merge(
-            merged_config.get('inference_settings', {}),
-            dataset_config['inference_overrides']
-        )
     
     system_logger.debug(f"Merged config for dataset '{dataset_name}'")
     return merged_config
