@@ -1741,14 +1741,15 @@ def postprocess_masks_universal(
 ):
     """
     Universal postprocessing for masks with class-specific size thresholds.
+    NOW WITH CLASS-SPECIFIC MORPHOLOGICAL OPERATIONS based on small/large classification.
     
     Parameters:
-    - ori_mask: Original masks
-    - ori_score: Confidence scores
+    - ori_mask: List of predicted masks
+    - ori_score: List of confidence scores
     - image: Input image
-    - target_class: Target class ID
-    - is_small_class: Whether this is a small class
-    - min_crys_size: Minimum size threshold (if None, calculated from image)
+    - target_class: Current class being processed
+    - is_small_class: Boolean indicating if this is a small class (True) or large class (False)
+    - min_crys_size: Minimum mask size in pixels (calculated if None)
     
     Returns:
     - list: Processed masks
@@ -1759,13 +1760,12 @@ def postprocess_masks_universal(
     image_area = image.shape[0] * image.shape[1]
     height, width = image.shape[:2]
 
-    # ONLY calculate from image if not provided
+    # Calculate min_size if not provided
     if min_crys_size is None:
         if is_small_class:
-            # More aggressive for small particles
-            min_crys_size = max(3, int(image_area * 0.000005))  # 0.0005%
+            min_crys_size = max(3, int(image_area * 0.000005))
         else:
-            min_crys_size = max(25, int(image_area * 0.0001))  # 0.01%
+            min_crys_size = max(25, int(image_area * 0.0001))
     
     system_logger.debug(
         f"Postprocessing: min_size={min_crys_size}px (class={target_class}, "
@@ -1779,22 +1779,35 @@ def postprocess_masks_universal(
         # Fill holes
         filled_mask = binary_fill_holes(mask).astype(np.uint8)
         
-        # Light morphological operations (erosion then dilation)
-        kernel = disk(1)  # Small kernel for speed
-        eroded = erosion(filled_mask, kernel)
-        dilated = dilation(eroded, kernel)
+        # SMALL VS LARGE CLASS MORPHOLOGICAL OPERATIONS
+        if is_small_class:
+            # SMALL CLASSES - MINIMAL morphology to prevent merging
+            # Use very light erosion only (just smoothing, no expansion)
+            kernel = disk(1)  # Smallest possible kernel
+            cleaned = erosion(filled_mask, kernel)
+            # NO DILATION - skip to prevent nearby small instances from merging
+            final_mask = cleaned
+            
+        else:
+            # LARGE CLASSES - Standard morphology (erosion + dilation)
+            # This smooths boundaries while maintaining size
+            kernel = disk(1)
+            eroded = erosion(filled_mask, kernel)
+            dilated = dilation(eroded, kernel)
+            final_mask = dilated
         
         # Size filtering
-        mask_size = np.sum(dilated)
+        mask_size = np.sum(final_mask)
         if mask_size >= min_crys_size:
-            processed_masks.append(dilated.astype(bool))
+            processed_masks.append(final_mask.astype(bool))
         else:
             system_logger.debug(
                 f"Filtered mask {i}: size {mask_size}px < min {min_crys_size}px"
             )
 
     system_logger.debug(
-        f"Postprocessing complete: {len(processed_masks)}/{len(ori_mask)} masks kept"
+        f"Postprocessing complete: {len(processed_masks)}/{len(ori_mask)} masks kept "
+        f"(class={target_class}, small={is_small_class})"
     )
     
     return processed_masks
@@ -2619,7 +2632,7 @@ def deduplicate_masks_smart(masks, scores, classes, iou_threshold=0.4,
         if rows.any() and cols.any():
             y_min, y_max = np.where(rows)[0][[0, -1]]
             x_min, x_max = np.where(cols)[0][[0, -1]]
-            bboxes.append((y_min, x_min, y_max, x_max))
+            bboxes.append((y_min, y_max, x_min, x_max))
         else:
             bboxes.append(None)
     

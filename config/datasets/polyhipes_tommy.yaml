@@ -42,7 +42,7 @@ inference_overrides:
     enabled: true
     
     containment_rules:
-      1: 0  # Pore throats (1) must be inside Pores (0)
+      1: 0  # Pore throats must be inside Pores
     
     containment_threshold: 0.95
     
@@ -50,34 +50,34 @@ inference_overrides:
       0:  # Pores
         allow_overlap: false
         allow_touch: true
-        max_iou_threshold: 0.30  # INCREASED from 0.1 - allow some overlap during merging
-      1:  # Pore throats
-        allow_overlap: true
+        max_iou_threshold: 0.30
+      
+      1:  # Pore throats - STRICTER
+        allow_overlap: false      # NEW: No overlap allowed
         allow_touch: true
-        max_iou_threshold: 0.9
+        max_iou_threshold: 0.50    # REDUCED from 0.9
   
   iterative_stopping:
-    min_total_masks: 50           # INCREASED - stop earlier
-    min_relative_increase: 0.05   # INCREASED - need 5% improvement
-    max_consecutive_zero: 2       # REDUCED - give up faster
-    min_iterations: 3             # REDUCED - fewer mandatory iterations
+    min_total_masks: 50
+    min_relative_increase: 0.05
+    max_consecutive_zero: 2
+    min_iterations: 3
   
   class_specific_settings:
     class_0:  # Pores
-      confidence_threshold: 0.70  # INCREASED from 0.50
-      iou_threshold: 0.35         # REDUCED from 0.50 - more aggressive merging
-      min_size: 500               # INCREASED from 10 - filter fragments
-      min_size_factor: 0.0001
+      confidence_threshold: 0.70
+      iou_threshold: 0.35
+      min_size: 500
+      aspect_ratio_max: 3.0
       use_multiscale: true
-      aspect_ratio_max: 3.0      # NEW: Reject elongated artifacts (ratio > 3:1)
     
     class_1:  # Pore throats
-      confidence_threshold: 0.75  # INCREASED from 0.65
-      iou_threshold: 0.40         # REDUCED from 0.50
-      min_size: 50                # INCREASED from 1 - filter noise
-      min_size_factor: 0.00001
+      confidence_threshold: 0.75
+      iou_threshold: 0.60        # INCREASED from 0.40
+      min_size: 50
+      aspect_ratio_max: 4.0
       use_multiscale: true
-      aspect_ratio_max: 4.0      # NEW: Allow slightly more elongation for throats
+      min_separation_distance: 5  # NEW: Minimum pixels between throats (optional)
   
   ensemble_settings:
     enabled: true
@@ -85,15 +85,15 @@ inference_overrides:
     weights:
       R50: 0.50
       R101: 0.50
-    min_ensemble_confidence: 0.6  # NEW - only keep high-confidence ensemble results
+    min_ensemble_confidence: 0.6
   
   use_tile_based_inference: true
   
   tile_settings:
-    tile_size: 512                # INCREASED from 256 - larger context
-    overlap_ratio: 0.15           # REDUCED from 0.35 - less redundancy
-    upscale_factor: 3.5           # REDUCED from 4.0 - less aggressive
-    edge_filter_enabled: true    # CHANGE THIS FROM false
-    edge_margin_threshold: 0.3  # NEW: Reject masks within 30% of tile edge
+    tile_size: 512
+    overlap_ratio: 0.15
+    upscale_factor: 3.5
+    edge_filter_enabled: true
+    edge_margin_threshold: 0.3
     classes_using_tiling: [0, 1]
     tile_batch_size: 2
