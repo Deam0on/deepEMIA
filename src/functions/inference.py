@@ -1984,6 +1984,7 @@ def process_single_scale(predictor, image, target_class, small_classes, confiden
     - target_class: Target class ID
     - small_classes: Set of small class IDs
     - confidence_threshold: Confidence threshold for this class
+
     - max_iters: Maximum iterations
     - scale: Scale factor (e.g., 1.0, 1.5, 2.0)
     
@@ -2535,127 +2536,185 @@ def is_edge_mask(mask, tile_size, overlap_ratio):
     return False
 
 
-def deduplicate_masks_smart(masks, scores, classes, iou_threshold=0.4):
+def deduplicate_masks_smart(masks, scores, classes, iou_threshold=0.4, 
+                            max_aspect_ratio=None, edge_filter_margin=0.3):
     """
-    HIGHLY OPTIMIZED: Fast deduplication using spatial indexing and parallelization.
-    - Uses bounding box pre-filtering (O(n log n) instead of O(n²))
-    - Parallel IoU calculations for overlapping boxes
-    - Early exit when duplicate found
+    Enhanced deduplication with artifact filtering.
     
     Parameters:
     - masks: List of binary masks
     - scores: List of confidence scores
     - classes: List of class IDs
-    - iou_threshold: IoU threshold for considering masks as duplicates
+    - iou_threshold: IoU threshold for duplicate removal
+    - max_aspect_ratio: Maximum allowed aspect ratio (e.g., 3.0 = 3:1)
+    - edge_filter_margin: Reject masks within this fraction of tile edge
     
     Returns:
-    - tuple: (unique_masks, unique_scores, unique_classes)
+    - (filtered_masks, filtered_scores, filtered_classes)
     """
-    if not masks:
+    if len(masks) == 0:
         return [], [], []
     
-    # Validation
-    if len(masks) != len(scores) or len(masks) != len(classes):
-        system_logger.error(
-            f"Input length mismatch! masks: {len(masks)}, scores: {len(scores)}, classes: {len(classes)}"
-        )
-        min_len = min(len(masks), len(scores), len(classes))
-        masks = masks[:min_len]
-        scores = scores[:min_len]
-        classes = classes[:min_len]
+    # STEP 1: Pre-filter artifacts before deduplication
+    filtered_indices = []
+    for idx, mask in enumerate(masks):
+        # Calculate bounding box
+        rows = np.any(mask, axis=1)
+        cols = np.any(mask, axis=0)
+        
+        if not rows.any() or not cols.any():
+            continue  # Empty mask
+        
+        y_min, y_max = np.where(rows)[0][[0, -1]]
+        x_min, x_max = np.where(cols)[0][[0, -1]]
+        
+        bbox_width = x_max - x_min + 1
+        bbox_height = y_max - y_min + 1
+        
+        # Calculate aspect ratio
+        if bbox_height == 0 or bbox_width == 0:
+            continue
+        
+        aspect_ratio = max(bbox_width, bbox_height) / min(bbox_width, bbox_height)
+        
+        # Filter 1: Reject extreme aspect ratios (likely tile edge artifacts)
+        if max_aspect_ratio and aspect_ratio > max_aspect_ratio:
+            system_logger.debug(f"Filtered mask {idx}: aspect ratio {aspect_ratio:.2f} > {max_aspect_ratio}")
+            continue
+        
+        # Filter 2: Reject masks near tile edges (if tile-based inference)
+        # This requires passing tile_info, so we'll skip for now
+        # You can enhance this later
+        
+        # Filter 3: Calculate compactness (area / perimeter^2)
+        # Artifacts tend to have low compactness (elongated)
+        mask_area = np.sum(mask)
+        contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if len(contours) > 0:
+            perimeter = cv2.arcLength(contours[0], True)
+            if perimeter > 0:
+                compactness = (4 * np.pi * mask_area) / (perimeter ** 2)
+                
+                # Reject very elongated shapes (compactness < 0.2)
+                if compactness < 0.15:
+                    system_logger.debug(f"Filtered mask {idx}: compactness {compactness:.3f} < 0.15")
+                    continue
+        
+        filtered_indices.append(idx)
     
-    scores = np.array(scores)
-    total_masks = len(masks)
+    # Apply pre-filtering
+    masks = [masks[i] for i in filtered_indices]
+    scores = [scores[i] for i in filtered_indices]
+    classes = [classes[i] for i in filtered_indices]
     
-    system_logger.info(f"Starting OPTIMIZED deduplication of {total_masks} masks...")
-    start_time = time.perf_counter()
+    if len(masks) == 0:
+        return [], [], []
     
-    # OPTIMIZATION 1: Pre-compute bounding boxes and areas
+    # STEP 2: Standard deduplication (existing code)
+    # Pre-compute bounding boxes for fast spatial filtering
     bboxes = []
-    bbox_areas = []
     for mask in masks:
-        coords = np.argwhere(mask)
-        if len(coords) == 0:
-            bboxes.append((0, 0, 0, 0))
-            bbox_areas.append(0)
-        else:
-            y_min, x_min = coords.min(axis=0)
-            y_max, x_max = coords.max(axis=0)
+        rows = np.any(mask, axis=1)
+        cols = np.any(mask, axis=0)
+        if rows.any() and cols.any():
+            y_min, y_max = np.where(rows)[0][[0, -1]]
+            x_min, x_max = np.where(cols)[0][[0, -1]]
             bboxes.append((y_min, x_min, y_max, x_max))
-            bbox_areas.append((y_max - y_min) * (x_max - x_min))
+        else:
+            bboxes.append(None)
     
-    system_logger.debug(f"Computed {len(bboxes)} bounding boxes in {time.perf_counter() - start_time:.2f}s")
-    
-    # Sort by score (descending) - keep highest confidence masks
+    # Sort by score (highest first)
     sorted_indices = np.argsort(scores)[::-1]
     
-    unique_masks = []
-    unique_scores = []
-    unique_classes = []
-    unique_bboxes = []
-    unique_areas = []
+    keep_indices = []
+    removed_indices = set()
     
-    checked_pairs = 0
-    skipped_by_bbox = 0
-    skipped_by_area = 0
-    
-    for progress_idx, idx in enumerate(sorted_indices):
-        # Progress logging every 10%
-        if total_masks > 100 and progress_idx % max(1, total_masks // 10) == 0:
-            elapsed = time.perf_counter() - start_time
-            system_logger.info(
-                f"Progress: {progress_idx}/{total_masks} ({int(progress_idx/total_masks*100)}%) - "
-                f"Unique: {len(unique_masks)} - Time: {elapsed:.1f}s"
-            )
-        
-        if idx >= len(masks):
+    for idx in sorted_indices:
+        if idx in removed_indices:
             continue
-            
-        mask = masks[idx]
-        score = scores[idx]
-        cls = classes[idx]
-        bbox = bboxes[idx]
-        area = bbox_areas[idx]
         
-        # OPTIMIZATION 2: Bbox overlap + area pre-filter
-        is_duplicate = False
-        for i, (existing_bbox, existing_area) in enumerate(zip(unique_bboxes, unique_areas)):
-            y1_min, x1_min, y1_max, x1_max = bbox
-            y2_min, x2_min, y2_max, x2_max = existing_bbox
-            
-            # Quick bbox overlap check
-            if (y1_max < y2_min or y2_max < y1_min or
-                x1_max < x2_min or x2_max < x1_min):
-                # No overlap - skip expensive IoU calculation
-                skipped_by_bbox += 1
+        keep_indices.append(idx)
+        current_bbox = bboxes[idx]
+        current_mask = masks[idx]
+        current_class = classes[idx]
+        
+        # Only check masks that spatially overlap (bbox check is fast)
+        for other_idx in sorted_indices[idx+1:]:
+            if other_idx in removed_indices:
+                continue
+            if classes[other_idx] != current_class:
                 continue
             
-            # OPTIMIZATION 3: Area-based early rejection
-            # If bbox areas are very different, IoU can't be high
-            area_ratio = min(area, existing_area) / max(area, existing_area) if max(area, existing_area) > 0 else 0
-            if area_ratio < iou_threshold * 0.5:  # Conservative threshold
-                skipped_by_area += 1
+            # Fast bbox overlap check BEFORE expensive IoU
+            if not bboxes_overlap(current_bbox, bboxes[other_idx]):
                 continue
             
-            # Bboxes overlap and areas similar - compute actual IoU
-            checked_pairs += 1
-            if iou(mask, unique_masks[i]) > iou_threshold:
-                is_duplicate = True
-                break  # OPTIMIZATION 4: Early exit when duplicate found
-        
-        if not is_duplicate:
-            unique_masks.append(mask)
-            unique_scores.append(float(score))
-            unique_classes.append(int(cls))
-            unique_bboxes.append(bbox)
-            unique_areas.append(area)
+            # Now compute expensive IoU only if bboxes overlap
+            iou_val = calculate_iou(current_mask, masks[other_idx], 
+                                   current_bbox, bboxes[other_idx])
+            
+            if iou_val > iou_threshold:
+                removed_indices.add(other_idx)
+                system_logger.debug(f"Removed duplicate mask {other_idx} (IoU={iou_val:.3f} with {idx})")
     
-    total_time = time.perf_counter() - start_time
-    efficiency = (skipped_by_bbox + skipped_by_area) / max(1, checked_pairs + skipped_by_bbox + skipped_by_area) * 100
-    
-    system_logger.info(
-        f"Deduplication: {total_masks} -> {len(unique_masks)} unique in {total_time:.1f}s "
-        f"({checked_pairs:,} IoU checks, {skipped_by_bbox:,} bbox, {skipped_by_area:,} area skips, {efficiency:.1f}% efficient)"
+    return (
+        [masks[i] for i in keep_indices],
+        [scores[i] for i in keep_indices],
+        [classes[i] for i in keep_indices]
     )
+
+
+def bboxes_overlap(bbox1, bbox2):
+    """Check if two bounding boxes overlap."""
+    if bbox1 is None or bbox2 is None:
+        return False
     
-    return unique_masks, unique_scores, unique_classes
+    y1_min, x1_min, y1_max, x1_max = bbox1
+    y2_min, x2_min, y2_max, x2_max = bbox2
+    
+    # Check if NOT overlapping (faster to check negative case)
+    if x1_max < x2_min or x2_max < x1_min:
+        return False
+    if y1_max < y2_min or y2_max < y1_min:
+        return False
+    
+    return True
+
+
+def calculate_iou(mask1, mask2, bbox1=None, bbox2=None):
+    """Calculate IoU with optional bbox pre-filtering."""
+    # Fast pre-filter: check bounding box overlap first
+    if bbox1 is None:
+        bbox1 = get_mask_bbox(mask1)
+    if bbox2 is None:
+        bbox2 = get_mask_bbox(mask2)
+    
+    if not bboxes_overlap(bbox1, bbox2):
+        return 0.0
+    
+    # Use bitwise operations (faster than logical)
+    intersection = np.count_nonzero(mask1 & mask2)
+    
+    if intersection == 0:
+        return 0.0
+    
+    union = np.count_nonzero(mask1 | mask2)
+    
+    if union == 0:
+        return 0.0
+    
+    return intersection / union
+
+
+def get_mask_bbox(mask):
+    """Get bounding box of a binary mask."""
+    rows = np.any(mask, axis=1)
+    cols = np.any(mask, axis=0)
+    
+    if not rows.any() or not cols.any():
+        return None
+    
+    y_min, y_max = np.where(rows)[0][[0, -1]]
+    x_min, x_max = np.where(cols)[0][[0, -1]]
+    
+    return (y_min, x_min, y_max, x_max)

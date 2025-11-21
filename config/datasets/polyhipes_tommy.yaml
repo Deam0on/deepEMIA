@@ -65,17 +65,19 @@ inference_overrides:
   class_specific_settings:
     class_0:  # Pores
       confidence_threshold: 0.70  # INCREASED from 0.50
-      iou_threshold: 0.50         # REDUCED from 0.85 - merge overlaps
+      iou_threshold: 0.35         # REDUCED from 0.50 - more aggressive merging
       min_size: 500               # INCREASED from 10 - filter fragments
       min_size_factor: 0.0001
       use_multiscale: true
+      aspect_ratio_max: 3.0      # NEW: Reject elongated artifacts (ratio > 3:1)
     
     class_1:  # Pore throats
       confidence_threshold: 0.75  # INCREASED from 0.65
-      iou_threshold: 0.50         # REDUCED from 0.65 - merge overlaps
+      iou_threshold: 0.40         # REDUCED from 0.50
       min_size: 50                # INCREASED from 1 - filter noise
       min_size_factor: 0.00001
       use_multiscale: true
+      aspect_ratio_max: 4.0      # NEW: Allow slightly more elongation for throats
   
   ensemble_settings:
     enabled: true
@@ -91,6 +93,7 @@ inference_overrides:
     tile_size: 512                # INCREASED from 256 - larger context
     overlap_ratio: 0.15           # REDUCED from 0.35 - less redundancy
     upscale_factor: 3.5           # REDUCED from 4.0 - less aggressive
-    edge_filter_enabled: false    # Keep false for now
+    edge_filter_enabled: true    # CHANGE THIS FROM false
+    edge_margin_threshold: 0.3  # NEW: Reject masks within 30% of tile edge
     classes_using_tiling: [0, 1]
     tile_batch_size: 2
