@@ -225,8 +225,9 @@ If used in research, please cite:
 ```bibtex
 @software{deepemia,
   title={deepEMIA: Deep Learning Electron Microscopy Image Analysis},
-  author={Hladek, F.},
+  author={Hládek, Filip},
   year={2026},
+  version={2.0.0},
   url={https://github.com/Deam0on/deepEMIA}
 }
 ```
