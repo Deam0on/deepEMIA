@@ -50,10 +50,10 @@ from src.utils.mask_utils import postprocess_masks, rle_encoding
 from src.utils.measurements import calculate_measurements
 from src.utils.scalebar_ocr import detect_scale_bar
 from src.utils.spatial_constraints import apply_spatial_constraints
+from src.utils.config import get_config
 
-# Load config once at the start of your program
-with open(Path.home() / "deepEMIA" / "config" / "config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+# Load base config once at module level
+config = get_config()
 
 measure_contrast_distribution = config.get("measure_contrast_distribution", False)
 
@@ -437,9 +437,13 @@ def iou(mask1, mask2):
 
 def cleanup_old_predictions(split_dir, output_dir=None):
     """
-    Remove old prediction visualization files (*_predictions.png) from directories.
+    Remove old prediction visualization files and debug images from directories.
     
-    This ensures that leftover predictions from previous runs don't cause confusion.
+    This ensures that leftover predictions and debug images from previous runs don't cause confusion.
+    
+    Cleans up:
+    - *_predictions.png - Old prediction visualizations
+    - *_scalebar_debug.png - Old scale bar debug images
     
     Parameters:
     - split_dir (Path or str): Path to the split directory containing old predictions
@@ -450,17 +454,21 @@ def cleanup_old_predictions(split_dir, output_dir=None):
     """
     removed_count = 0
     
+    # File patterns to clean up
+    cleanup_patterns = ["*_predictions.png", "*_scalebar_debug.png"]
+    
     # Clean split_dir
     split_path = Path(split_dir)
     if split_path.exists():
-        prediction_files = list(split_path.glob("*_predictions.png"))
-        for pred_file in prediction_files:
-            try:
-                pred_file.unlink()
-                removed_count += 1
-                system_logger.debug(f"Removed old prediction file: {pred_file.name}")
-            except Exception as e:
-                system_logger.warning(f"Failed to remove {pred_file.name}: {e}")
+        for pattern in cleanup_patterns:
+            old_files = list(split_path.glob(pattern))
+            for old_file in old_files:
+                try:
+                    old_file.unlink()
+                    removed_count += 1
+                    system_logger.debug(f"Removed old file: {old_file.name}")
+                except Exception as e:
+                    system_logger.warning(f"Failed to remove {old_file.name}: {e}")
     else:
         system_logger.debug(f"Split directory does not exist: {split_path}")
     
@@ -468,21 +476,22 @@ def cleanup_old_predictions(split_dir, output_dir=None):
     if output_dir:
         output_path = Path(output_dir)
         if output_path.exists():
-            prediction_files = list(output_path.glob("*_predictions.png"))
-            for pred_file in prediction_files:
-                try:
-                    pred_file.unlink()
-                    removed_count += 1
-                    system_logger.debug(f"Removed old prediction file: {pred_file.name}")
-                except Exception as e:
-                    system_logger.warning(f"Failed to remove {pred_file.name}: {e}")
+            for pattern in cleanup_patterns:
+                old_files = list(output_path.glob(pattern))
+                for old_file in old_files:
+                    try:
+                        old_file.unlink()
+                        removed_count += 1
+                        system_logger.debug(f"Removed old file: {old_file.name}")
+                    except Exception as e:
+                        system_logger.warning(f"Failed to remove {old_file.name}: {e}")
         else:
             system_logger.debug(f"Output directory does not exist: {output_path}")
     
     if removed_count > 0:
-        system_logger.info(f"Cleaned up {removed_count} old prediction visualization(s)")
+        system_logger.info(f"Cleaned up {removed_count} old visualization file(s) (predictions and debug images)")
     else:
-        system_logger.debug("No old prediction files found to clean up")
+        system_logger.debug("No old visualization files found to clean up")
     
     return removed_count
 
@@ -494,12 +503,78 @@ def run_inference(
     threshold=0.65,
     draw_id=False,
     dataset_format="json",
+    draw_scalebar=False,  # Add parameter
 ):
     """
     Runs inference on a dataset and saves the results.
     
     Note: Iteration count is now automatic via config.yaml iterative_stopping settings.
     """
+    
+    # Load dataset-specific config
+    dataset_config = get_config(dataset_name=dataset_name)
+    system_logger.info(f"Loaded configuration for dataset: {dataset_name}")
+    
+    # ==========================================
+    # EXTRACT INFERENCE SETTINGS FROM DATASET CONFIG
+    # ==========================================
+    
+    # Get inference_settings (supports both 'inference_settings' and 'inference_overrides')
+    inf_settings = dataset_config.get("inference_overrides", {})
+    if not inf_settings:
+        inf_settings = dataset_config.get("inference_settings", {})
+    
+    # Confidence mode
+    confidence_mode = inf_settings.get("confidence_mode", "auto")
+    use_class_specific = inf_settings.get("use_class_specific_inference", True)
+    
+    # Class-specific settings
+    class_specific_settings = inf_settings.get("class_specific_settings", {})
+    
+    # Iterative stopping settings (override module-level defaults)
+    iter_stop = inf_settings.get("iterative_stopping", {})
+    min_total_masks = iter_stop.get("min_total_masks", MIN_TOTAL_MASKS)
+    min_relative_increase = iter_stop.get("min_relative_increase", MIN_RELATIVE_INCREASE)
+    max_consecutive_zero = iter_stop.get("max_consecutive_zero", MAX_CONSECUTIVE_ZERO)
+    min_iterations = iter_stop.get("min_iterations", MIN_ITERATIONS)
+    
+    # Tile settings (override module-level defaults)
+    tile_cfg = inf_settings.get("tile_settings", {})
+    use_tile_based = inf_settings.get("use_tile_based_inference", True)
+    tile_size = tile_cfg.get("tile_size", 512)
+    overlap_ratio = tile_cfg.get("overlap_ratio", 0.1)
+    upscale_factor = tile_cfg.get("upscale_factor", 2.0)
+    edge_filter_enabled = tile_cfg.get("edge_filter_enabled", True)
+    classes_using_tiling = tile_cfg.get("classes_using_tiling", [0, 1])
+    tile_batch_size = tile_cfg.get("tile_batch_size", TILE_BATCH_SIZE)
+    
+    # Ensemble settings (override module-level defaults)
+    ensemble_cfg = inf_settings.get("ensemble_settings", {})
+    ensemble_enabled = ensemble_cfg.get("enabled", ENSEMBLE_ENABLED)
+    ensemble_small_only = ensemble_cfg.get("small_classes_only", ENSEMBLE_SMALL_CLASSES_ONLY)
+    ensemble_weights = ensemble_cfg.get("weights", ENSEMBLE_WEIGHTS)
+
+    #
+    inference_config = inf_settings.get("inference_settings", {})
+    classes_to_infer = inference_config.get("classes_to_infer", None)
+    
+    # Log the loaded settings
+    system_logger.info("=" * 60)
+    system_logger.info(f"INFERENCE SETTINGS FOR '{dataset_name}':")
+    system_logger.info(f"  Confidence mode: {confidence_mode}")
+    system_logger.info(f"  Use class-specific inference: {use_class_specific}")
+    system_logger.info(f"  Tile-based: {use_tile_based}, size={tile_size}px, overlap={overlap_ratio}, upscale={upscale_factor}x")
+    system_logger.info(f"  Edge filter: {edge_filter_enabled}")
+    system_logger.info(f"  Ensemble: {ensemble_enabled}, small_only={ensemble_small_only}, weights={ensemble_weights}")
+    system_logger.info(f"  Iterative stopping: min_masks={min_total_masks}, min_increase={min_relative_increase}, max_zero={max_consecutive_zero}, min_iter={min_iterations}")
+    
+    # Log class-specific settings
+    for class_key, cls_settings in class_specific_settings.items():
+        conf = cls_settings.get('confidence_threshold', 'auto')
+        iou = cls_settings.get('iou_threshold', 0.7)
+        min_sz = cls_settings.get('min_size', 25)
+        system_logger.info(f"  {class_key}: confidence={conf}, iou={iou}, min_size={min_sz}")
+    system_logger.info("=" * 60)
     
     # GPU availability check at the start of inference
     from src.utils.gpu_check import check_gpu_availability
@@ -609,8 +684,8 @@ def run_inference(
     total_images = len(images_name)
     overall_start_time = time.perf_counter()
 
-    # Get the scale bar ROI profiles from already-loaded config
-    scale_bar_rois = config.get("scale_bar_rois", {})
+    # Get the scale bar ROI profiles from dataset-specific config
+    scale_bar_rois = dataset_config.get("scale_bar_rois", {})
     
     # Ensure there's a default profile
     if "default" not in scale_bar_rois:
@@ -675,7 +750,18 @@ def run_inference(
                 
                 # Attempt scale bar detection with dataset-specific ROI
                 try:
-                    psum, um_pix = detect_scale_bar(image.copy(), roi_config=None, dataset_name=dataset_name)
+                    if draw_scalebar:
+                        # Create a copy for debug visualization
+                        debug_image = image.copy()
+                        psum, um_pix = detect_scale_bar(debug_image, roi_config=roi_config, dataset_name=dataset_name, draw_debug=True)
+                        # Save the debug image with scalebar visualization
+                        debug_save_path = os.path.join(output_dir, f"{name}_scalebar_debug.png")
+                        cv2.imwrite(debug_save_path, debug_image)
+                        system_logger.info(f"Saved scalebar debug visualization to {debug_save_path}")
+                        del debug_image
+                    else:
+                        psum, um_pix = detect_scale_bar(image.copy(), roi_config=roi_config, dataset_name=dataset_name, draw_debug=False)
+                    
                     system_logger.info(
                         f"Scale bar detected: {psum} units = {um_pix:.4f} units/pixel"
                     )
@@ -692,27 +778,52 @@ def run_inference(
                 all_masks_for_image = []
                 all_scores_for_image = []
                 all_classes_for_image = []
+
+                # Determine which classes to process
+                if classes_to_infer is None:
+                    target_classes = range(num_classes)
+                else:
+                    target_classes = [c for c in classes_to_infer if c < num_classes]
+                    system_logger.info(f"Inferencing selected classes only: {target_classes}")
                 
-                for target_class in range(num_classes):
+                for target_class in target_classes:
                     is_small_class = target_class in small_classes
                     class_name = metadata.thing_classes[target_class]
                     
                     system_logger.debug(f"Processing class {target_class} ({class_name})...")
                     
-                    # Get adaptive confidence threshold based on image quality
-                    confidence_thresh = get_confidence_threshold(image, target_class, small_classes)
+                    # Get class-specific settings from loaded config
+                    class_key = f"class_{target_class}"
+                    class_cfg = class_specific_settings.get(class_key, {})
                     
-                    # Get class-specific IOU threshold
-                    class_config = config.get("inference_settings", {}).get(
-                        "class_specific_settings", {}
-                    ).get(f"class_{target_class}", {})
+                    # Determine confidence threshold based on mode
+                    if confidence_mode == 'manual':
+                        # Use configured threshold
+                        confidence_thresh = class_cfg.get(
+                            "confidence_threshold", 
+                            0.3 if is_small_class else 0.5
+                        )
+                        system_logger.debug(f"Using manual confidence threshold: {confidence_thresh}")
+                    else:
+                        # Use adaptive threshold
+                        confidence_thresh = get_confidence_threshold(image, target_class, small_classes)
+                        system_logger.debug(f"Using adaptive confidence threshold: {confidence_thresh}")
                     
-                    iou_thresh = class_config.get(
+                    # Get class-specific IOU threshold from loaded config
+                    iou_thresh = class_cfg.get(
                         "iou_threshold", 0.5 if is_small_class else 0.7
                     )
                     
-                    # Use ensemble for small classes if multiple predictors available
-                    active_predictors = predictors if (is_small_class and len(predictors) > 1) else [predictors[0]]
+                    system_logger.info(f"Class {target_class} ({class_name}): confidence={confidence_thresh:.3f}, iou={iou_thresh:.3f}")
+                    
+                    # Use ensemble for small classes if multiple predictors available and enabled
+                    use_ensemble_for_class = ensemble_enabled and (
+                        not ensemble_small_only or is_small_class
+                    )
+                    active_predictors = (
+                        predictors if (use_ensemble_for_class and len(predictors) > 1) 
+                        else [predictors[0]]
+                    )
                     
                     # Tile-based inference (for all classes)
                     system_logger.info(f"Running tile-based inference for class {target_class}")
@@ -722,10 +833,14 @@ def run_inference(
                         target_class,
                         small_classes,
                         confidence_thresh,
-                        tile_size=tile_settings.get("tile_size", 512),
-                        overlap_ratio=tile_settings.get("overlap_ratio", 0.1),
-                        upscale_factor=tile_settings.get("upscale_factor", 2.0),
-                        scale_bar_info={"um_pix": um_pix, "psum": psum}
+                        tile_size=tile_size,
+                        overlap_ratio=overlap_ratio,
+                        upscale_factor=upscale_factor,
+                        scale_bar_info={"um_pix": um_pix, "psum": psum},
+                        iou_threshold=iou_thresh,
+                        edge_filter_enabled=edge_filter_enabled,
+                        class_specific_settings=class_specific_settings,
+                        confidence_mode=confidence_mode
                     )
                 
                     system_logger.debug(
@@ -928,7 +1043,18 @@ def run_inference(
                     )
                     continue
 
-                psum, um_pix = detect_scale_bar(im, roi_config=None, dataset_name=dataset_name)
+                # Scale bar detection with debug visualization support
+                if draw_scalebar:
+                    debug_image = im.copy()
+                    psum, um_pix = detect_scale_bar(debug_image, roi_config=None, dataset_name=dataset_name, draw_debug=True)
+                    # Save debug image if not already saved in inference phase
+                    debug_save_path = os.path.join(output_dir, f"{test_img}_scalebar_debug.png")
+                    if not os.path.exists(debug_save_path):
+                        cv2.imwrite(debug_save_path, debug_image)
+                        system_logger.info(f"Saved scalebar debug visualization to {debug_save_path}")
+                    del debug_image
+                else:
+                    psum, um_pix = detect_scale_bar(im, roi_config=None, dataset_name=dataset_name, draw_debug=False)
 
                 # Use deduplicated masks and classes for this image
                 image_data = dedup_results.get(test_img, {})
@@ -1211,11 +1337,23 @@ def run_inference(
     except Exception as e:
         system_logger.warning(f"Error during mask file cleanup: {e}")
     
+    # Log scalebar debug images if they were generated
+    # (old debug images are cleaned up at the start of inference via cleanup_old_predictions)
+    if draw_scalebar:
+        try:
+            debug_images = [f for f in os.listdir(output_dir) if f.endswith('_scalebar_debug.png')]
+            if debug_images:
+                system_logger.info(f"Generated {len(debug_images)} scalebar debug images")
+        except Exception as e:
+            system_logger.debug(f"Could not count debug images: {e}")
+    
     system_logger.info("Inference completed successfully")
 
 
 def run_class_specific_inference(
-    predictor, image, target_class, small_classes, confidence_threshold=0.3, iou_threshold=0.7
+    predictor, image, target_class, small_classes, 
+    confidence_threshold=0.3, iou_threshold=0.7,
+    class_specific_settings=None, confidence_mode='auto'
 ):
     """
     Run inference targeting a specific class with L4 GPU optimizations.
@@ -1228,6 +1366,8 @@ def run_class_specific_inference(
     - small_classes: Set of classes considered "small"
     - confidence_threshold: Confidence threshold for this class
     - iou_threshold: IoU threshold for this class
+    - class_specific_settings: Dict of class-specific settings from config
+    - confidence_mode: 'auto' or 'manual' mode for confidence thresholding
 
     Returns:
     - tuple: (masks, scores, classes) for the target class only
@@ -1236,7 +1376,9 @@ def run_class_specific_inference(
     if isinstance(predictor, list):
         return run_ensemble_inference(
             predictor, image, target_class, small_classes, 
-            confidence_threshold, iou_threshold
+            confidence_threshold, iou_threshold,
+            class_specific_settings=class_specific_settings,
+            confidence_mode=confidence_mode
         )
     
     # Single predictor mode
@@ -1283,16 +1425,19 @@ def run_class_specific_inference(
     # Class-specific postprocessing with parallel processing
     is_small_class = target_class in small_classes
     
-    if is_small_class:
-        min_size = 5  # Much smaller minimum for small particles
-        processed_masks = postprocess_masks(
-            filtered_masks, filtered_scores, image, min_crys_size=min_size
-        )
-    else:
-        min_size = 25  # Standard size for large particles
-        processed_masks = postprocess_masks(
-            filtered_masks, filtered_scores, image, min_crys_size=min_size
-        )
+    # Get min_size from passed config settings (not module-level config)
+    if class_specific_settings is None:
+        class_specific_settings = {}
+    
+    class_key = f"class_{target_class}"
+    class_cfg = class_specific_settings.get(class_key, {})
+    min_size = class_cfg.get("min_size", 5 if is_small_class else 25)
+    
+    system_logger.debug(f"Class {target_class}: using min_size={min_size} (from config)")
+    
+    processed_masks = postprocess_masks(
+        filtered_masks, filtered_scores, image, min_crys_size=min_size
+    )
 
     # L4 OPTIMIZATION: Parallel mask processing using config
     if len(processed_masks) > 2 and PARALLEL_MASK_PROCESSING:
@@ -1323,6 +1468,8 @@ def run_ensemble_inference(
     small_classes,
     conf_threshold,
     iou_threshold,
+    class_specific_settings=None,
+    confidence_mode='auto'
 ):
     """
     Run ensemble inference using multiple models (e.g., R50 + R101).
@@ -1335,6 +1482,8 @@ def run_ensemble_inference(
     - small_classes: Set of small class IDs
     - conf_threshold: Confidence threshold
     - iou_threshold: IoU threshold for deduplication
+    - class_specific_settings: Dict of class-specific settings from config
+    - confidence_mode: 'auto' or 'manual' mode
     
     Returns:
     - tuple: (combined_masks, combined_scores, combined_classes)
@@ -1343,7 +1492,12 @@ def run_ensemble_inference(
     all_scores = []
     all_classes = []
     
+    # Use ensemble_weights from parent scope (loaded from dataset config)
+    # This will be set in run_inference() function
     model_names = ["R50", "R101"][:len(predictors)]
+    
+    # Get weights from the config settings passed through
+    # Default to module-level ENSEMBLE_WEIGHTS if not available
     weights = list(ENSEMBLE_WEIGHTS.values())[:len(predictors)]
     
     for model_name, predictor, weight in zip(model_names, predictors, weights):
@@ -1587,14 +1741,15 @@ def postprocess_masks_universal(
 ):
     """
     Universal postprocessing for masks with class-specific size thresholds.
+    NOW WITH CLASS-SPECIFIC MORPHOLOGICAL OPERATIONS based on small/large classification.
     
     Parameters:
-    - ori_mask: Original masks
-    - ori_score: Confidence scores
+    - ori_mask: List of predicted masks
+    - ori_score: List of confidence scores
     - image: Input image
-    - target_class: Target class ID
-    - is_small_class: Whether this is a small class
-    - min_crys_size: Minimum size threshold (if None, calculated from image)
+    - target_class: Current class being processed
+    - is_small_class: Boolean indicating if this is a small class (True) or large class (False)
+    - min_crys_size: Minimum mask size in pixels (calculated if None)
     
     Returns:
     - list: Processed masks
@@ -1605,13 +1760,12 @@ def postprocess_masks_universal(
     image_area = image.shape[0] * image.shape[1]
     height, width = image.shape[:2]
 
-    # ONLY calculate from image if not provided
+    # Calculate min_size if not provided
     if min_crys_size is None:
         if is_small_class:
-            # More aggressive for small particles
-            min_crys_size = max(3, int(image_area * 0.000005))  # 0.0005%
+            min_crys_size = max(3, int(image_area * 0.000005))
         else:
-            min_crys_size = max(25, int(image_area * 0.0001))  # 0.01%
+            min_crys_size = max(25, int(image_area * 0.0001))
     
     system_logger.debug(
         f"Postprocessing: min_size={min_crys_size}px (class={target_class}, "
@@ -1625,22 +1779,35 @@ def postprocess_masks_universal(
         # Fill holes
         filled_mask = binary_fill_holes(mask).astype(np.uint8)
         
-        # Light morphological operations (erosion then dilation)
-        kernel = disk(1)  # Small kernel for speed
-        eroded = erosion(filled_mask, kernel)
-        dilated = dilation(eroded, kernel)
+        # SMALL VS LARGE CLASS MORPHOLOGICAL OPERATIONS
+        if is_small_class:
+            # SMALL CLASSES - MINIMAL morphology to prevent merging
+            # Use very light erosion only (just smoothing, no expansion)
+            kernel = disk(1)  # Smallest possible kernel
+            cleaned = erosion(filled_mask, kernel)
+            # NO DILATION - skip to prevent nearby small instances from merging
+            final_mask = cleaned
+            
+        else:
+            # LARGE CLASSES - Standard morphology (erosion + dilation)
+            # This smooths boundaries while maintaining size
+            kernel = disk(1)
+            eroded = erosion(filled_mask, kernel)
+            dilated = dilation(eroded, kernel)
+            final_mask = dilated
         
         # Size filtering
-        mask_size = np.sum(dilated)
+        mask_size = np.sum(final_mask)
         if mask_size >= min_crys_size:
-            processed_masks.append(dilated.astype(bool))
+            processed_masks.append(final_mask.astype(bool))
         else:
             system_logger.debug(
                 f"Filtered mask {i}: size {mask_size}px < min {min_crys_size}px"
             )
 
     system_logger.debug(
-        f"Postprocessing complete: {len(processed_masks)}/{len(ori_mask)} masks kept"
+        f"Postprocessing complete: {len(processed_masks)}/{len(ori_mask)} masks kept "
+        f"(class={target_class}, small={is_small_class})"
     )
     
     return processed_masks
@@ -1830,6 +1997,7 @@ def process_single_scale(predictor, image, target_class, small_classes, confiden
     - target_class: Target class ID
     - small_classes: Set of small class IDs
     - confidence_threshold: Confidence threshold for this class
+
     - max_iters: Maximum iterations
     - scale: Scale factor (e.g., 1.0, 1.5, 2.0)
     
@@ -2137,7 +2305,11 @@ def tile_based_inference_pipeline(
     tile_size=512,
     overlap_ratio=0.1,
     upscale_factor=2.0,
-    scale_bar_info=None
+    scale_bar_info=None,
+    iou_threshold=0.7,
+    edge_filter_enabled=True,
+    class_specific_settings=None,
+    confidence_mode='auto'
 ):
     """
     Tile-based inference for detecting particles at multiple scales.
@@ -2152,6 +2324,12 @@ def tile_based_inference_pipeline(
     - Full-image pass: Maintains spatial context for large particles
     - Tile-based pass: Makes small particles appear larger (more detectable)
     - GPU batching: Process multiple tiles simultaneously for speed
+    
+    Args:
+        iou_threshold: IOU threshold for NMS (from config)
+        edge_filter_enabled: Whether to filter detections at tile edges (from config)
+        class_specific_settings: Dict of class-specific settings (from config)
+        confidence_mode: 'auto' or 'manual' (from config)
     """
     
     system_logger.info(f"Tile-based inference for class {target_class}: tile_size={tile_size}px, overlap={overlap_ratio*100:.0f}%, upscale={upscale_factor}x")
@@ -2162,7 +2340,9 @@ def tile_based_inference_pipeline(
     # Full-image inference
     full_image_masks, full_image_scores, full_image_classes = run_class_specific_inference(
         predictor, image, target_class, small_classes, 
-        confidence_threshold, iou_threshold=0.7
+        confidence_threshold, iou_threshold=iou_threshold,
+        class_specific_settings=class_specific_settings,
+        confidence_mode=confidence_mode
     )
     
     system_logger.info(f"Full image: {len(full_image_masks)} instances, generating {tile_size}px tiles with {overlap_ratio*100:.0f}% overlap")
@@ -2207,7 +2387,9 @@ def tile_based_inference_pipeline(
                 # Run inference on upscaled tile
                 tile_masks, tile_scores, tile_classes = run_class_specific_inference(
                     predictor, upscaled_tile, target_class, small_classes,
-                    confidence_threshold, iou_threshold=0.5
+                    confidence_threshold, iou_threshold=iou_threshold,
+                    class_specific_settings=class_specific_settings,
+                    confidence_mode=confidence_mode
                 )
                 
                 system_logger.debug(f"Tile {global_tile_idx + 1}: Found {len(tile_masks)} instances")
@@ -2222,8 +2404,8 @@ def tile_based_inference_pipeline(
                             interpolation=cv2.INTER_NEAREST
                         ).astype(bool)
                         
-                        # Filter edge masks (likely incomplete)
-                        if is_edge_mask(downscaled_mask, tile_size, overlap_ratio):
+                        # Filter edge masks (likely incomplete) - only if enabled
+                        if edge_filter_enabled and is_edge_mask(downscaled_mask, tile_size, overlap_ratio):
                             system_logger.debug(f"Tile {global_tile_idx + 1}: Filtered edge mask {i+1}")
                             continue
                         
@@ -2367,127 +2549,185 @@ def is_edge_mask(mask, tile_size, overlap_ratio):
     return False
 
 
-def deduplicate_masks_smart(masks, scores, classes, iou_threshold=0.4):
+def deduplicate_masks_smart(masks, scores, classes, iou_threshold=0.4, 
+                            max_aspect_ratio=None, edge_filter_margin=0.3):
     """
-    HIGHLY OPTIMIZED: Fast deduplication using spatial indexing and parallelization.
-    - Uses bounding box pre-filtering (O(n log n) instead of O(n²))
-    - Parallel IoU calculations for overlapping boxes
-    - Early exit when duplicate found
+    Enhanced deduplication with artifact filtering.
     
     Parameters:
     - masks: List of binary masks
     - scores: List of confidence scores
     - classes: List of class IDs
-    - iou_threshold: IoU threshold for considering masks as duplicates
+    - iou_threshold: IoU threshold for duplicate removal
+    - max_aspect_ratio: Maximum allowed aspect ratio (e.g., 3.0 = 3:1)
+    - edge_filter_margin: Reject masks within this fraction of tile edge
     
     Returns:
-    - tuple: (unique_masks, unique_scores, unique_classes)
+    - (filtered_masks, filtered_scores, filtered_classes)
     """
-    if not masks:
+    if len(masks) == 0:
         return [], [], []
     
-    # Validation
-    if len(masks) != len(scores) or len(masks) != len(classes):
-        system_logger.error(
-            f"Input length mismatch! masks: {len(masks)}, scores: {len(scores)}, classes: {len(classes)}"
-        )
-        min_len = min(len(masks), len(scores), len(classes))
-        masks = masks[:min_len]
-        scores = scores[:min_len]
-        classes = classes[:min_len]
+    # STEP 1: Pre-filter artifacts before deduplication
+    filtered_indices = []
+    for idx, mask in enumerate(masks):
+        # Calculate bounding box
+        rows = np.any(mask, axis=1)
+        cols = np.any(mask, axis=0)
+        
+        if not rows.any() or not cols.any():
+            continue  # Empty mask
+        
+        y_min, y_max = np.where(rows)[0][[0, -1]]
+        x_min, x_max = np.where(cols)[0][[0, -1]]
+        
+        bbox_width = x_max - x_min + 1
+        bbox_height = y_max - y_min + 1
+        
+        # Calculate aspect ratio
+        if bbox_height == 0 or bbox_width == 0:
+            continue
+        
+        aspect_ratio = max(bbox_width, bbox_height) / min(bbox_width, bbox_height)
+        
+        # Filter 1: Reject extreme aspect ratios (likely tile edge artifacts)
+        if max_aspect_ratio and aspect_ratio > max_aspect_ratio:
+            system_logger.debug(f"Filtered mask {idx}: aspect ratio {aspect_ratio:.2f} > {max_aspect_ratio}")
+            continue
+        
+        # Filter 2: Reject masks near tile edges (if tile-based inference)
+        # This requires passing tile_info, so we'll skip for now
+        # You can enhance this later
+        
+        # Filter 3: Calculate compactness (area / perimeter^2)
+        # Artifacts tend to have low compactness (elongated)
+        mask_area = np.sum(mask)
+        contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if len(contours) > 0:
+            perimeter = cv2.arcLength(contours[0], True)
+            if perimeter > 0:
+                compactness = (4 * np.pi * mask_area) / (perimeter ** 2)
+                
+                # Reject very elongated shapes (compactness < 0.2)
+                if compactness < 0.15:
+                    system_logger.debug(f"Filtered mask {idx}: compactness {compactness:.3f} < 0.15")
+                    continue
+        
+        filtered_indices.append(idx)
     
-    scores = np.array(scores)
-    total_masks = len(masks)
+    # Apply pre-filtering
+    masks = [masks[i] for i in filtered_indices]
+    scores = [scores[i] for i in filtered_indices]
+    classes = [classes[i] for i in filtered_indices]
     
-    system_logger.info(f"Starting OPTIMIZED deduplication of {total_masks} masks...")
-    start_time = time.perf_counter()
+    if len(masks) == 0:
+        return [], [], []
     
-    # OPTIMIZATION 1: Pre-compute bounding boxes and areas
+    # STEP 2: Standard deduplication (existing code)
+    # Pre-compute bounding boxes for fast spatial filtering
     bboxes = []
-    bbox_areas = []
     for mask in masks:
-        coords = np.argwhere(mask)
-        if len(coords) == 0:
-            bboxes.append((0, 0, 0, 0))
-            bbox_areas.append(0)
+        rows = np.any(mask, axis=1)
+        cols = np.any(mask, axis=0)
+        if rows.any() and cols.any():
+            y_min, y_max = np.where(rows)[0][[0, -1]]
+            x_min, x_max = np.where(cols)[0][[0, -1]]
+            bboxes.append((y_min, y_max, x_min, x_max))
         else:
-            y_min, x_min = coords.min(axis=0)
-            y_max, x_max = coords.max(axis=0)
-            bboxes.append((y_min, x_min, y_max, x_max))
-            bbox_areas.append((y_max - y_min) * (x_max - x_min))
+            bboxes.append(None)
     
-    system_logger.debug(f"Computed {len(bboxes)} bounding boxes in {time.perf_counter() - start_time:.2f}s")
-    
-    # Sort by score (descending) - keep highest confidence masks
+    # Sort by score (highest first)
     sorted_indices = np.argsort(scores)[::-1]
     
-    unique_masks = []
-    unique_scores = []
-    unique_classes = []
-    unique_bboxes = []
-    unique_areas = []
+    keep_indices = []
+    removed_indices = set()
     
-    checked_pairs = 0
-    skipped_by_bbox = 0
-    skipped_by_area = 0
-    
-    for progress_idx, idx in enumerate(sorted_indices):
-        # Progress logging every 10%
-        if total_masks > 100 and progress_idx % max(1, total_masks // 10) == 0:
-            elapsed = time.perf_counter() - start_time
-            system_logger.info(
-                f"Progress: {progress_idx}/{total_masks} ({int(progress_idx/total_masks*100)}%) - "
-                f"Unique: {len(unique_masks)} - Time: {elapsed:.1f}s"
-            )
-        
-        if idx >= len(masks):
+    for idx in sorted_indices:
+        if idx in removed_indices:
             continue
-            
-        mask = masks[idx]
-        score = scores[idx]
-        cls = classes[idx]
-        bbox = bboxes[idx]
-        area = bbox_areas[idx]
         
-        # OPTIMIZATION 2: Bbox overlap + area pre-filter
-        is_duplicate = False
-        for i, (existing_bbox, existing_area) in enumerate(zip(unique_bboxes, unique_areas)):
-            y1_min, x1_min, y1_max, x1_max = bbox
-            y2_min, x2_min, y2_max, x2_max = existing_bbox
-            
-            # Quick bbox overlap check
-            if (y1_max < y2_min or y2_max < y1_min or
-                x1_max < x2_min or x2_max < x1_min):
-                # No overlap - skip expensive IoU calculation
-                skipped_by_bbox += 1
+        keep_indices.append(idx)
+        current_bbox = bboxes[idx]
+        current_mask = masks[idx]
+        current_class = classes[idx]
+        
+        # Only check masks that spatially overlap (bbox check is fast)
+        for other_idx in sorted_indices[idx+1:]:
+            if other_idx in removed_indices:
+                continue
+            if classes[other_idx] != current_class:
                 continue
             
-            # OPTIMIZATION 3: Area-based early rejection
-            # If bbox areas are very different, IoU can't be high
-            area_ratio = min(area, existing_area) / max(area, existing_area) if max(area, existing_area) > 0 else 0
-            if area_ratio < iou_threshold * 0.5:  # Conservative threshold
-                skipped_by_area += 1
+            # Fast bbox overlap check BEFORE expensive IoU
+            if not bboxes_overlap(current_bbox, bboxes[other_idx]):
                 continue
             
-            # Bboxes overlap and areas similar - compute actual IoU
-            checked_pairs += 1
-            if iou(mask, unique_masks[i]) > iou_threshold:
-                is_duplicate = True
-                break  # OPTIMIZATION 4: Early exit when duplicate found
-        
-        if not is_duplicate:
-            unique_masks.append(mask)
-            unique_scores.append(float(score))
-            unique_classes.append(int(cls))
-            unique_bboxes.append(bbox)
-            unique_areas.append(area)
+            # Now compute expensive IoU only if bboxes overlap
+            iou_val = calculate_iou(current_mask, masks[other_idx], 
+                                   current_bbox, bboxes[other_idx])
+            
+            if iou_val > iou_threshold:
+                removed_indices.add(other_idx)
+                system_logger.debug(f"Removed duplicate mask {other_idx} (IoU={iou_val:.3f} with {idx})")
     
-    total_time = time.perf_counter() - start_time
-    efficiency = (skipped_by_bbox + skipped_by_area) / max(1, checked_pairs + skipped_by_bbox + skipped_by_area) * 100
-    
-    system_logger.info(
-        f"Deduplication: {total_masks} -> {len(unique_masks)} unique in {total_time:.1f}s "
-        f"({checked_pairs:,} IoU checks, {skipped_by_bbox:,} bbox, {skipped_by_area:,} area skips, {efficiency:.1f}% efficient)"
+    return (
+        [masks[i] for i in keep_indices],
+        [scores[i] for i in keep_indices],
+        [classes[i] for i in keep_indices]
     )
+
+
+def bboxes_overlap(bbox1, bbox2):
+    """Check if two bounding boxes overlap."""
+    if bbox1 is None or bbox2 is None:
+        return False
     
-    return unique_masks, unique_scores, unique_classes
+    y1_min, x1_min, y1_max, x1_max = bbox1
+    y2_min, x2_min, y2_max, x2_max = bbox2
+    
+    # Check if NOT overlapping (faster to check negative case)
+    if x1_max < x2_min or x2_max < x1_min:
+        return False
+    if y1_max < y2_min or y2_max < y1_min:
+        return False
+    
+    return True
+
+
+def calculate_iou(mask1, mask2, bbox1=None, bbox2=None):
+    """Calculate IoU with optional bbox pre-filtering."""
+    # Fast pre-filter: check bounding box overlap first
+    if bbox1 is None:
+        bbox1 = get_mask_bbox(mask1)
+    if bbox2 is None:
+        bbox2 = get_mask_bbox(mask2)
+    
+    if not bboxes_overlap(bbox1, bbox2):
+        return 0.0
+    
+    # Use bitwise operations (faster than logical)
+    intersection = np.count_nonzero(mask1 & mask2)
+    
+    if intersection == 0:
+        return 0.0
+    
+    union = np.count_nonzero(mask1 | mask2)
+    
+    if union == 0:
+        return 0.0
+    
+    return intersection / union
+
+
+def get_mask_bbox(mask):
+    """Get bounding box of a binary mask."""
+    rows = np.any(mask, axis=1)
+    cols = np.any(mask, axis=0)
+    
+    if not rows.any() or not cols.any():
+        return None
+    
+    y_min, y_max = np.where(rows)[0][[0, -1]]
+    x_min, x_max = np.where(cols)[0][[0, -1]]
+    
+    return (y_min, x_min, y_max, x_max)

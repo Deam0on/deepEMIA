@@ -334,7 +334,13 @@ For guided interactive mode: python cli_main.py
         action="store_true",
         help="Skip GPU availability check (for automated/non-interactive execution).",
     )
-
+    parser.add_argument(
+        "--draw-scalebar",
+        action="store_true",
+        default=False,
+        help="Draw scale bar ROI and detection results on output images for debugging. Shows the ROI box and detected scale bar line."
+    )
+    
     args = parser.parse_args()
 
     # Set console logging level based on verbosity argument
@@ -478,6 +484,7 @@ For guided interactive mode: python cli_main.py
             threshold=args.threshold,
             draw_id=args.draw_id,
             dataset_format=args.dataset_format,
+            draw_scalebar=args.draw_scalebar,
         )
 
         task_end_time = datetime.now()

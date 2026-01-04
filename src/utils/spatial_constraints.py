@@ -12,25 +12,14 @@ based on spatial constraints defined in the configuration.
 
 import numpy as np
 from typing import Dict, List, Tuple, Set
-from pathlib import Path
-import yaml
 from functools import lru_cache
 
 from src.utils.logger_utils import system_logger
+from src.utils.config import get_config
 
 
 def load_spatial_constraints(dataset_name=None) -> dict:
-    """
-    Load spatial constraint configuration for a dataset.
-    
-    Parameters:
-    - dataset_name (str, optional): Name of the dataset
-    
-    Returns:
-    - dict: Spatial constraints configuration
-    """
-    config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
-    
+    """Load spatial constraints with proper config path resolution."""
     default_config = {
         'enabled': False,
         'containment_rules': {},
@@ -38,39 +27,43 @@ def load_spatial_constraints(dataset_name=None) -> dict:
         'containment_threshold': 0.95
     }
     
-    if not config_path.exists():
-        system_logger.warning(f"Config file not found: {config_path}, spatial constraints disabled")
-        return default_config
-    
     try:
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
+        config = get_config(dataset_name=dataset_name)
         
-        inference_settings = config.get('inference_settings', {})
-        spatial_config = inference_settings.get('spatial_constraints', {})
+        # TRY MULTIPLE LOCATIONS (inference_overrides vs inference_settings)
+        spatial_config = None
         
-        # Check for dataset-specific configuration first
-        if dataset_name:
-            dataset_config = spatial_config.get(dataset_name, None)
-            if dataset_config:
-                # Use dataset-specific configuration
-                result = {
-                    'enabled': dataset_config.get('enabled', False),
-                    'containment_rules': dataset_config.get('containment_rules', {}),
-                    'overlap_rules': dataset_config.get('overlap_rules', {}),
-                    'containment_threshold': dataset_config.get('containment_threshold', 0.95)
-                }
-                system_logger.info(f"Using dataset-specific spatial constraints for '{dataset_name}'")
-                return result
-            else:
-                system_logger.info(f"No dataset-specific spatial constraints for '{dataset_name}', constraints disabled")
-                return default_config
+        # 1. Check inference_overrides (your current dataset config location)
+        if 'inference_overrides' in config:
+            spatial_config = config['inference_overrides'].get('spatial_constraints')
         
-        # If no dataset name provided, return default (disabled)
-        return default_config
+        # 2. Fallback to inference_settings (legacy location)
+        if spatial_config is None:
+            spatial_config = config.get('inference_settings', {}).get('spatial_constraints', {})
+        
+        # 3. Check top-level (just in case)
+        if spatial_config is None:
+            spatial_config = config.get('spatial_constraints', {})
+        
+        if spatial_config is None:
+            system_logger.debug(f"No spatial constraints found for '{dataset_name}'")
+            return default_config
+        
+        # Handle dataset-specific nested configs
+        if dataset_name and dataset_name in spatial_config:
+            spatial_config = spatial_config[dataset_name]
+        
+        result = {**default_config, **spatial_config}
+        
+        if result['enabled']:
+            system_logger.info(f"✓ Spatial constraints ENABLED for '{dataset_name}'")
+            system_logger.debug(f"  Containment rules: {result['containment_rules']}")
+            system_logger.debug(f"  Overlap rules: {result['overlap_rules']}")
+        
+        return result
         
     except Exception as e:
-        system_logger.error(f"Error loading spatial constraints config: {e}")
+        system_logger.error(f"Error loading spatial constraints: {e}")
         return default_config
 
 

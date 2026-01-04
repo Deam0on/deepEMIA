@@ -1,0 +1,102 @@
+# Dataset-specific configuration template
+# Copy this file to config/datasets/<your_dataset_name>.yaml and customize
+
+metadata:
+  name: "template"
+  description: "Template for dataset-specific configuration"
+  created: "2025-11-03"
+  notes: "Customize this template for your specific dataset requirements"
+
+# Scale bar ROI configuration
+# Defines the region where scale bars are expected in images
+scale_bar_roi:
+  x_start_factor: 0.7     # Start X position (0.7 = 70% from left)
+  y_start_factor: 0.05    # Start Y position (0.05 = 5% from top)
+  width_factor: 1.0       # ROI width (1.0 = 100% of image width from start)
+  height_factor: 0.05     # ROI height (0.05 = 5% of image height)
+
+# Scale bar detection thresholds (optional override)
+# Uncomment and adjust if default values don't work for your images
+# scalebar_thresholds:
+#   intensity: 100              # Minimum pixel intensity for scale bar
+#   proximity: 100              # Maximum distance for grouping scale bar components
+#   merge_gap: 15               # Maximum gap for merging adjacent components
+#   min_line_length: 30         # Minimum line length to be considered scale bar
+#   edge_margin_factor: 0.1     # Margin from image edges (10%)
+
+# Spatial constraints for particle relationships
+spatial_constraints:
+  enabled: false  # Set to true to enable spatial constraint checking
+  
+  # Containment rules: {child_class: parent_class}
+  # Defines which classes must be contained within other classes
+  # Example: 1: 0 means "Class 1 particles must be inside Class 0 particles"
+  containment_rules: {}
+  #   1: 0  # Uncomment if Class 1 should be inside Class 0
+  
+  # Minimum containment ratio required (0.0 to 1.0)
+  # 0.95 means 95% of child must be inside parent
+  containment_threshold: 0.95
+  
+  # Overlap rules per class
+  # Controls how particles of the same class can interact
+  overlap_rules: {}
+  #   0:  # Class 0 rules
+  #     allow_overlap: false      # Whether instances can overlap
+  #     allow_touch: true         # Whether instances can touch
+  #     max_iou_threshold: 0.1    # Maximum IoU if overlapping (0.1 = 10%)
+  #   1:  # Class 1 rules
+  #     allow_overlap: true       # Allow overlap
+  #     allow_touch: true         # Allow touching
+  #     max_iou_threshold: 0.9    # Allow up to 90% overlap
+
+# Optimized hyperparameters (populated after training/optimization)
+# These override default hyperparameters when they exist
+rcnn_hyperparameters:
+  best_R50: {}  # Will be filled by training pipeline
+  best_R101: {}  # Will be filled by training pipeline
+
+# Inference setting overrides (optional)
+# Uncomment sections to override default inference behavior
+inference_overrides:
+  use_class_specific_inference: true
+  confidence_mode: 'auto'  # 'auto' or 'manual'
+  
+  # Iterative stopping criteria
+  # iterative_stopping:
+  #   min_total_masks: 10
+  #   min_relative_increase: 0.25
+  #   max_consecutive_zero: 1
+  #   min_iterations: 2
+  
+  # Class-specific detection settings
+  # class_specific_settings:
+  #   class_0:
+  #     confidence_threshold: 0.5
+  #     iou_threshold: 0.7
+  #     min_size: 25
+  #     min_size_factor: 0.0001
+  #   class_1:
+  #     confidence_threshold: 0.3
+  #     iou_threshold: 0.5
+  #     min_size: 3
+  #     min_size_factor: 0.000005
+  #     use_multiscale: true
+  
+  # Multi-model ensemble settings
+  # ensemble_settings:
+  #   enabled: true
+  #   small_classes_only: true
+  #   weights:
+  #     R50: 0.6
+  #     R101: 0.4
+  
+  # Tile-based inference for small particles
+  # use_tile_based_inference: true
+  # tile_settings:
+  #   tile_size: 512
+  #   overlap_ratio: 0.1
+  #   upscale_factor: 2.0
+  #   edge_filter_enabled: true
+  #   classes_using_tiling: [0, 1]
+  #   tile_batch_size: 2

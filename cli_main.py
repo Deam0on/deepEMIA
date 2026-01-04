@@ -245,19 +245,281 @@ def get_int_input(prompt, default=None, min_val=None, max_val=None):
 
 def setup_task():
     """
-    Handle setup task.
+    Handle setup task with options for general setup or dataset configuration.
 
     Returns:
         list or None: Command arguments for setup task, or None if cancelled.
     """
-    print("\nSETUP TASK")
-    print("This will configure your project for first-time use.")
-    print(
-        "You'll be prompted to enter your Google Cloud Storage bucket and other settings."
+    print("\nSETUP OPTIONS")
+    print("Choose what you want to configure:")
+    
+    setup_choice = get_user_choice(
+        "\nWhat would you like to set up?",
+        [
+            "general - General configuration (bucket, paths, defaults)",
+            "dataset - Dataset-specific configuration (scale bars, constraints, etc.)",
+            "list - List existing dataset configurations",
+            "back - Go back to main menu"
+        ]
     )
+    
+    if setup_choice.startswith("back"):
+        return None
+    
+    if setup_choice.startswith("general"):
+        print("\nGENERAL SETUP")
+        print("This will configure your project for first-time use.")
+        print("You'll be prompted to enter your Google Cloud Storage bucket and other settings.")
+        
+        if get_yes_no("\nProceed with general setup?", default=True):
+            return ["--task", "setup"]
+        return None
+    
+    elif setup_choice.startswith("list"):
+        return manage_dataset_configs_list()
+    
+    elif setup_choice.startswith("dataset"):
+        return manage_dataset_configs()
+    
+    return None
 
-    if get_yes_no("\nProceed with setup?", default=True):
-        return ["--task", "setup"]
+
+def manage_dataset_configs_list():
+    """
+    List all existing dataset configurations.
+    
+    Returns:
+        None: This function doesn't return command args, just displays info
+    """
+    from src.utils.config import list_dataset_configs
+    
+    print("\n" + "=" * 60)
+    print("EXISTING DATASET CONFIGURATIONS")
+    print("=" * 60)
+    
+    try:
+        dataset_configs = list_dataset_configs()
+        
+        if not dataset_configs:
+            print("\nNo dataset-specific configurations found.")
+            print("Dataset configs are stored in: ~/deepEMIA/config/datasets/")
+            print("\nYou can create one by selecting 'dataset' from the setup menu.")
+        else:
+            print(f"\nFound {len(dataset_configs)} dataset configuration(s):\n")
+            for i, dataset in enumerate(dataset_configs, 1):
+                print(f"  {i}. {dataset}")
+            
+            print(f"\nLocation: ~/deepEMIA/config/datasets/")
+            print("These configs override default settings for specific datasets.")
+        
+        input("\nPress Enter to continue...")
+        
+    except Exception as e:
+        print(f"\nError listing dataset configs: {e}")
+        input("\nPress Enter to continue...")
+    
+    return None
+
+
+def manage_dataset_configs():
+    """
+    Manage dataset-specific configurations interactively.
+    
+    Returns:
+        None: This function doesn't return command args, just manages configs
+    """
+    from src.utils.config import list_dataset_configs, create_dataset_config
+    import yaml
+    
+    print("\n" + "=" * 60)
+    print("DATASET CONFIGURATION MANAGER")
+    print("=" * 60)
+    
+    action = get_user_choice(
+        "\nWhat would you like to do?",
+        [
+            "create - Create a new dataset configuration",
+            "edit - Edit an existing dataset configuration",
+            "view - View a dataset configuration",
+            "delete - Delete a dataset configuration",
+            "back - Go back"
+        ]
+    )
+    
+    if action.startswith("back"):
+        return None
+    
+    config_dir = Path.home() / "deepEMIA" / "config" / "datasets"
+    
+    # CREATE NEW CONFIG
+    if action.startswith("create"):
+        print("\n" + "-" * 60)
+        print("CREATE DATASET CONFIGURATION")
+        print("-" * 60)
+        
+        dataset_name = get_string_input(
+            "\nEnter dataset name:",
+            required=True
+        )
+        
+        if not dataset_name:
+            print("Dataset name is required.")
+            input("\nPress Enter to continue...")
+            return None
+        
+        config_file = config_dir / f"{dataset_name}.yaml"
+        
+        if config_file.exists():
+            print(f"\nConfiguration for '{dataset_name}' already exists!")
+            if not get_yes_no("Do you want to overwrite it?", default=False):
+                input("\nPress Enter to continue...")
+                return None
+        
+        # Choose template
+        template_choice = get_user_choice(
+            "\nChoose a template:",
+            [
+                "template - Empty template with all options",
+                "polyhipes_tommy - Example with nested particles and constraints",
+                "update_test - Minimal configuration close to defaults"
+            ]
+        )
+        
+        template = template_choice.split()[0]
+        
+        try:
+            create_dataset_config(dataset_name, template=template)
+            print(f"\n✓ Created configuration: {config_file}")
+            print(f"\nYou can now edit it with a text editor:")
+            print(f"  nano {config_file}")
+            print(f"\nor edit it through this interface (select 'edit' option)")
+            
+            if get_yes_no("\nOpen in default editor now?", default=False):
+                import subprocess
+                import platform
+                
+                if platform.system() == "Windows":
+                    subprocess.run(["notepad", str(config_file)])
+                else:
+                    editor = os.environ.get("EDITOR", "nano")
+                    subprocess.run([editor, str(config_file)])
+            
+        except Exception as e:
+            print(f"\nError creating configuration: {e}")
+        
+        input("\nPress Enter to continue...")
+        return None
+    
+    # VIEW CONFIG
+    elif action.startswith("view"):
+        configs = list_dataset_configs()
+        
+        if not configs:
+            print("\nNo dataset configurations found.")
+            input("\nPress Enter to continue...")
+            return None
+        
+        dataset_name = get_user_choice(
+            "\nSelect dataset to view:",
+            configs + ["back - Go back"]
+        )
+        
+        if dataset_name == "back":
+            return None
+        
+        config_file = config_dir / f"{dataset_name}.yaml"
+        
+        try:
+            with open(config_file, 'r') as f:
+                content = f.read()
+            
+            print(f"\n" + "=" * 60)
+            print(f"CONFIGURATION: {dataset_name}")
+            print("=" * 60)
+            print(content)
+            print("=" * 60)
+            
+        except Exception as e:
+            print(f"\nError reading configuration: {e}")
+        
+        input("\nPress Enter to continue...")
+        return None
+    
+    # EDIT CONFIG
+    elif action.startswith("edit"):
+        configs = list_dataset_configs()
+        
+        if not configs:
+            print("\nNo dataset configurations found.")
+            print("Create one first using the 'create' option.")
+            input("\nPress Enter to continue...")
+            return None
+        
+        dataset_name = get_user_choice(
+            "\nSelect dataset to edit:",
+            configs + ["back - Go back"]
+        )
+        
+        if dataset_name == "back":
+            return None
+        
+        config_file = config_dir / f"{dataset_name}.yaml"
+        
+        print(f"\nOpening {config_file} in editor...")
+        
+        try:
+            import subprocess
+            import platform
+            
+            if platform.system() == "Windows":
+                subprocess.run(["notepad", str(config_file)])
+            else:
+                editor = os.environ.get("EDITOR", "nano")
+                subprocess.run([editor, str(config_file)])
+            
+            print("\n✓ Editor closed. Changes saved to file.")
+            
+        except Exception as e:
+            print(f"\nError opening editor: {e}")
+            print(f"\nYou can manually edit: {config_file}")
+        
+        input("\nPress Enter to continue...")
+        return None
+    
+    # DELETE CONFIG
+    elif action.startswith("delete"):
+        configs = list_dataset_configs()
+        
+        if not configs:
+            print("\nNo dataset configurations found.")
+            input("\nPress Enter to continue...")
+            return None
+        
+        dataset_name = get_user_choice(
+            "\nSelect dataset to delete:",
+            configs + ["back - Go back"]
+        )
+        
+        if dataset_name == "back":
+            return None
+        
+        config_file = config_dir / f"{dataset_name}.yaml"
+        
+        print(f"\nYou are about to delete: {config_file}")
+        print("This action cannot be undone!")
+        
+        if get_yes_no("\nAre you sure you want to delete this configuration?", default=False):
+            try:
+                config_file.unlink()
+                print(f"\n✓ Deleted configuration for '{dataset_name}'")
+            except Exception as e:
+                print(f"\nError deleting configuration: {e}")
+        else:
+            print("\nDeletion cancelled.")
+        
+        input("\nPress Enter to continue...")
+        return None
+    
     return None
 
 
@@ -379,19 +641,9 @@ def prepare_task():
         dataset_name,
         "--dataset_format",
         dataset_format_value,
+        "--download",
+        "--upload",
     ]
-
-    # Download/Upload options
-    print("\nCloud Storage Options:")
-    download = get_yes_no("Download dataset from Google Cloud Storage?", default=True)
-    upload = get_yes_no(
-        "Upload prepared dataset splits to Google Cloud Storage?", default=True
-    )
-
-    if download:
-        args.append("--download")
-    if upload:
-        args.append("--upload")
 
     return args
 
@@ -495,19 +747,9 @@ def train_task():
     if optimize:
         args.extend(["--optimize", "--n-trials", str(n_trials)])
 
-    # Download/Upload
-    print("\nCloud Storage Options:")
-    download = get_yes_no(
-        "Download training data from Google Cloud Storage?", default=True
-    )
-    upload = get_yes_no(
-        "Upload trained models and results to Google Cloud Storage?", default=True
-    )
-
-    if download:
-        args.append("--download")
-    if upload:
-        args.append("--upload")
+    # Always enable download and upload
+    args.append("--download")
+    args.append("--upload")
 
     return args
 
@@ -557,24 +799,12 @@ def evaluate_task():
         rcnn_value,
         "--dataset_format",
         dataset_format_value,
+        "--download",
+        "--upload",
     ]
 
     if visualize:
         args.append("--visualize")
-
-    # Download/Upload
-    print("\nCloud Storage Options:")
-    download = get_yes_no(
-        "Download evaluation data from Google Cloud Storage?", default=True
-    )
-    upload = get_yes_no(
-        "Upload evaluation results to Google Cloud Storage?", default=True
-    )
-
-    if download:
-        args.append("--download")
-    if upload:
-        args.append("--upload")
 
     return args
 
@@ -592,20 +822,10 @@ def inference_task():
     print(
         "\nNOTE: System now auto-detects available models and always uses class-specific inference"
     )
-    print("      Dataset-specific settings (scale bar ROI, spatial constraints) are applied automatically")
+    print("      Dataset-specific settings (confidence, IoU, scale bar ROI, spatial constraints)")
+    print("      are applied automatically from config/datasets/<dataset_name>.yaml")
 
     dataset_name = get_dataset_selection_with_retry("Select dataset for inference")
-
-    # Detection threshold
-    print("\nDetection Threshold Configuration:")
-    print("   Higher threshold = fewer, more confident detections")
-    print("   Lower threshold = more detections, including uncertain ones")
-    threshold = get_float_input(
-        "Detection confidence threshold (0.0-1.0)",
-        default=0.65,
-        min_val=0.0,
-        max_val=1.0,
-    )
 
     # Dataset format
     dataset_format = get_user_choice(
@@ -642,8 +862,6 @@ def inference_task():
         "inference",
         "--dataset_name",
         dataset_name,
-        "--threshold",
-        str(threshold),
         "--dataset_format",
         dataset_format_value,
         "--verbosity",
@@ -655,18 +873,19 @@ def inference_task():
     if draw_id:
         args.append("--id")
 
-    # Download/Upload
-    print("\nCloud Storage Options:")
-    download = get_yes_no(
-        "Download inference data from Google Cloud Storage?", default=True
+    # Add after visualization options
+    draw_scalebar = get_yes_no(
+        "Draw scale bar ROI and detection on images (for debugging)?", 
+        default=False
     )
-    upload = get_yes_no("Upload results to Google Cloud Storage?", default=True)
-
-    if download:
-        args.append("--download")
-    if upload:
-        args.append("--upload")
-
+    
+    if draw_scalebar:
+        args.extend(["--draw-scalebar"])
+    
+    # Always enable download and upload
+    args.append("--download")
+    args.append("--upload")
+    
     return args
 
 
@@ -736,7 +955,7 @@ def main():
         task = get_user_choice(
             "Select a task to perform:",
             [
-                "setup - First-time configuration (bucket, hyperparameters, scale bars)",
+                "setup - Configuration (general setup or dataset-specific configs)",
                 "prepare - Split dataset into train/test sets",
                 "train - Train instance segmentation models",
                 "evaluate - Evaluate trained models with COCO metrics",
@@ -768,11 +987,11 @@ def main():
 
         # Show task-specific information
         if task_name == "setup":
-            print("\nSetup will configure:")
-            print("   • Google Cloud Storage bucket")
-            print("   • Scale bar detection settings")
-            print("   • Model hyperparameters")
-            print("   • Other project settings")
+            print("\nSetup options:")
+            print("   • General: Configure GCS bucket, default settings")
+            print("   • Dataset: Create/edit dataset-specific configurations")
+            print("            (scale bars, spatial constraints, hyperparameters)")
+            print("   • List: View existing dataset configurations")
             args = setup_task()
         elif task_name == "prepare":
             print("\nPrepare will:")

@@ -15,11 +15,11 @@ import cv2
 import easyocr
 import numpy as np
 import re
-import yaml
 from math import sqrt
 from pathlib import Path
 
 from src.utils.logger_utils import system_logger
+from src.utils.config import get_config
 
 
 class ScaleBarDetectionError(Exception):
@@ -37,8 +37,6 @@ def get_scalebar_roi_for_dataset(dataset_name: str = None) -> dict:
     Returns:
     - dict: ROI configuration with x_start_factor, y_start_factor, width_factor, height_factor
     """
-    config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
-    
     default_roi = {
         'x_start_factor': 0.7,
         'y_start_factor': 0.05,
@@ -46,17 +44,13 @@ def get_scalebar_roi_for_dataset(dataset_name: str = None) -> dict:
         'height_factor': 0.05
     }
     
-    if not config_path.exists():
-        system_logger.warning(f"Config file not found: {config_path}, using default ROI")
-        return default_roi
-    
     try:
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
+        # Load config with dataset-specific overrides
+        config = get_config(dataset_name=dataset_name)
         
         scale_bar_rois = config.get('scale_bar_rois', {})
         
-        # Try to get dataset-specific ROI first
+        # Try dataset-specific first
         if dataset_name and dataset_name in scale_bar_rois:
             roi_config = scale_bar_rois[dataset_name]
             system_logger.info(f"Using dataset-specific scale bar ROI for '{dataset_name}'")
@@ -100,26 +94,23 @@ def detect_scale_bar(
         roi_config = get_scalebar_roi_for_dataset(dataset_name)
     
     # --- Load thresholds from config if available ---
-    config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
     merge_gap = 15  # Default
     min_line_length = 30  # Default
     edge_margin_factor = 0.1  # Default 10% margin from ROI edges
     
-    if config_path.exists():
-        try:
-            with open(config_path, "r") as f:
-                full_config = yaml.safe_load(f)
-            scalebar_thresholds = full_config.get("scalebar_thresholds", {})
-            # Only override if not explicitly passed in function call
-            if "intensity" in scalebar_thresholds and intensity_threshold == 200:
-                intensity_threshold = scalebar_thresholds["intensity"]
-            if "proximity" in scalebar_thresholds and proximity_threshold == 50:
-                proximity_threshold = scalebar_thresholds["proximity"]
-            merge_gap = scalebar_thresholds.get("merge_gap", 15)
-            min_line_length = scalebar_thresholds.get("min_line_length", 30)
-            edge_margin_factor = scalebar_thresholds.get("edge_margin_factor", 0.1)
-        except Exception as e:
-            system_logger.warning(f"Could not load thresholds from config: {e}")
+    try:
+        config = get_config(dataset_name=dataset_name)
+        scalebar_thresholds = config.get("scalebar_thresholds", {})
+        # Only override if not explicitly passed in function call
+        if "intensity" in scalebar_thresholds and intensity_threshold == 200:
+            intensity_threshold = scalebar_thresholds["intensity"]
+        if "proximity" in scalebar_thresholds and proximity_threshold == 50:
+            proximity_threshold = scalebar_thresholds["proximity"]
+        merge_gap = scalebar_thresholds.get("merge_gap", 15)
+        min_line_length = scalebar_thresholds.get("min_line_length", 30)
+        edge_margin_factor = scalebar_thresholds.get("edge_margin_factor", 0.1)
+    except Exception as e:
+        system_logger.warning(f"Could not load thresholds from config: {e}")
 
     if not isinstance(image, np.ndarray):
         system_logger.error("Input image is not a numpy array.")

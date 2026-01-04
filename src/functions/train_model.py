@@ -426,16 +426,15 @@ def load_rcnn_hyperparameters(
         ConfigurationError: If configuration cannot be loaded or is invalid
     """
     try:
-        config_path = Path.home() / "deepEMIA" / "config" / "config.yaml"
-        with open(config_path, "r") as f:
-            config_data = yaml.safe_load(f)
+        # Load config with dataset-specific overrides
+        config_data = get_config(dataset_name=dataset_name)
 
         rcnn_config = config_data.get("rcnn_hyperparameters", {})
         if not rcnn_config:
             raise ConfigurationError("No RCNN hyperparameters found in configuration")
 
         # Priority order for loading hyperparameters:
-        # 1. Dataset-specific best (best_<dataset_name>)
+        # 1. Dataset-specific best (from dataset config best_R50/best_R101)
         # 2. Global best (best)
         # 3. Default
 
@@ -443,19 +442,16 @@ def load_rcnn_hyperparameters(
         source = None
 
         if use_best and dataset_name:
-            # Try dataset-specific best first
-            dataset_best_key = f"best_{dataset_name}"
-            if (
-                dataset_best_key in rcnn_config
-                and rcnn_type in rcnn_config[dataset_best_key]
-            ):
-                dataset_params = rcnn_config[dataset_best_key][rcnn_type]
-                if dataset_params:  # Make sure it's not empty
-                    params = dataset_params
-                    source = f"dataset-specific best ({dataset_best_key})"
+            # Dataset-specific best is already merged into config by get_config()
+            # Check if it exists in the 'best' section
+            if "best" in rcnn_config and rcnn_type in rcnn_config["best"]:
+                best_params = rcnn_config["best"][rcnn_type]
+                if best_params:  # Make sure it's not empty
+                    params = best_params
+                    source = f"dataset-specific best"
 
         if params is None and use_best:
-            # Try global best
+            # Try global best (if not already found)
             if "best" in rcnn_config and rcnn_type in rcnn_config["best"]:
                 best_params = rcnn_config["best"][rcnn_type]
                 if best_params:  # Make sure it's not empty
@@ -496,7 +492,7 @@ def load_rcnn_hyperparameters(
         return params
 
     except FileNotFoundError:
-        raise ConfigurationError(f"Configuration file not found: {config_path}")
+        raise ConfigurationError("Configuration file not found")
     except yaml.YAMLError as e:
         raise ConfigurationError(f"Error parsing configuration file: {e}")
     except Exception as e:

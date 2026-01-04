@@ -1,0 +1,61 @@
+# Dataset-specific configuration for update_test
+# This dataset uses mostly default settings with minor tweaks
+
+metadata:
+  name: "update_test"
+  description: "Test dataset with near-default configuration"
+  created: "2025-11-03"
+  notes: "Used for testing updates and new features"
+
+# Scale bar ROI (using defaults)
+scale_bar_roi:
+  x_start_factor: 0.7
+  y_start_factor: 0.05
+  width_factor: 1
+  height_factor: 0.05
+
+# Use default scalebar thresholds (no override needed)
+
+# Spatial constraints disabled (default behavior)
+spatial_constraints:
+  enabled: false
+
+# No custom hyperparameters - will use defaults
+# rcnn_hyperparameters:
+#   best_R50: {}
+#   best_R101: {}
+
+# Standard inference settings (minimal overrides)
+inference_overrides:
+  use_class_specific_inference: true
+  confidence_mode: 'auto'
+  
+  class_specific_settings:
+    class_0:
+      confidence_threshold: 0.5
+      iou_threshold: 0.7
+      min_size: 25
+      min_size_factor: 0.0001
+    class_1:
+      confidence_threshold: 0.3
+      iou_threshold: 0.5
+      min_size: 3
+      min_size_factor: 0.000005
+      use_multiscale: true
+  
+  ensemble_settings:
+    enabled: true
+    small_classes_only: true
+    weights:
+      R50: 0.6
+      R101: 0.4
+  
+  use_tile_based_inference: true
+  
+  tile_settings:
+    tile_size: 512
+    overlap_ratio: 0.1
+    upscale_factor: 2.0
+    edge_filter_enabled: true
+    classes_using_tiling: [0, 1]
+    tile_batch_size: 2

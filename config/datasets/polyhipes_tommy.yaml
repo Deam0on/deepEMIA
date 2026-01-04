@@ -1,0 +1,99 @@
+# Dataset-specific configuration for polyhipes_tommy
+# Optimized for CONSERVATIVE detection with spatial filtering
+
+metadata:
+  name: "polyhipes_tommy"
+  description: "Tommy's polyhipes dataset - CONSERVATIVE DETECTION with spatial filtering"
+  created: "2025-11-20"
+  notes: |
+    FIX: Reduce false positives and overlapping detections
+    - Higher confidence thresholds
+    - Lower IoU thresholds (merge duplicates)
+    - Spatial constraints ENABLED
+    - Less aggressive iteration
+
+# Custom scale bar ROI for this dataset
+scale_bar_roi:
+  x_start_factor: 0.5
+  y_start_factor: 0.005
+  width_factor: 0.8
+  height_factor: 0.065
+
+# Adjusted for potential edge-close scale bars
+scalebar_thresholds:
+  intensity: 100               # Lowered from 100 for dimmer scale bars
+  proximity: 100              # Increased from 100 for wider spacing
+  merge_gap: 15               # Increased from 15 for more merging
+  min_line_length: 30         # Reduced from 30 for shorter scale bars
+  edge_margin_factor: 0.1    # Reduced from 0.1 for edge-close bars
+
+# Optimized hyperparameters (will be populated by training)
+rcnn_hyperparameters:
+  best_R50: {}
+  best_R101: {}
+
+# CONSERVATIVE inference settings
+inference_overrides:
+  use_class_specific_inference: true
+  confidence_mode: 'manual'
+
+  # SPATIAL CONSTRAINTS - MOVED TO TOP LEVEL (CRITICAL FIX!)
+  spatial_constraints:
+    enabled: true
+    
+    containment_rules:
+      1: 0  # Pore throats must be inside Pores
+    
+    containment_threshold: 0.95
+    
+    overlap_rules:
+      0:  # Pores
+        allow_overlap: false
+        allow_touch: true
+        max_iou_threshold: 0.30
+      
+      1:  # Pore throats - STRICTER
+        allow_overlap: false      # NEW: No overlap allowed
+        allow_touch: true
+        max_iou_threshold: 0.50    # REDUCED from 0.9
+  
+  iterative_stopping:
+    min_total_masks: 50
+    min_relative_increase: 0.05
+    max_consecutive_zero: 2
+    min_iterations: 3
+  
+  class_specific_settings:
+    class_0:  # Pores
+      confidence_threshold: 0.70
+      iou_threshold: 0.35
+      min_size: 500
+      aspect_ratio_max: 3.0
+      use_multiscale: true
+    
+    class_1:  # Pore throats
+      confidence_threshold: 0.75
+      iou_threshold: 0.60        # INCREASED from 0.40
+      min_size: 50
+      aspect_ratio_max: 4.0
+      use_multiscale: true
+      min_separation_distance: 5  # NEW: Minimum pixels between throats (optional)
+  
+  ensemble_settings:
+    enabled: true
+    small_classes_only: true
+    weights:
+      R50: 0.50
+      R101: 0.50
+    min_ensemble_confidence: 0.6
+  
+  use_tile_based_inference: true
+  
+  tile_settings:
+    tile_size: 512
+    overlap_ratio: 0.15
+    upscale_factor: 3.5
+    edge_filter_enabled: true
+    edge_margin_threshold: 0.3
+    classes_using_tiling: [0, 1]
+    tile_batch_size: 2

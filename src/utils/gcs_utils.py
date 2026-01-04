@@ -199,6 +199,7 @@ def upload_inference_results(
             "class_color_legend.txt": "Class color coding reference",
             "inference_upload_summary.txt": "Upload summary",
             "*_predictions.png": "Combined prediction visualizations (all classes per image)",
+            "*_scalebar_debug.png": "Scale bar detection debug visualizations",
         }
 
         for pattern, description in essential_patterns.items():
@@ -254,6 +255,20 @@ def upload_inference_results(
                     system_logger.info(
                         f"Found prediction visualization: {file_path.name}"
                     )
+        
+        # Look for scalebar debug images
+        for file_path in current_dir.glob("*_scalebar_debug.png"):
+            if file_path.is_file():
+                if not any(ef["path"] == file_path for ef in essential_files):
+                    essential_files.append(
+                        {
+                            "path": file_path,
+                            "description": "Scale bar detection debug visualization",
+                        }
+                    )
+                    system_logger.info(
+                        f"Found scalebar debug visualization: {file_path.name}"
+                    )
 
     # 3. Essential files from home directory (fallback)
     home_dir = Path.home()
@@ -276,6 +291,33 @@ def upload_inference_results(
                     system_logger.info(
                         f"Found essential file in home: {file_path.name}"
                     )
+    
+    # Also check for prediction and scalebar debug images in home directory
+    for file_path in home_dir.glob("*_predictions.png"):
+        if file_path.is_file():
+            if not any(ef["path"] == file_path for ef in essential_files):
+                essential_files.append(
+                    {
+                        "path": file_path,
+                        "description": "Combined prediction visualization",
+                    }
+                )
+                system_logger.info(
+                    f"Found prediction visualization in home: {file_path.name}"
+                )
+    
+    for file_path in home_dir.glob("*_scalebar_debug.png"):
+        if file_path.is_file():
+            if not any(ef["path"] == file_path for ef in essential_files):
+                essential_files.append(
+                    {
+                        "path": file_path,
+                        "description": "Scale bar detection debug visualization",
+                    }
+                )
+                system_logger.info(
+                    f"Found scalebar debug visualization in home: {file_path.name}"
+                )
 
     if not essential_files:
         system_logger.warning("No essential inference result files found to upload")
