@@ -82,10 +82,13 @@ print(f"Average area: {df['Area_um2'].mean():.2f} µm²")
 
 **Too many false positives**: Increase threshold to 0.8
 
-**Missing small particles**: Use multi-pass inference:
+**Missing small particles**: Iterative inference is now automatic. Configure stopping criteria in `config.yaml`:
 
-```bash
-python main.py --task inference --dataset_name polyhipes --pass multi 10
+```yaml
+inference_settings:
+  iterative_stopping:
+    min_iterations: 3
+    min_relative_increase: 0.1
 ```
 
 ## See Also

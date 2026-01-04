@@ -67,25 +67,33 @@ Evaluate trained model on test set.
 ```python
 def run_inference(
     dataset_name: str,
-    threshold: float = 0.65,
+    output_dir: str,
     visualize: bool = False,
-    draw_instance_id: bool = False,
-    inference_mode: str = "single",
-    max_iterations: int = 10,
-    rcnn: int = 101
+    threshold: float = 0.65,
+    draw_id: bool = False,
+    dataset_format: str = "json",
+    draw_scalebar: bool = False
 ) -> None
 ```
 
-Run inference on images.
+Run inference on images with automatic model detection and iterative processing.
 
 **Parameters:**
-- `dataset_name`: Dataset name
-- `threshold`: Confidence threshold
-- `visualize`: Save visualizations
-- `draw_instance_id`: Draw IDs on visualizations
-- `inference_mode`: "single" or "multi"
-- `max_iterations`: Max iterations for multi mode
-- `rcnn`: RCNN backbone
+- `dataset_name`: Dataset name (used to load dataset-specific config)
+- `output_dir`: Output directory for results
+- `threshold`: Base confidence threshold (may be adjusted by auto-detection)
+- `visualize`: Save overlay visualizations
+- `draw_id`: Draw instance IDs on visualizations
+- `dataset_format`: Annotation format ("json" or "coco")
+- `draw_scalebar`: Draw scale bar detection debug info on output
+
+**Features:**
+- Automatic model detection (uses available R50/R101 models)
+- Iterative inference with configurable stopping criteria
+- Multi-scale and tile-based inference
+- Model ensemble for improved accuracy
+- Spatial constraint filtering
+- L4 GPU optimizations
 
 **Output:** CSV files with measurements and optional visualizations
 

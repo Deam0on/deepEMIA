@@ -53,15 +53,16 @@ High-level architecture of the deepEMIA pipeline.
 
 Three entry points for different use cases:
 
-- **CLI Wizard** (`cli_main.py`): Interactive guided interface
+- **CLI Wizard** (`cli_main.py`): Interactive guided interface with dataset config management
 - **Direct CLI** (`main.py`): Command-line with explicit arguments
-- **Web GUI** (`streamlit_gui.py`): Browser-based visual interface
+- **Web GUI** (`gui_legacy/streamlit_gui.py`): Browser-based visual interface
 
 ### 2. Orchestration Layer
 
 **main.py** coordinates all operations:
 - Parses arguments
-- Loads configuration
+- Loads configuration (with dataset-specific overrides)
+- Performs GPU availability check
 - Manages GCS sync
 - Tracks ETA
 - Handles errors

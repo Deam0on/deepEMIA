@@ -233,11 +233,11 @@ When GPU is not available:
 
 The GPU check is integrated at key entry points:
 
-1. **main.py**: Before any task execution (except setup)
-2. **train_model.py**: At the start of `train_on_dataset()`
-3. **inference.py**: At the start of `run_inference()`
-4. **evaluate_model.py**: At the start of `evaluate_model()`
-5. **cli_main.py**: At CLI startup (non-blocking)
+1. **main.py**: Before any task execution (except setup), controllable via `--no-gpu-check`
+2. **train_model.py**: Automatic GPU detection and optimization
+3. **inference.py**: L4-optimized inference with mixed precision support
+4. **evaluate_model.py**: GPU-accelerated evaluation
+5. **cli_main.py**: At CLI startup (non-blocking informational display)
 
 ## Performance Impact
 
