@@ -28,13 +28,14 @@ Core pipeline operations:
 
 Helper functions and utilities:
 
-- Configuration management
+- Configuration management with dataset-specific overrides
 - Logging utilities
 - GCS integration
+- GPU availability checking
 - Mask processing
 - Scale bar detection
 - Measurement calculations
-- Spatial constraints
+- Spatial constraints (containment/overlap rules)
 - Safe file operations
 
 ## API Conventions

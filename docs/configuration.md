@@ -61,6 +61,7 @@ paths:
   logs_dir: "~/logs"
   output_dir: "~/deepEMIA/output"
   local_dataset_root: "~"
+  dataset_configs_dir: "~/deepEMIA/config/datasets"
 ```
 
 Defines file system paths used by the pipeline.
@@ -72,6 +73,7 @@ Defines file system paths used by the pipeline.
 - `logs_dir`: Log file directory
 - `output_dir`: Output directory for results
 - `local_dataset_root`: Root directory for local datasets
+- `dataset_configs_dir`: Directory for dataset-specific configuration files
 
 All paths support tilde (`~`) expansion for home directory.
 
@@ -234,6 +236,7 @@ When running with `--optimize`, the system automatically:
 ```yaml
 inference_settings:
   use_class_specific_inference: true
+  confidence_mode: 'auto'
   
   iterative_stopping:
     min_total_masks: 10
@@ -246,11 +249,35 @@ inference_settings:
       confidence_threshold: 0.5
       iou_threshold: 0.7
       min_size: 25
+      min_size_factor: 0.0001
     class_1:
       confidence_threshold: 0.3
       iou_threshold: 0.5
-      min_size: 5
+      min_size: 3
+      min_size_factor: 0.000005
       use_multiscale: true
+  
+  ensemble_settings:
+    enabled: true
+    small_classes_only: true
+    weights:
+      R50: 0.6
+      R101: 0.4
+  
+  multiscale_settings:
+    baseline_scales: [0.7, 1.0, 1.5, 2.0]
+    aggressive_scales: [1.0, 1.5, 2.0, 2.5, 3.0]
+    max_scale: 3.0
+  
+  use_tile_based_inference: true
+  
+  tile_settings:
+    tile_size: 512
+    overlap_ratio: 0.1
+    upscale_factor: 2.0
+    edge_filter_enabled: true
+    classes_using_tiling: [0, 1]
+    tile_batch_size: 2
 ```
 
 Configuration for inference behavior.
@@ -262,9 +289,13 @@ Configuration for inference behavior.
   - Default: true
   - Allows different thresholds per class
 
+- `confidence_mode`: Threshold mode ('auto' or 'manual')
+  - 'auto': Automatically adjust based on detection patterns
+  - 'manual': Use fixed thresholds from class_specific_settings
+
 **Iterative Stopping Criteria:**
 
-Controls when multi-pass inference terminates:
+Controls when iterative inference terminates:
 
 - `min_total_masks`: Minimum total masks before considering early stop
   - Type: Integer
@@ -301,12 +332,44 @@ class_specific_settings:
     confidence_threshold: 0.5
     iou_threshold: 0.7
     min_size: 25
+    min_size_factor: 0.0001
   class_1:  # Small particles
     confidence_threshold: 0.3  # Lower threshold for small objects
     iou_threshold: 0.5
-    min_size: 5
+    min_size: 3
+    min_size_factor: 0.000005
     use_multiscale: true  # Better detection for small objects
 ```
+
+**Ensemble Settings:**
+
+Multi-model ensemble combines predictions from R50 and R101 models:
+
+- `enabled`: Enable ensemble inference (Boolean)
+- `small_classes_only`: Only use ensemble for small particle classes
+- `weights`: Model weights for weighted averaging
+  - `R50`: Weight for ResNet-50 predictions
+  - `R101`: Weight for ResNet-101 predictions
+
+**Multi-Scale Settings:**
+
+Configure scale factors for multi-scale inference:
+
+- `baseline_scales`: Scale factors for standard inference
+- `aggressive_scales`: Scale factors for hard-to-detect objects
+- `max_scale`: Maximum allowed scale factor
+
+**Tile-Based Inference:**
+
+For processing large images in tiles:
+
+- `use_tile_based_inference`: Enable tile-based processing (Boolean)
+- `tile_size`: Tile dimension in pixels
+- `overlap_ratio`: Overlap between adjacent tiles (0.0-1.0)
+- `upscale_factor`: Upscale factor applied to tiles
+- `edge_filter_enabled`: Filter detections near tile edges
+- `classes_using_tiling`: List of class indices to use tiling for
+- `tile_batch_size`: Number of tiles to process in parallel
 
 ### Spatial Constraints
 
@@ -364,29 +427,58 @@ spatial_constraints:
 
 ```yaml
 l4_performance_optimizations:
-  batch_processing:
-    inference_batch_size: 4
-    dataloader_workers: 2
-    prefetch_factor: 2
+  # Batch processing
+  inference_batch_size: 1
+  measurement_batch_size: 3
   
-  memory_management:
-    max_image_size: 2048
-    enable_memory_efficient_mode: true
-    cleanup_individual_masks: true
+  # Memory management
+  clear_cache_frequency: 3
+  clear_cache_after_tiles: true
+  max_memory_usage: 0.8
+  
+  # Threading (optimized for 4 vCPUs)
+  max_worker_threads: 3
+  enable_parallel_image_loading: true
+  enable_parallel_mask_processing: true
+  
+  # Model optimizations
+  use_mixed_precision: true
+  enable_gpu_optimizations: true
+  optimize_for_inference: true
+  
+  # I/O optimizations  
+  stream_measurements_to_csv: true
+  cleanup_individual_masks: true
 ```
 
-Optimizations specifically tuned for NVIDIA L4 GPUs (g2-standard-4 instances).
+Optimizations specifically tuned for NVIDIA L4 GPUs (g2-standard-4 instances with 4 vCPUs, 16GB RAM, 22GB VRAM).
 
 **Batch Processing:**
 
 - `inference_batch_size`: Number of images to process simultaneously
-- `dataloader_workers`: Number of data loading threads
-- `prefetch_factor`: Images to prefetch per worker
+- `measurement_batch_size`: Batch size for measurement calculations
 
 **Memory Management:**
 
-- `max_image_size`: Maximum image dimension before resizing
-- `enable_memory_efficient_mode`: Reduce memory usage at slight speed cost
+- `clear_cache_frequency`: Clear GPU cache every N images
+- `clear_cache_after_tiles`: Clear cache after tile processing
+- `max_memory_usage`: Maximum GPU memory usage (0.0-1.0)
+
+**Threading:**
+
+- `max_worker_threads`: Maximum parallel worker threads
+- `enable_parallel_image_loading`: Load images in parallel
+- `enable_parallel_mask_processing`: Process masks in parallel
+
+**Model Optimizations:**
+
+- `use_mixed_precision`: Use FP16 for faster inference
+- `enable_gpu_optimizations`: Enable cuDNN optimizations
+- `optimize_for_inference`: Disable gradient computation
+
+**I/O Optimizations:**
+
+- `stream_measurements_to_csv`: Write measurements incrementally
 - `cleanup_individual_masks`: Delete individual mask files after processing
 
 ## Configuration Best Practices

@@ -78,7 +78,7 @@ Select "setup" from the menu and provide:
 Or use the direct command:
 
 ```bash
-python main.py --task setup --dataset_name dummy
+python main.py --task setup
 ```
 
 ### 3. Verify Configuration
@@ -91,8 +91,11 @@ paths:
   main_script: "~/deepEMIA/main.py"
   split_dir: "~/split_dir"
   category_json: "~/deepEMIA/dataset_info.json"
+  dataset_configs_dir: "~/deepEMIA/config/datasets"
   # ... other paths
 ```
+
+Dataset-specific configurations can be created in `~/deepEMIA/config/datasets/`.
 
 ## Testing the Installation
 
@@ -123,17 +126,22 @@ After installation, your directory structure should look like:
 ```
 deepEMIA/
 ├── config/
-│   ├── config.yaml          # Main configuration
-│   └── eta_data.json        # ETA tracking
-├── docs/                    # Documentation
-├── gui/                     # Web interface
-├── src/                     # Source code
-│   ├── data/               # Data handling
-│   ├── functions/          # Core pipeline functions
-│   └── utils/              # Utility functions
-├── main.py                 # Main CLI entry point
-├── cli_main.py            # Interactive CLI wizard
-└── requirements.txt       # Dependencies
+│   ├── config.yaml          # Main configuration (defaults)
+│   ├── eta_data.json         # ETA tracking
+│   ├── datasets/             # Dataset-specific configs
+│   │   └── <dataset_name>.yaml
+│   └── datasets.example/     # Example templates
+│       ├── template.yaml
+│       └── polyhipes_tommy.yaml
+├── docs/                     # Documentation
+├── gui_legacy/               # Legacy web interface
+├── src/                      # Source code
+│   ├── data/                 # Data handling
+│   ├── functions/            # Core pipeline functions
+│   └── utils/                # Utility functions
+├── main.py                   # Main CLI entry point
+├── cli_main.py               # Interactive CLI wizard
+└── requirements.txt          # Dependencies
 ```
 
 ## Next Steps

@@ -7,17 +7,44 @@ API reference for utility functions.
 ### get_config
 
 ```python
-def get_config() -> dict
+def get_config(dataset_name: str = None) -> dict
 ```
 
-Load and return project configuration. Configuration is loaded once and cached.
+Load and return project configuration with optional dataset-specific overrides.
 
-**Returns:** Configuration dictionary
+**Parameters:**
+- `dataset_name`: Optional dataset name to merge dataset-specific settings
+
+**Returns:** Configuration dictionary (merged with dataset-specific config if provided)
 
 **Raises:** 
 - `FileNotFoundError`: Config file not found
 - `yaml.YAMLError`: Invalid YAML
 - `ConfigValidationError`: Invalid configuration
+
+### list_dataset_configs
+
+```python
+def list_dataset_configs() -> list
+```
+
+List all available dataset-specific configuration files.
+
+**Returns:** List of dataset names with configs
+
+### create_dataset_config
+
+```python
+def create_dataset_config(dataset_name: str, template: str = "template") -> Path
+```
+
+Create a new dataset-specific config from template.
+
+**Parameters:**
+- `dataset_name`: Name for the new dataset config
+- `template`: Template to use ('template', 'polyhipes_tommy', or existing dataset name)
+
+**Returns:** Path to created config file
 
 ## Logging (src.utils.logger_utils)
 
@@ -152,6 +179,43 @@ def get_scalebar_roi_for_dataset(dataset_name: str = None) -> dict
 Load scale bar ROI configuration for specific dataset.
 
 **Returns:** Dict with x_start_factor, y_start_factor, width_factor, height_factor
+
+## GPU Check (src.utils.gpu_check)
+
+### check_gpu_availability
+
+```python
+def check_gpu_availability(require_gpu: bool = False, interactive: bool = True) -> bool
+```
+
+Check if GPU/CUDA is available and optionally prompt user if not.
+
+**Parameters:**
+- `require_gpu`: If True, will exit if no GPU is available and user doesn't confirm
+- `interactive`: If True, prompts user for confirmation. If False, just logs warning
+
+**Returns:** True if GPU available or user confirmed to continue, False otherwise
+
+### log_device_info
+
+```python
+def log_device_info() -> None
+```
+
+Log comprehensive GPU/CPU device information including model, VRAM, CUDA version.
+
+### get_optimal_device
+
+```python
+def get_optimal_device(prefer_gpu: bool = True) -> torch.device
+```
+
+Get the optimal torch device based on availability.
+
+**Parameters:**
+- `prefer_gpu`: Prefer GPU if available
+
+**Returns:** torch.device (cuda or cpu)
 
 ## Spatial Constraints (src.utils.spatial_constraints)
 

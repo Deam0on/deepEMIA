@@ -1,0 +1,96 @@
+# =============================================================================
+# DEEPEMIA GIT ATTRIBUTES
+# =============================================================================
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# =============================================================================
+# SOURCE CODE
+# =============================================================================
+*.py text eol=lf
+*.pyx text eol=lf
+*.pxd text eol=lf
+
+# =============================================================================
+# CONFIGURATION FILES
+# =============================================================================
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.ini text eol=lf
+*.cfg text eol=lf
+
+# =============================================================================
+# DOCUMENTATION
+# =============================================================================
+*.md text eol=lf
+*.txt text eol=lf
+*.rst text eol=lf
+LICENSE text eol=lf
+LICENCE text eol=lf
+LICENCE.md text eol=lf
+
+# =============================================================================
+# WEB FILES
+# =============================================================================
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+
+# =============================================================================
+# SHELL SCRIPTS
+# =============================================================================
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Windows batch scripts
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# =============================================================================
+# BINARY FILES (no line ending conversion)
+# =============================================================================
+# Images
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.tif binary
+*.tiff binary
+*.bmp binary
+*.webp binary
+
+# Model files
+*.pth binary
+*.pt binary
+*.pkl binary
+*.pickle binary
+*.h5 binary
+*.hdf5 binary
+*.onnx binary
+
+# Archives
+*.zip binary
+*.tar binary
+*.gz binary
+*.7z binary
+
+# Fonts
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.eot binary
+
+# =============================================================================
+# GITHUB LINGUIST OVERRIDES
+# =============================================================================
+# Exclude from language statistics
+docs/** linguist-documentation
+*.ipynb linguist-vendored
+
+# Force detection
+*.py linguist-detectable=true

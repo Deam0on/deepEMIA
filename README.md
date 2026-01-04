@@ -24,15 +24,18 @@ Deep(learning) E(lectron) MI(croscopy) A(nalysis) is a comprehensive deep learni
 
 ## Features
 
-- **Dataset Management**: Preparation, splitting, and registration (custom/COCO).
-- **Model Training & Optimization**: Supports Detectron2 backbones (R50, R101, combo) and Optuna-based hyperparameter tuning (global and per-dataset).
+- **Dataset Management**: Preparation, splitting, and registration (custom/COCO) with dataset-specific configuration files.
+- **Model Training & Optimization**: Supports Detectron2 backbones (R50, R101, combo) and Optuna-based hyperparameter tuning.
 - **Evaluation**: COCO-style metrics and visualizations.
-- **Inference**: Batch or iterative/multi-scale, with measurement extraction (area, perimeter, axes, circularity, wavelength).
+- **Inference**: Batch, iterative, multi-scale, and tile-based inference with measurement extraction (area, perimeter, axes, circularity, wavelength).
+- **Model Ensemble**: Automatic multi-model ensemble for improved detection accuracy.
+- **Spatial Constraints**: Configurable containment and overlap rules for class relationships.
 - **Interfaces**: Interactive CLI wizard, direct CLI, and Streamlit web GUI.
 - **Cloud Integration**: Google Cloud Storage (GCS) for scalable data management.
+- **GPU Management**: Automatic GPU detection with interactive prompts and L4 GPU optimizations.
 - **Security**: Environment-variable password hashing, path validation, and service account authentication.
 - **Error Handling**: Retry logic, detailed logging, and configuration validation.
-- **Performance**: Fast spatial filtering, memory-efficient inference, and GPU/CPU support.
+- **Performance**: Fast spatial filtering, tile-based processing, mixed precision, and memory-efficient inference.
 
 ---
 
@@ -101,7 +104,10 @@ python main.py --task <prepare|train|evaluate|inference|setup> --dataset_name <n
 - `--optimize`: Activate hyperparameter optimization (Optuna)
 - `--n-trials`: Number of Optuna trials
 - `--visualize`: Save visualizations
-- `--pass`: Inference mode (`single` or `multi N`)
+- `--id`: Draw instance IDs on visualizations
+- `--draw-scalebar`: Draw scale bar detection debug info on output images
+- `--no-gpu-check`: Skip GPU availability check (for automated scripts)
+- `--verbosity`: Console logging level (`debug`, `info`, `warning`, `error`)
 - `--download/--upload`: Sync data/results with GCS
 
 For full argument list:
@@ -114,25 +120,30 @@ python main.py --help
 Launch the Streamlit GUI:
 
 ```bash
-streamlit run gui/streamlit_gui.py
+streamlit run gui_legacy/streamlit_gui.py
 ```
 
 ---
 
 ## Configuration
 
-- Main config: `~/deepEMIA/config/config.yaml`
-- Set environment variables for security:
-  ```bash
-  export ADMIN_PASSWORD_HASH="your_sha256_hash_here"
-  export GOOGLE_APPLICATION_CREDENTIALS="/path/to/gcs-key.json"
-  ```
-- Key settings include:
-  - GCS bucket name
-  - Paths for scripts, splits, categories, logs, outputs
-  - Scale bar ROI and detection thresholds
-  - Inference stopping criteria
-  - Hyperparameters (default, global best, per-dataset best)
+- **Main config**: `~/deepEMIA/config/config.yaml` (global defaults)
+- **Dataset-specific configs**: `~/deepEMIA/config/datasets/<dataset_name>.yaml`
+- **Example templates**: `~/deepEMIA/config/datasets.example/`
+
+Set environment variables for security:
+```bash
+export ADMIN_PASSWORD_HASH="your_sha256_hash_here"
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/gcs-key.json"
+```
+
+Key settings include:
+- GCS bucket name and paths
+- Scale bar ROI and detection thresholds
+- RCNN hyperparameters (default and per-dataset)
+- Inference settings (class-specific, iterative stopping, ensemble, tile-based)
+- Spatial constraints (containment/overlap rules)
+- L4 GPU performance optimizations
 
 See [docs/configuration.md](docs/configuration.md) for details.
 
@@ -214,8 +225,9 @@ If used in research, please cite:
 ```bibtex
 @software{deepemia,
   title={deepEMIA: Deep Learning Electron Microscopy Image Analysis},
-  author={Hladek, F.},
-  year={2025},
+  author={Hládek, Filip},
+  year={2026},
+  version={2.0.0},
   url={https://github.com/Deam0on/deepEMIA}
 }
 ```

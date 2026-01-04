@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+title: "deepEMIA: Deep Learning Electron Microscopy Image Analysis"
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - family-names: Hládek
+    given-names: Filip
+    orcid: "https://orcid.org/0000-0003-0931-5407"
+    email: info.f@hladek.cz
+repository-code: "https://github.com/Deam0on/deepEMIA"
+url: "https://github.com/Deam0on/deepEMIA"
+license: CC-BY-NC-SA-4.0
+version: 2.0.0
+date-released: "2026-01-04"
+keywords:
+  - deep-learning
+  - electron-microscopy
+  - image-analysis
+  - instance-segmentation
+  - detectron2
+  - computer-vision
+  - scientific-imaging
+abstract: >-
+  deepEMIA is a comprehensive deep learning toolkit for electron microscopy
+  and scientific image analysis. It provides a robust pipeline for dataset
+  preparation, model training, hyperparameter optimization, evaluation,
+  scalable inference with tile-based processing and model ensemble, and
+  automated measurement extraction including area, perimeter, axes,
+  circularity, and wavelength measurements.

@@ -73,6 +73,12 @@ python main.py --task <task> --dataset_name <name> [options]
   - `coco`: COCO format JSON
   - Default: `json`
 
+- `--verbosity`: Console logging level
+  - Options: `debug`, `info`, `warning`, `error`
+  - Default: `info`
+
+- `--no-gpu-check`: Skip GPU availability check (for automated/non-interactive scripts)
+
 ### Training Options
 
 - `--augment`: Enable data augmentation
@@ -97,11 +103,11 @@ python main.py --task <task> --dataset_name <name> [options]
   - Numbers each detected instance
   - Helps with debugging and analysis
 
-- `--pass`: Inference mode
-  - `single`: One pass per image (fast)
-  - `multi <N>`: Multiple passes with deduplication (accurate)
-    - Default max iterations: 10
-    - Early stopping based on config settings
+- `--draw-scalebar`: Draw scale bar detection debug info on output images
+  - Shows ROI, detected lines, and selected scale bar
+  - Useful for troubleshooting scale bar detection
+
+Note: Multi-pass inference is now automatically controlled via `config.yaml` iterative_stopping settings. The system uses intelligent stopping criteria based on detection counts.
 
 ### Data Transfer
 
@@ -113,7 +119,7 @@ python main.py --task <task> --dataset_name <name> [options]
 Launch the Streamlit web interface:
 
 ```bash
-streamlit run gui/streamlit_gui.py
+streamlit run gui_legacy/streamlit_gui.py
 ```
 
 The web interface provides:
@@ -265,19 +271,24 @@ Fast inference for simple cases:
 python main.py --task inference --dataset_name polyhipes --threshold 0.7
 ```
 
-### Multi-Pass Inference
+### Automatic Iterative Inference
 
-Iterative inference with deduplication for better accuracy:
+Iterative inference with automatic stopping is now the default. Configure via `config.yaml`:
 
-```bash
-python main.py --task inference --dataset_name polyhipes --pass multi 5 --threshold 0.65
+```yaml
+inference_settings:
+  iterative_stopping:
+    min_total_masks: 10       # Minimum masks before early stop
+    min_relative_increase: 0.25  # Required mask increase (25%)
+    max_consecutive_zero: 1   # Stop after N zero-detection iterations
+    min_iterations: 2         # Always run at least N iterations
 ```
 
 Features:
 - Multiple inference passes at different scales
 - Automatic deduplication of overlapping masks
-- Early stopping when no new detections found
-- Configurable stopping criteria
+- Intelligent stopping when no new detections found
+- Tile-based inference for large images
 
 ### Inference with Visualization
 

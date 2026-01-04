@@ -29,10 +29,13 @@ deepEMIA is a modular, end-to-end computer vision pipeline designed for scientif
 - Interactive CLI wizard for easy operation
 - Web-based Streamlit interface
 - Hyperparameter optimization with Optuna
-- Multi-scale inference for improved detection
+- Multi-scale and tile-based inference for improved detection
+- Model ensemble support for enhanced accuracy
 - Scale bar detection and automatic unit conversion
-- Spatial constraint filtering
-- CPU and GPU support
+- Spatial constraint filtering (containment and overlap rules)
+- Dataset-specific configuration files
+- Automatic GPU detection with L4 optimizations
+- CPU and GPU support with graceful fallback
 
 ## Documentation Structure
 
